@@ -4,7 +4,8 @@
 #   gh api -X POST repos/wayloncore/time2play-app/actions/workflows/testflight.yml/dispatches -f ref=main
 # Keys: ASC_ISSUER_ID, ASC_KEY_ID, ASC_KEY_P8 live only in this repo's Actions secrets. The .p8 is written to the
 # runner's temp folder for the run and deleted at the end; it is never printed.
-# Signing is automatic (cloud-managed): xcodebuild makes the distribution certificate and App Store profile itself.
+# Signing: the export is automatic (cloud-managed), so xcodebuild makes the distribution certificate and the App Store
+# profile itself; no device and no certificate in the repo are needed.
 name: TestFlight
 on:
   workflow_dispatch:
@@ -50,24 +51,30 @@ jobs:
           printf '%s\n' "$ASC_KEY_P8" > "$KEY"; chmod 600 "$KEY"
           grep -q "BEGIN PRIVATE KEY" "$KEY" || { echo "(adding the BEGIN/END lines)"; { echo "-----BEGIN PRIVATE KEY-----"; tr -d ' \r\n' < "$KEY" | fold -w 64; echo; echo "-----END PRIVATE KEY-----"; } > "$KEY.tmp"; mv "$KEY.tmp" "$KEY"; }
           echo "KEY=$KEY" >> "$GITHUB_ENV"
-      - name: Archive (signed, Release)
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - name: Archive (Release)
         run: |
           t=$(date +%s)
           set -o pipefail
-          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           archive() {
             xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Release \
-              -destination 'generic/platform=iOS' -archivePath build/Time2Play.xcarchive "${AUTH[@]}" \
-              CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM" \
-              CURRENT_PROJECT_VERSION="$BUILD" "$@" archive 2>&1 | grep -E "error:|warning: .*(sign|profile|provision)|Signing Identity|Provisioning Profile|\*\* ARCHIVE" | tail -40
+              -destination 'generic/platform=iOS' -archivePath build/Time2Play.xcarchive \
+              DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="$BUILD" "$@" archive 2>&1 \
+              | grep -E "error:|warning: .*(sign|profile|provision)|\*\* ARCHIVE" | tail -40
           }
-          # A: sign the archive for distribution straight away (needs no registered device).
-          # B: Xcode's default (development signing, re-signed at export), if A is refused.
-          if archive CODE_SIGN_IDENTITY="Apple Distribution"; then echo "ARCHIVE_WAY=A (Apple Distribution)"
-          else echo "A failed; trying B"; rm -rf build/Time2Play.xcarchive; archive; echo "ARCHIVE_WAY=B (default)"; fi
+          # Apple's automatic signing can't archive here: it wants a development profile, and the team has no
+          # registered devices (run 4). Xcode 26 also refuses "Sign to Run Locally" for iOS (run 6). So the archive is
+          # built unsigned, then the app is signed locally with codesign and its entitlements (Sign in with Apple,
+          # invite links, alerts), so the export below can read them and re-sign for the App Store with Apple's
+          # cloud-managed distribution certificate.
+          archive CODE_SIGNING_ALLOWED=NO
+          APP=build/Time2Play.xcarchive/Products/Applications/Time2Play.app
+          ENT="$RUNNER_TEMP/Time2Play.entitlements"
+          cp App/Time2Play.entitlements "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :application-identifier string $TEAM.live.time2play.app" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM" "$ENT"
+          find "$APP" -depth \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" \) -exec codesign --force --sign - {} \;
+          codesign --force --sign - --entitlements "$ENT" --generate-entitlement-der "$APP"
+          codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -p - | head -20
           echo "archive_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Export and upload to TestFlight
         env:
@@ -97,14 +104,17 @@ jobs:
             | grep -v -E "^\s*$" | tail -40
           echo "export_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
           echo "UPLOADED version 1.0 build $BUILD (destination: $DEST)"
-      - name: What was signed
+      - name: What was built
         if: always()
         run: |
           APP=build/Time2Play.xcarchive/Products/Applications/Time2Play.app
           [ -d "$APP" ] || exit 0
-          codesign -dv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier=" | head -5
-          codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$APP/Info.plist" 2>/dev/null || echo "no CFBundleIconName"
+          ls "$APP" | head -40
+          plutil -p "$APP/Info.plist" | grep -E "CFBundle(Icon|Version|ShortVersion|DisplayName)|Icon" || true
+          for f in build/export/*.ipa; do [ -f "$f" ] && ls -la "$f"; done
+          ls "$RUNNER_TEMP"/../*/*.xcdistributionlogs 2>/dev/null | head -3 || true
+          L=$(ls -d /var/folders/*/*/T/Time2Play_*.xcdistributionlogs 2>/dev/null | tail -1)
+          [ -n "$L" ] && { ls "$L"; grep -h -i -E "error|forbidden|detail" "$L"/*.log 2>/dev/null | grep -v -i -E "key|token|authorization|bearer" | tail -15; } || true
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
