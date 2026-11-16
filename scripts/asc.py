@@ -239,6 +239,124 @@ def wait(number, minutes=40):
         print(f"Build {number} is still processing after {minutes} minutes; it shows in TestFlight when Apple finishes")
 
 
+# ---------- the App Store listing (#407): fills things in, never submits ----------
+
+SHOT_TYPES = {"iphone": "APP_IPHONE_67", "ipad": "APP_IPAD_PRO_3GEN_129"}  # 6.9" iPhone, 13" iPad
+
+
+def one(path):
+    got = call("GET", path, ok_missing=True)
+    return got.get("data") if got else None
+
+
+def upload_shot(set_id, path):
+    data = open(path, "rb").read()
+    made = call("POST", "/v1/appScreenshots", {"data": {"type": "appScreenshots", "attributes": {
+        "fileName": os.path.basename(path), "fileSize": len(data)},
+        "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})["data"]
+    for op in made["attributes"]["uploadOperations"]:
+        part = data[op["offset"]:op["offset"] + op["length"]]
+        req = urllib.request.Request(op["url"], data=part, method=op["method"],
+                                     headers={h["name"]: h["value"] for h in op.get("requestHeaders", [])})
+        urllib.request.urlopen(req, timeout=120).read()
+    call("PATCH", f"/v1/appScreenshots/{made['id']}", {"data": {"type": "appScreenshots", "id": made["id"], "attributes": {
+        "uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+
+
+def store(meta_path, shots_dir):
+    meta = json.load(open(meta_path))
+    loc = meta["locale"]
+    app = the_app()
+    app_id = app["id"]
+    print(f"App: {app['attributes']['name']} ({app_id})")
+
+    # the version (1.0, still being prepared)
+    versions = call("GET", f"/v1/apps/{app_id}/appStoreVersions" + q({"filter[platform]": "IOS", "limit": 20}))["data"]
+    editable = [v for v in versions if v["attributes"].get("appStoreState") in
+                ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED")]
+    if editable:
+        version = editable[0]
+    else:
+        version = call("POST", "/v1/appStoreVersions", {"data": {"type": "appStoreVersions", "attributes": {
+            "platform": "IOS", "versionString": VERSION},
+            "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+    vid = version["id"]
+    call("PATCH", f"/v1/appStoreVersions/{vid}", {"data": {"type": "appStoreVersions", "id": vid, "attributes": {
+        "copyright": meta["copyright"]}}})
+    print(f"Version {version['attributes']['versionString']}: {version['attributes'].get('appStoreState')}")
+
+    # the version's words
+    fields = {k: meta[k] for k in ("description", "keywords", "promotionalText", "supportUrl", "marketingUrl")}
+    locs = call("GET", f"/v1/appStoreVersions/{vid}/appStoreVersionLocalizations")["data"]
+    vloc = next((l for l in locs if l["attributes"]["locale"] == loc), None)
+    if vloc:
+        call("PATCH", f"/v1/appStoreVersionLocalizations/{vloc['id']}", {"data": {
+            "type": "appStoreVersionLocalizations", "id": vloc["id"], "attributes": fields}})
+    else:
+        vloc = call("POST", "/v1/appStoreVersionLocalizations", {"data": {"type": "appStoreVersionLocalizations",
+            "attributes": dict(fields, locale=loc),
+            "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})["data"]
+    print("Description, keywords, promotional text, support and marketing links: set")
+
+    # the app's name, subtitle, privacy link and category
+    infos = call("GET", f"/v1/apps/{app_id}/appInfos")["data"]
+    info = next((i for i in infos if i["attributes"].get("appStoreState") != "READY_FOR_SALE"), infos[0])
+    ilocs = call("GET", f"/v1/appInfos/{info['id']}/appInfoLocalizations")["data"]
+    iloc = next((l for l in ilocs if l["attributes"]["locale"] == loc), None)
+    attrs = {"name": meta["name"], "subtitle": meta["subtitle"], "privacyPolicyUrl": meta["privacyPolicyUrl"]}
+    if iloc:
+        call("PATCH", f"/v1/appInfoLocalizations/{iloc['id']}", {"data": {"type": "appInfoLocalizations", "id": iloc["id"], "attributes": attrs}})
+    print("Name, subtitle and privacy policy link: set")
+    rel = {"primaryCategory": meta["primaryCategory"], "primarySubcategoryOne": meta["primarySubcategoryOne"],
+           "primarySubcategoryTwo": meta["primarySubcategoryTwo"]}
+    call("PATCH", f"/v1/appInfos/{info['id']}", {"data": {"type": "appInfos", "id": info["id"], "relationships": {
+        k: {"data": {"type": "appCategories", "id": v}} for k, v in rel.items()}}})
+    print("Category: Games (Card, Family)")
+
+    # App Review's details; the review key goes in from the secret, here only
+    r = meta["review"]
+    notes = r["notes"].replace("{REVIEW_KEY}", os.environ.get("REVIEW_SIGNIN_KEY") or "(the review key: add it here)")
+    rattrs = {"contactFirstName": r["contactFirstName"], "contactLastName": r["contactLastName"],
+              "contactEmail": r["contactEmail"], "demoAccountRequired": r["demoAccountRequired"], "notes": notes}
+    detail = one(f"/v1/appStoreVersions/{vid}/appStoreReviewDetail")
+    if detail:
+        call("PATCH", f"/v1/appStoreReviewDetails/{detail['id']}", {"data": {"type": "appStoreReviewDetails", "id": detail["id"], "attributes": rattrs}})
+    else:
+        call("POST", "/v1/appStoreReviewDetails", {"data": {"type": "appStoreReviewDetails", "attributes": rattrs,
+            "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+    print("Review notes and contact: set (the phone number is Tyler's to add)")
+
+    # screenshots: only into an empty set, so a re-run never doubles them and never deletes any
+    sets = call("GET", f"/v1/appStoreVersionLocalizations/{vloc['id']}/appScreenshotSets")["data"]
+    for device, kind in SHOT_TYPES.items():
+        files = sorted(f for f in os.listdir(shots_dir) if f.startswith(f"store-{device}-") and f.endswith(".png"))
+        if not files:
+            print(f"Screenshots {kind}: none made")
+            continue
+        s = next((x for x in sets if x["attributes"]["screenshotDisplayType"] == kind), None)
+        if not s:
+            s = call("POST", "/v1/appScreenshotSets", {"data": {"type": "appScreenshotSets", "attributes": {
+                "screenshotDisplayType": kind}, "relationships": {"appStoreVersionLocalization": {
+                "data": {"type": "appStoreVersionLocalizations", "id": vloc["id"]}}}}})["data"]
+        have = call("GET", f"/v1/appScreenshotSets/{s['id']}/appScreenshots")["data"]
+        if have:
+            print(f"Screenshots {kind}: {len(have)} already there, left as they are")
+            continue
+        for f in files:
+            upload_shot(s["id"], os.path.join(shots_dir, f))
+        print(f"Screenshots {kind}: uploaded {len(files)}")
+
+    # the newest processed build, picked for this version (Tyler can pick another)
+    done = [b for b in builds(app_id) if b["attributes"]["processingState"] == "VALID" and not b["attributes"].get("expired")]
+    if done:
+        b = done[0]
+        call("PATCH", f"/v1/appStoreVersions/{vid}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
+        print(f"Build for review: {b['attributes']['version']}")
+    else:
+        print("Build for review: none processed yet")
+    print("Not submitted. Submitting for review is Tyler's call.")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "signing":
@@ -247,5 +365,7 @@ if __name__ == "__main__":
         wait(sys.argv[2])
     elif cmd == "status":
         status()
+    elif cmd == "store":
+        store(sys.argv[2], sys.argv[3])
     else:
         die(__doc__)
