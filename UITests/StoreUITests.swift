@@ -46,7 +46,9 @@ final class StoreUITests: XCTestCase {
         // The Library
         app = launch()
         XCTAssertTrue(app.textFields["room-code"].waitForExistence(timeout: 10))
-        tapWhenReady(app.tabBars.buttons["Library"]); sleep(3)
+        // iPad shows the tabs along the top, not in a tab bar
+        let tab = app.tabBars.buttons["Library"]
+        tapWhenReady(tab.waitForExistence(timeout: 5) ? tab : app.buttons["Library"].firstMatch); sleep(3)
         shot(app, "store-\(device)-5-library")
     }
 }

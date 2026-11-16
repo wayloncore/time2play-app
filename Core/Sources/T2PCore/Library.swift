@@ -37,10 +37,20 @@ public struct Library: Equatable, Sendable {
             let p = $0["facts"]["players"].array.compactMap(\.int)
             let game = $0["app"].string.flatMap(Game.init(rawValue:))
             return Item(key: key, title: game != nil ? ($0["appTitle"].string ?? title) : title,
-                        category: $0["category"].string ?? "", blurb: $0["blurb"].string, thumb: $0["thumb"].string,
+                        category: $0["category"].string ?? "", blurb: $0["blurb"].string.map(Library.plain), thumb: $0["thumb"].string,
                         page: $0["page"].string ?? "/library/\(key)", players: p.count == 2 ? (p[0], p[1]) : nil,
                         phones: $0["facts"]["phones"].string, game: game)
         }
+    }
+
+    /// A blurb as plain words: some website blurbs carry HTML (<strong>, &amp;), which a Text would show as-is.
+    public static func plain(_ html: String) -> String {
+        var t = html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        for (e, c) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&rsquo;", "’"),
+                       ("&lsquo;", "‘"), ("&ldquo;", "“"), ("&rdquo;", "”"), ("&mdash;", "—"), ("&ndash;", "–"), ("&amp;", "&")] {
+            t = t.replacingOccurrences(of: e, with: c)
+        }
+        return t.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The cards in one category, in the Library's order.
