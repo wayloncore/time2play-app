@@ -27,14 +27,16 @@ final class DiceUITests: XCTestCase {
         XCTAssertFalse(roll.exists && roll.isEnabled && app.staticTexts["dice-status"].label.contains("Roll all six"), "the turn moved on")
         // #488: the bot's roll lands on this phone too, faces showing, not just its result
         let end = Date().addingTimeInterval(30)
-        var seen = false
+        var seen = false, said = "", faces: [String] = []
         while Date() < end && !seen {
             let status = app.staticTexts["dice-status"]
-            let faces = dieLabels(app)
-            if status.exists && status.label.contains("June") && !faces.isEmpty && faces.allSatisfy({ $0.hasPrefix("Die showing") }) { seen = true }
+            said = status.exists ? status.label : "(no status)"
+            faces = dieLabels(app)
+            if said.contains("June") && !faces.isEmpty && faces.allSatisfy({ $0.hasPrefix("Die showing") }) { seen = true }
             else { usleep(300_000) }
         }
-        XCTAssertTrue(seen, "June's roll lands on your screen")
+        if !seen { shot(app, "488-online-bot-roll-missing") }
+        XCTAssertTrue(seen, "June's roll lands on your screen; last status: \(said), dice: \(faces)")
         shot(app, "488-online-bot-roll")
     }
 

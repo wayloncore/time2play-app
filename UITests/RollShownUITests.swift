@@ -11,21 +11,24 @@ final class RollShownUITests: XCTestCase {
         startOffline(app, "farkle", bot: "bold")
         let roll = app.buttons["roll"]
         let banner = app.descendants(matching: .any)["farkle-banner"]
-        let scoring = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-' AND value == 'scores'")).firstMatch
+        let status = app.staticTexts["dice-status"]
         var shotAir = false, shotScores = false
         for _ in 0..<20 {
             XCTAssertTrue(waitEnabled(roll, 90), "your roll")
             roll.tap()
             if !shotAir { shot(app, "488-hot-dice-in-the-air"); shotAir = true }
-            // the result: a Farkle, dice marked as scoring, or hot dice
+            // the result: a Farkle, your dice to choose from, or hot dice
             let end = Date().addingTimeInterval(15)
-            var result = ""
+            var result = "", said = ""
             while Date() < end && result.isEmpty {
-                if banner.exists { result = "farkle" } else if scoring.exists { result = "scores" }
-                else if app.staticTexts["dice-status"].exists && app.staticTexts["dice-status"].label.contains("Hot dice") { result = "hot" }
+                said = status.exists ? status.label : "(no status)"
+                if banner.exists { result = "farkle" }
+                else if said.contains("Tap the dice") { result = "choose" }
+                else if said.contains("Hot dice") { result = "hot" }
                 else { usleep(150_000) }
             }
-            XCTAssertFalse(result.isEmpty, "the roll lands")
+            if result.isEmpty { shot(app, "488-hot-dice-no-result") }
+            XCTAssertFalse(result.isEmpty, "the roll lands; the status says: \(said)")
             if result == "hot" { continue }
             let faces = dieLabels(app)
             XCTAssertFalse(faces.isEmpty, "the dice that came up stay on screen")
@@ -37,8 +40,15 @@ final class RollShownUITests: XCTestCase {
                 shot(app, "488-hot-dice-farkle")
                 return
             }
+            let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
+            let values = dice.map { ($0.value as? String) ?? "" }
+            guard let pick = dice.indices.first(where: { values[$0] == "scores" }) else {
+                shot(app, "488-hot-dice-no-scoring-mark")
+                XCTFail("a roll you choose from marks the dice that score: \(faces) \(values)")
+                return
+            }
             if !shotScores { shot(app, "488-hot-dice-scoring-marked"); shotScores = true }
-            scoring.tap()   // keep one scoring die (or its set), then roll the rest: a Farkle comes soon
+            dice[pick].tap()   // keep one scoring die (or its set), then roll the rest: a Farkle comes soon
             usleep(600_000)
         }
         XCTFail("no Farkle came up in 20 rolls")

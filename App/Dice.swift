@@ -89,6 +89,12 @@ struct Landing: ViewModifier {
     }
 }
 
+/// A die as a button that never greys out when it can't be tapped (someone else's roll, dice in the air): the dice say
+/// what they mean themselves, dimmed only when they can't score.
+struct DieButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { configuration.label.contentShape(Rectangle()) }
+}
+
 /// A side-to-side shake, three times across, as the website shakes a Farkle's dice.
 struct Shake: GeometryEffect {
     var progress: CGFloat
@@ -379,7 +385,7 @@ struct HotDiceView: View {
                         Text(canScore == true && !sel ? "SCORES" : " ").font(.caption2.weight(.bold)).foregroundStyle(T2P.gold)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DieButtonStyle())
                 .disabled(!tappable)
                 .accessibilityLabel(t.state == "rolling" || d.v == nil ? "Die, rolling" : "Die showing \(d.v!)")
                 .accessibilityValue(sel ? "kept" : canScore == true ? "scores" : canScore == false ? "doesn’t score" : "")

@@ -101,7 +101,7 @@ struct RollCallView: View {
                             Text(held ? "HELD" : " ").font(.caption2.weight(.bold)).foregroundStyle(T2P.gold)
                         }
                     }
-                    .buttonStyle(.plain).disabled(!canHold || tumbling != nil)
+                    .buttonStyle(DieButtonStyle()).disabled(!canHold || tumbling != nil)
                     .accessibilityLabel(air ? "Die, rolling" : view.diceShown && i < t.dice.count ? "Die showing \(t.dice[i])" : "Die, not rolled yet")
                     .accessibilityValue(held ? "held" : "")
                     .accessibilityIdentifier("rc-die-\(i)")
