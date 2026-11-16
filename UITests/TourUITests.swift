@@ -59,3 +59,40 @@ final class TourUITests: XCTestCase {
         tapWhenReady(app.buttons["tv-close"])
     }
 }
+
+/// #405's accessibility pass: Apple's audit (labels, hit areas, Dynamic Type, contrast) on the main screens. Each issue
+/// is printed into the log as AUDIT lines and doesn't fail the run, so they're read and fixed by hand.
+final class AuditUITests: XCTestCase {
+    private func audit(_ app: XCUIApplication, _ screen: String) throws {
+        try app.performAccessibilityAudit { issue in
+            print("AUDIT \(screen) · \(issue.auditType) · \(issue.compactDescription) · \(issue.element?.debugDescription.prefix(160) ?? "")")
+            return true
+        }
+    }
+
+    func testAuditMainScreens() throws {
+        let app = launch(["-t2p-name", "Sim"])
+        XCTAssertTrue(app.textFields["room-code"].waitForExistence(timeout: 10))
+        try audit(app, "home")
+        tapWhenReady(app.tabBars.buttons["Library"]); sleep(2)
+        try audit(app, "library")
+        tapWhenReady(app.tabBars.buttons["You"])
+        try audit(app, "you")
+        tapWhenReady(app.tabBars.buttons["Play"])
+        app.swipeUp()
+        tapWhenReady(app.buttons["offline-overdraft"])
+        tapWhenReady(app.buttons["addbot-easy"]); sleep(1)
+        app.buttons["addbot-normal"].tap(); sleep(1)
+        try audit(app, "lobby")
+        tapWhenReady(app.buttons["start-game"])
+        XCTAssertTrue(app.buttons["draw"].waitForExistence(timeout: 10)); sleep(2)
+        try audit(app, "overdraft")
+        app.buttons["leave"].tap()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Leave the'")).firstMatch, 5)
+        app.swipeUp()
+        tapWhenReady(app.buttons["offline-farkle"])
+        tapWhenReady(app.buttons["addbot-steady"]); sleep(1)
+        tapWhenReady(app.buttons["start-game"]); sleep(3)
+        try audit(app, "hot-dice")
+    }
+}
