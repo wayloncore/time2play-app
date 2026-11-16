@@ -116,7 +116,7 @@ extension PlayView {
     var offline: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("No signal? Practice with bots").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-            Text("Same rules, played on your phone. Practice games don’t count.").font(.subheadline).foregroundStyle(T2P.muted)
+            Text("Same rules, played on this device. Practice games don’t count.").font(.subheadline).foregroundStyle(T2P.muted)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(Game.allCases) { g in

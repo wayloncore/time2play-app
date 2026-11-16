@@ -35,6 +35,8 @@ struct OverdraftTableView: View {
             ReactionBar(room: room)
         }
         .overlay { if table.over || view.phase == "done" { HandOver(room: room, view: view) } }
+        // a card table can't reflow like a list: its words grow to the largest standard size, and VoiceOver reads all of it
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .confirmationDialog("Pick the suit", isPresented: Binding(get: { wild != nil }, set: { if !$0 { wild = nil } }), titleVisibility: .visible) {
             ForEach(Overdraft.suits, id: \.self) { s in
                 Button(Overdraft.suitNames[s] ?? s) { if let c = wild { send(c, suit: s, jump: wildJump) }; wild = nil }
@@ -223,6 +225,7 @@ struct HandView: View {
 
 /// Another player's seat: face, name, how many cards, whose turn, a bot, away.
 struct SeatCard: View {
+    @ScaledMetric(relativeTo: .headline) private var face: CGFloat = 58
     let seat: Overdraft.Seat
     let turn: Bool
     let owner: Bool
@@ -230,7 +233,7 @@ struct SeatCard: View {
     var body: some View {
         let bot = seat.name.hasSuffix(" (bot)") && !seat.held
         VStack(spacing: 6) {
-            FaceView(face: seat.face, size: 58, dimmed: !seat.connected)
+            FaceView(face: seat.face, size: face, dimmed: !seat.connected)
                 .overlay(Circle().stroke(turn ? T2P.gold : .clear, lineWidth: 3).padding(-3))
                 .overlay(Circle().stroke(style: StrokeStyle(lineWidth: 2, dash: [4, 3])).foregroundStyle(seat.connected ? .clear : T2P.muted).padding(-4))
             HStack(spacing: 4) {
@@ -263,6 +266,7 @@ struct TurnClock: View {
                 Circle().trim(from: 0, to: min(1, left / total)).stroke(left < 10 ? T2P.ember : T2P.gold, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text("\(Int(left.rounded(.up)))").font(.title3.monospacedDigit().bold()).foregroundStyle(T2P.text)
+                    .lineLimit(1).minimumScaleFactor(0.5).padding(6)
             }
             .frame(width: 56, height: 56)
             .accessibilityLabel("\(Int(left.rounded(.up))) seconds left")

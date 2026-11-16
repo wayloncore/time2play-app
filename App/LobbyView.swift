@@ -25,6 +25,7 @@ extension RoomModel {
 /// The lobby: the code, QR and Share; who's here; bots; house rules; and, for the room's owner, Start.
 /// Option A in the plan (#385): the owner runs the room, a player like everyone else. No big screen needed.
 struct LobbyView: View {
+    @ScaledMetric(relativeTo: .headline) private var face: CGFloat = 48
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
     var onLeave: () -> Void
@@ -43,7 +44,7 @@ struct LobbyView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(room.game.title).font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                        Text(room.offline ? "Practice with bots, on this phone · nothing here counts"
+                        Text(room.offline ? "Practice with bots, on this device · nothing here counts"
                              : room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
                             .foregroundStyle(T2P.muted)
                     }
@@ -141,7 +142,7 @@ struct LobbyView: View {
         let sub = [p.bot != nil ? "Bot · \(p.bot!)" : nil, isOwnerRow ? "owner" : nil, !p.connected && p.bot == nil ? "away" : nil,
                    p.held ? "a bot is playing for them" : nil].compactMap { $0 }.joined(separator: " · ")
         return HStack(spacing: 14) {
-            FaceView(face: p.face, size: 48, dimmed: !p.connected && p.bot == nil)
+            FaceView(face: p.face, size: face, dimmed: !p.connected && p.bot == nil)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(me ? "You" : p.name).font(.headline).foregroundStyle(T2P.text)
@@ -228,7 +229,7 @@ struct LobbyView: View {
 struct Tag: View {
     let text: String
     var body: some View {
-        Text(text).font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(T2P.muted)
+        Text(text).font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(T2P.muted).fixedSize()
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(T2P.panelHi, in: RoundedRectangle(cornerRadius: 6))
     }

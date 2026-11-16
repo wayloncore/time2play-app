@@ -50,6 +50,7 @@ struct DieView: View {
 
 /// A scores strip: everyone at the table, whose turn it is, and each score.
 struct ScoreStrip: View {
+    @ScaledMetric(relativeTo: .headline) private var face: CGFloat = 44
     let players: [ScorePlayer]
     let turn: String?
     let owner: String?
@@ -60,7 +61,7 @@ struct ScoreStrip: View {
             HStack(spacing: 10) {
                 ForEach(players.filter { !$0.left }) { p in
                     VStack(spacing: 4) {
-                        FaceView(face: p.face, size: 44, dimmed: !p.connected && p.bot == nil)
+                        FaceView(face: p.face, size: face, dimmed: !p.connected && p.bot == nil)
                             .overlay(Circle().stroke(turn == p.id ? T2P.gold : .clear, lineWidth: 3).padding(-3))
                         HStack(spacing: 3) {
                             Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.caption.weight(.semibold)).foregroundStyle(T2P.text).lineLimit(1)
@@ -126,6 +127,7 @@ struct GameOver: View {
 /// Hot Dice (#401): the website's Farkle Live, with no big screen, against Penny, June and Rex.
 struct HotDiceView: View {
     @ObservedObject var room: RoomModel
+    @Environment(\.horizontalSizeClass) private var hsize
     let view: HotDice.View
     var onLeave: () -> Void
     @State private var celebrate: HotDice.Highlight?
@@ -154,6 +156,7 @@ struct HotDiceView: View {
             }
         }
         .overlay { if let c = celebrate { Celebration(h: c).onTapGesture { celebrate = nil } } }
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)   // a table, like Overdraft's: words to the largest standard size
         .onChange(of: t?.hl?.seq) { _, s in
             if mine, let h = t?.hl, s != nil, h.tier >= 2 {
                 celebrate = h; Haptics.yourTurn()
@@ -221,12 +224,12 @@ struct HotDiceView: View {
                 }
                 .accessibilityElement(children: .combine)
                 let live = t.dice.filter { t.live.contains($0.id) }
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(70), spacing: 14), count: min(3, max(1, live.count))), spacing: 14) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(hsize == .regular ? 104 : 70), spacing: 14), count: min(3, max(1, live.count))), spacing: 14) {
                     ForEach(live) { d in
                         let sel = t.sel.contains(d.id)
                         let tappable = mine && t.state == "choose" && !view.common.held
                         Button { if tappable { room.move("tap", ["die": .number(Double(d.id))]); Haptics.select() } } label: {
-                            DieView(value: t.state == "rolling" ? nil : d.v, size: 64, selected: sel, dimmed: t.state == "farkle")
+                            DieView(value: t.state == "rolling" ? nil : d.v, size: hsize == .regular ? 96 : 64, selected: sel, dimmed: t.state == "farkle")
                         }
                         .buttonStyle(.plain)
                         .disabled(!tappable)
