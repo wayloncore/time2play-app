@@ -1,0 +1,49 @@
+# XcodeGen spec: the Mac workflow turns it into Time2Play.xcodeproj (the project file isn't kept in git).
+name: Time2Play
+options:
+  bundleIdPrefix: live.time2play
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  T2PCore:
+    path: Core
+targets:
+  Time2Play:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: T2PCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_CFBundleDisplayName: Time2Play
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+  Time2PlayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: Time2Play
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+        TEST_TARGET_NAME: Time2Play
+schemes:
+  Time2Play:
+    build:
+      targets:
+        Time2Play: all
+        Time2PlayUITests: [test]
+    test:
+      targets: [Time2PlayUITests]
