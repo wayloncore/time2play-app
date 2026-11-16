@@ -49,6 +49,21 @@ final class ViewsTests: XCTestCase {
         let o = try XCTUnwrap(v.options)
         XCTAssertEqual(o.scores.count, 13); XCTAssertFalse(o.allowed.isEmpty)
         XCTAssertEqual(RollCall.boxes.count, 13)
+        XCTAssertNotNil(v.rollKey, "a roll that has happened has a name")
+    }
+
+    /// #488: a Farkle says why, and Roll Call keeps the dice the last box was scored with.
+    func testRollsShown() throws {
+        XCTAssertEqual(HotDice.farkleWhy(dice: 3), "No 1s, no 5s, no three of a kind")
+        XCTAssertEqual(HotDice.farkleWhy(dice: 6), "No 1s, no 5s, no three of a kind, no three pairs")
+        let text = #"{"phase":"playing","turn":{"id":"p2","dice":[2,2,3,3,6],"held":[false,false,false,false,false],"rolls":0},"#
+            + #""last":{"n":4,"id":"p1","key":"chance","points":19,"extra":0,"dice":[6,4,4,3,2]},"players":[{"id":"p1","name":"Rosa"}]}"#
+        let v = RollCall.View(try XCTUnwrap(JSON.parse(text)))
+        XCTAssertEqual(v.lastDice, [6, 4, 4, 3, 2]); XCTAssertEqual(v.lastN, 4)
+        XCTAssertEqual(v.lastLine, "Rosa scored 19 in Chance")
+        XCTAssertNil(v.rollKey, "no roll yet this turn")
+        let older = RollCall.View(try XCTUnwrap(JSON.parse(#"{"phase":"playing","players":[]}"#)))
+        XCTAssertEqual(older.lastDice, [], "a view with no last box reads as no dice")
     }
 
     func testCloseEnough() throws {

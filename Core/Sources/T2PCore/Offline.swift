@@ -31,6 +31,12 @@ public final class OfflineRules {
     func next(_ room: Int) -> Double { api.invokeMethod("next", withArguments: [room]).toDouble() }
     func close(_ room: Int) { api.invokeMethod("close", withArguments: [room]) }
 
+    /// Hot Dice (#488): which faces in a roll can score, by the website's own scoring (its phone dims the rest).
+    public func scoringFaces(_ values: [Int], ones: Int) -> Set<Int> {
+        let text = api.invokeMethod("scoring", withArguments: ["[" + values.map(String.init).joined(separator: ",") + "]", ones]).toString() ?? "[]"
+        return Set(JSON.parse(text)?.array.compactMap(\.int) ?? [])
+    }
+
     /// One seeded game played start to end, as the parity check compares it with Node's.
     public func parity(_ game: String, seed: Int) -> JSON? { JSON.parse(api.invokeMethod("parity", withArguments: [game, seed]).toString()) }
 }
