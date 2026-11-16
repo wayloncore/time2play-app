@@ -17,12 +17,16 @@ targets:
     info:
       path: App/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Time2Play
+        ITSAppUsesNonExemptEncryption: false
         # time2play://join/K7QP: the app's own links (a notification, a test); invite links are time2play.live/K7QP
         CFBundleURLTypes:
           - CFBundleURLName: live.time2play.app
             CFBundleURLSchemes: [time2play]
-    # Used once builds are signed with Tyler's Apple account (#406): invite links that open the app, invite alerts,
-    # Sign in with Apple. Unsigned simulator builds leave them out.
+    # Used by the signed builds (#406): invite links that open the app, invite alerts, Sign in with Apple. Unsigned
+    # simulator builds leave them out. The TestFlight workflow switches aps-environment to production.
     entitlements:
       path: App/Time2Play.entitlements
       properties:
@@ -44,6 +48,17 @@ targets:
         SWIFT_VERSION: "5.0"
         CODE_SIGNING_ALLOWED: NO
         TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: 6WK983RXJT
+      # Release is the signed App Store build (.github/workflows/testflight.yml, #406). It signs by hand with the
+      # distribution certificate and the App Store profile the workflow fetches (scripts/asc.py); T2P_PROFILE is the
+      # profile's name, passed on the xcodebuild line. The simulator runs use Debug, unsigned.
+      configs:
+        Release:
+          CODE_SIGNING_ALLOWED: YES
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: $(T2P_PROFILE)
   Time2PlayUITests:
     type: bundle.ui-testing
     platform: iOS
