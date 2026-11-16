@@ -25,11 +25,14 @@ extension RoomModel {
 /// The lobby: the code, QR and Share; who's here; bots; house rules; and, for the room's owner, Start.
 /// Option A in the plan (#385): the owner runs the room, a player like everyone else. No big screen needed.
 struct LobbyView: View {
+    @ScaledMetric(relativeTo: .headline) private var face: CGFloat = 48
     @ObservedObject var room: RoomModel
+    @EnvironmentObject var app: AppModel
     var onLeave: () -> Void
     @State private var removing: LobbyPlayer?
     @State private var confirmEnd = false
     @State private var showQR = false
+    @State private var tv = false
 
     private var players: [LobbyPlayer] { room.lobbyPlayers }
     private var owner: Bool { room.isOwner }
@@ -41,10 +44,11 @@ struct LobbyView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(room.game.title).font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                        Text(room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
+                        Text(room.offline ? "Practice with bots, on this device · nothing here counts"
+                             : room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
                             .foregroundStyle(T2P.muted)
                     }
-                    codePanel
+                    if !room.offline { codePanel }
                     if room.phase == "playing" || room.phase == "done" {
                         Label(room.game == .overdraft ? "A hand is on. You’re dealt in at the next one." : "A game is on. You’ll play in the next one.",
                               systemImage: "hourglass").foregroundStyle(T2P.muted)
@@ -66,12 +70,17 @@ struct LobbyView: View {
             Button("Keep it open", role: .cancel) {}
         }
         .sheet(isPresented: $showQR) { BigQR(code: room.code, link: room.inviteLink) }
+        .sheet(isPresented: $tv) { ShowOnTV() }
     }
 
     private var topBar: some View {
         HStack {
             Button("Leave", action: onLeave).foregroundStyle(T2P.goldText).accessibilityIdentifier("leave")
             Spacer()
+            if !room.offline {
+                Button { tv = true } label: { Image(systemName: "tv").font(.headline).foregroundStyle(T2P.text).frame(width: 44, height: 44) }
+                    .accessibilityLabel("Show on TV").accessibilityIdentifier("show-on-tv")
+            }
             if owner {
                 Label("You own this room", systemImage: "crown.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
@@ -133,7 +142,7 @@ struct LobbyView: View {
         let sub = [p.bot != nil ? "Bot · \(p.bot!)" : nil, isOwnerRow ? "owner" : nil, !p.connected && p.bot == nil ? "away" : nil,
                    p.held ? "a bot is playing for them" : nil].compactMap { $0 }.joined(separator: " · ")
         return HStack(spacing: 14) {
-            FaceView(face: p.face, size: 48, dimmed: !p.connected && p.bot == nil)
+            FaceView(face: p.face, size: face, dimmed: !p.connected && p.bot == nil)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(me ? "You" : p.name).font(.headline).foregroundStyle(T2P.text)
@@ -152,6 +161,13 @@ struct LobbyView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel([me ? "You" : p.name, sub].filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityIdentifier("player-\(p.id)")
+        .contextMenu {
+            // report a name from any player list (#395); guests can too. No free text: a preset reason.
+            if !me && p.bot == nil && !room.offline {
+                Button("Report their name") { Task { try? await app.api.report(name: p.name, why: "name", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
+                Button("Report how they play") { Task { try? await app.api.report(name: p.name, why: "behavior", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
+            }
+        }
     }
 
     private var addBots: some View {
@@ -195,7 +211,7 @@ struct LobbyView: View {
                 .buttonStyle(GoldButtonStyle())
                 .disabled(!enough)
                 .accessibilityIdentifier("start-game")
-                Text(enough ? "No big screen needed. Anyone can put it on a TV."
+                Text(room.offline ? "Offline: just you and the bots." : enough ? "No big screen needed. Anyone can put it on a TV."
                      : "Add a bot or invite someone: \(room.game.minPlayers) or more can play.")
                     .font(.footnote).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
                 Button("End the room") { confirmEnd = true }.font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)
@@ -213,7 +229,7 @@ struct LobbyView: View {
 struct Tag: View {
     let text: String
     var body: some View {
-        Text(text).font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(T2P.muted)
+        Text(text).font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(T2P.muted).fixedSize()
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(T2P.panelHi, in: RoundedRectangle(cornerRadius: 6))
     }
@@ -249,14 +265,17 @@ struct RulesEditor: View {
     }
 
     private func toggle(_ title: String, _ detail: String, _ on: Bool, _ change: @escaping (Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(get: { on }, set: change)) {
+        // the words beside the switch, not inside it: a switch's own label is drawn dimmed, too faint to read
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline).foregroundStyle(T2P.text)
                 Text(detail).font(.subheadline).foregroundStyle(T2P.muted)
             }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: Binding(get: { on }, set: change)).labelsHidden().tint(T2P.gold).disabled(!editable)
         }
-        .tint(T2P.gold)
-        .disabled(!editable)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(detail)
     }
 
     private func picker(_ title: String, _ options: [Int], _ value: Int, label: @escaping (Int) -> String, _ change: @escaping (Int) -> Void) -> some View {

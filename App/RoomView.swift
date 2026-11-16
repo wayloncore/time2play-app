@@ -14,7 +14,7 @@ struct RoomView: View {
         }
         .overlay(alignment: .top) { banners }
         .overlay(alignment: .bottom) { reactionsShown }
-        .preferredColorScheme(room.game == .overdraft && room.phase != "lobby" ? .dark : nil)
+        .preferredColorScheme((room.game == .overdraft || room.game == .hotDice) && room.phase != "lobby" && room.view != nil ? .dark : nil)   // the card table and the felt are dark either way
         .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
             Button(room.phase == "playing" ? "Leave the game" : "Leave the room", role: .destructive) { room.leave(); app.closeRoom() }
             Button("Stay", role: .cancel) {}
@@ -204,6 +204,7 @@ struct NameFacePicker: View {
             if name.isEmpty { name = app.profile.name }
             let want = app.profile.face ?? Int.random(in: 0..<Faces.count)
             if face == nil { face = Faces.firstFree(preferring: want, taken: room.taken) }
+            if room.offline { return }
             Task {
                 let t = await app.api.taken(room.game, code: room.code)
                 room.taken = t

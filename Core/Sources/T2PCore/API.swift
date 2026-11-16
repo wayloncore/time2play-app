@@ -11,6 +11,8 @@ public final class API: @unchecked Sendable {
     private let fetch: Fetch
     /// The signed-in session, sent as `Authorization: Bearer …` to the accounts paths only.
     public var session: String?
+    /// "ios 1.0": the app version an account was last seen with.
+    public var appVersion: String?
 
     public init(endpoints: Endpoints = .live, fetch: Fetch? = nil) {
         self.endpoints = endpoints
@@ -23,6 +25,7 @@ public final class API: @unchecked Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible {
         public var status: Int; public var message: String; public var code: String?
         public var description: String { message }
+        public init(status: Int, message: String, code: String?) { self.status = status; self.message = message; self.code = code }
     }
 
     /// GET or POST a path; JSON back. A non-2xx answer throws with the server's own words when it gave some.
@@ -33,6 +36,7 @@ public final class API: @unchecked Sendable {
         req.setValue("application/json", forHTTPHeaderField: "accept")
         if let b = body { req.httpBody = Data(b.text.utf8); req.setValue("application/json", forHTTPHeaderField: "content-type") }
         if auth, let s = session { req.setValue("Bearer \(s)", forHTTPHeaderField: "authorization") }
+        if let a = appVersion { req.setValue(a, forHTTPHeaderField: "x-t2p-app") }
         let (status, data) = try await fetch(req)
         let j = JSON.parse(data) ?? .null
         guard (200..<300).contains(status) else {

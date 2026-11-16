@@ -183,6 +183,12 @@ public enum CloseEnough {
             if unit.isEmpty { return s }
             return unit.hasPrefix("%") || unit.hasPrefix("°") ? s + unit : s + " " + unit
         }
+        /// "180–305 squares": the unit once.
+        public func formatRange(_ lo: Double, _ hi: Double) -> String {
+            let a = format(lo), b = format(hi)
+            guard !unit.isEmpty, !unit.hasPrefix("%"), !unit.hasPrefix("°"), a.hasSuffix(" " + unit) else { return "\(a)–\(b)" }
+            return "\(a.dropLast(unit.count + 1))–\(b)"
+        }
         public func snap(_ v: Double) -> Double {
             let s = step > 0 ? step : 1
             return min(ceiling, max(floor, (( v - floor) / s).rounded() * s + floor))

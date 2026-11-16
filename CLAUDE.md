@@ -19,6 +19,20 @@ it applies here too.
   pushed commit's message. Screenshots come back as base64 between `BEGIN-SHOT name` and `END-SHOT` in the job log.
   Report the Mac minutes each run used (they count 10x on a private repo).
 
+## Kept in step with the website (never written twice by hand)
+- `Core/Sources/T2PCore/Resources/rules.js`: the website's room cores (rules and bots) for offline games, bundled by
+  `node scripts/rules-bundle.mjs ../tyleralocke` (with the website checked out beside this repo). It also writes the
+  parity fixture the Mac checks in JavaScriptCore. Re-run it when a game's rules change on the website;
+  `--check` says whether the bundle is out of date.
+- `Core/Tests/T2PCoreTests/Fixtures/*.json`: real views from the website's room cores (`node scripts/fixtures.mjs
+  ../tyleralocke`). Re-run when a view grows a field the app reads.
+
+## UI tests and the live site
+- The UI tests play real rooms on tyleralocke.com (staging is behind the studio's sign-in, which a GitHub Mac can't
+  pass). Each run opens a few rooms there. Offline tests (`OfflineUITests`, the tour) need no network.
+- `REVIEW_SIGNIN_KEY` (a repository secret, Tyler's) lets the account tests sign in as App Review; they skip without it.
+- The workflow's `ipad` input runs `TourUITests` again on an iPad simulator.
+
 ## Rules (from #385)
 - Visibility is Tyler's: don't change this repo's (private) or anything else's.
 - Nothing goes live without its switch and Tyler's Approve. App Store releases only after he taps Approve.

@@ -25,7 +25,7 @@ struct LibraryView: View {
                     ForEach(app.library.categories) { c in
                         let items = app.library.items(in: c).filter { $0.game == nil }
                         if !items.isEmpty {
-                            Section { ForEach(items) { item($0) } } header: { Text(c.name) } footer: { if !c.line.isEmpty { Text(c.line) } }
+                            Section { ForEach(items) { item($0) } } header: { Text(c.name) } footer: { if !c.line.isEmpty { Text(c.line).foregroundStyle(T2P.muted) } }
                         }
                     }
                 } else {
@@ -91,43 +91,6 @@ struct LibraryRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// You: your name and face as a guest. Sign in with Apple (to save progress, friends and groups) comes in #403.
-struct YouView: View {
-    @EnvironmentObject var app: AppModel
-    @State private var picking = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    HStack(spacing: 16) {
-                        if let f = app.profile.face { FaceView(face: f, size: 64) }
-                        else { Image(systemName: "person.crop.circle").font(.system(size: 56)).foregroundStyle(T2P.muted) }
-                        VStack(alignment: .leading) {
-                            Text(app.profile.name.isEmpty ? "Guest" : app.profile.name).font(.title2.bold()).foregroundStyle(T2P.text)
-                            Text("Playing as a guest").foregroundStyle(T2P.muted)
-                        }
-                    }
-                    .padding(.vertical, 6)
-                    TextField("Your name", text: Binding(get: { app.profile.name }, set: { app.profile.name = String($0.prefix(12)) }))
-                        .textInputAutocapitalization(.words).autocorrectionDisabled()
-                    Button("Change your face") { picking = true }
-                } footer: { Text("Your name and face stay on this phone. Rooms see them while you play.") }
-                .listRowBackground(T2P.panel)
-                Section {
-                    Link("Help and support", destination: URL(string: "https://tyleralocke.com/help#app-support")!)
-                    Link("Privacy", destination: URL(string: "https://tyleralocke.com/privacy")!)
-                } footer: { Text("Time2Play \(AppModel.appVersion) · protocol v\(protocolVersion)") }
-                .listRowBackground(T2P.panel)
-            }
-            .scrollContentBackground(.hidden)
-            .background(T2P.navy.ignoresSafeArea())
-            .navigationTitle("You")
-            .sheet(isPresented: $picking) { FacePickerSheet(face: Binding(get: { app.profile.face }, set: { app.profile.face = $0 })) }
-        }
     }
 }
 

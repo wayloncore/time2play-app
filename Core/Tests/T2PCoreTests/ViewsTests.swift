@@ -59,6 +59,7 @@ final class ViewsTests: XCTestCase {
         XCTAssertEqual(q.worth(lo: q.floor, hi: q.floor), 20)
         XCTAssertEqual(q.snap(q.ceiling + 1000), q.ceiling)
         XCTAssertFalse(v.lockedIn)
+        if !q.unit.isEmpty && !q.unit.hasPrefix("%") { XCTAssertEqual(q.formatRange(q.floor, q.ceiling).components(separatedBy: q.unit).count, 2, "the unit once") }
     }
 
     func testLibraryFeed() {

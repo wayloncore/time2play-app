@@ -14,7 +14,9 @@ struct PlayView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     header
                     joinPanel
+                    ForEach(app.challenges) { c in Panel { ChallengeRow(c: c) } }
                     startRooms
+                    offline
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
@@ -87,10 +89,13 @@ struct PlayView: View {
 
     private var startRooms: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Start a room").font(.title2.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader).fixedSize()
+                    Spacer()
+                    Button("Library") { app.tab = .library }.foregroundStyle(T2P.goldText).fixedSize()
+                }
                 Text("Start a room").font(.title2.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button("Library") { app.tab = .library }.foregroundStyle(T2P.goldText)
             }
             Text("Private: only people with the code or link can join. Bots can fill seats.")
                 .font(.subheadline).foregroundStyle(T2P.muted)
@@ -100,6 +105,26 @@ struct PlayView: View {
                         .buttonStyle(.plain)
                         .disabled(app.busy)
                         .accessibilityIdentifier("start-\(g.rawValue)")
+                }
+            }
+        }
+    }
+}
+
+extension PlayView {
+    /// Bots with no signal (#402): the server's own rules, run on the phone. Practice: nothing reaches the server.
+    var offline: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No signal? Practice with bots").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
+            Text("Same rules, played on this device. Practice games don’t count.").font(.subheadline).foregroundStyle(T2P.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Game.allCases) { g in
+                        Button { app.startOffline(g) } label: { Label(g.title, systemImage: "airplane") }
+                            .buttonStyle(QuietButtonStyle())
+                            .accessibilityLabel("Practice \(g.title) offline")
+                            .accessibilityIdentifier("offline-\(g.rawValue)")
+                    }
                 }
             }
         }
@@ -163,6 +188,7 @@ struct CodeBoxes: View {
                 }
             }
             .accessibilityHidden(true)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)   // four boxes across, at every text size
             .onTapGesture { focused.wrappedValue = true }
             TextField("", text: Binding(get: { code }, set: { code = RoomCode.partial($0) }))
                 .textInputAutocapitalization(.characters)

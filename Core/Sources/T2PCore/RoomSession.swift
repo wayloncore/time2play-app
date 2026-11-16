@@ -93,6 +93,9 @@ public final class RoomSession {
     public let endpoints: Endpoints
     public let appVersion: String
     public var sessionToken: String?
+    /// The protocol this phone says it speaks. Always `protocolVersion`, except in the UI test that makes the real
+    /// server answer "Please update" (it does for anything below its oldest, 1).
+    public var helloVersion = protocolVersion
 
     public private(set) var status: Status = .connecting
     public private(set) var seat: Seat?
@@ -196,7 +199,7 @@ public final class RoomSession {
         switch e {
         case .opened:
             open = true
-            send(Out.hello(app: "ios \(appVersion)", session: sessionToken))
+            send(Out.hello(app: "ios \(appVersion)", session: sessionToken, v: helloVersion))
         case let .text(t):
             if let m = ServerMessage.decode(t) { receive(m) }
         case let .closed(code):

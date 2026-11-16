@@ -2,7 +2,7 @@
 .swiftpm/
 *.xcodeproj/
 build/
-shots/
+/shots/
 DerivedData/
 xcuserdata/
 .DS_Store

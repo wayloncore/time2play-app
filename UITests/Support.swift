@@ -38,3 +38,24 @@ extension XCTestCase {
         e.tap()
     }
 }
+
+extension XCTestCase {
+    /// Starts a game from Play as its owner (picking a name the first time) and adds one bot. Leaves you in the lobby.
+    func startAsOwner(_ app: XCUIApplication, game: String, bot: String) {
+        tapWhenReady(app.buttons["start-\(game)"])
+        let name = app.textFields["name"]
+        if name.waitForExistence(timeout: 20) {
+            name.tap(); name.typeText("Sim")
+            tapWhenReady(app.buttons["join-room"])
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["owner-chip"].waitForExistence(timeout: 20), "you own the room you start")
+        tapWhenReady(app.buttons["addbot-\(bot)"])
+        sleep(1)
+    }
+
+    func waitEnabled(_ e: XCUIElement, _ timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end { if e.exists && e.isEnabled { return true }; usleep(300_000) }
+        return false
+    }
+}
