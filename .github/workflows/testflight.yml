@@ -72,8 +72,11 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           security find-identity -v -p codesigning "$KC" | sed 's/[0-9A-F]\{40\}/<hash>/'
           # the profile, where Xcode looks for it
+          # (named by its UUID; the GITHUB_ENV values only reach later steps, so read it from the profile here)
+          UUID=$(security cms -D -i "$RUNNER_TEMP/sign/app.mobileprovision" | plutil -extract UUID raw -o - -)
+          echo "Profile UUID: $UUID"
           for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
-            mkdir -p "$d"; cp "$RUNNER_TEMP/sign/app.mobileprovision" "$d/$T2P_PROFILE_UUID.mobileprovision"
+            mkdir -p "$d"; cp "$RUNNER_TEMP/sign/app.mobileprovision" "$d/$UUID.mobileprovision"
           done
           echo "KEYCHAIN=$KC" >> "$GITHUB_ENV"
       - name: Generate the Xcode project (App Store entitlements)
