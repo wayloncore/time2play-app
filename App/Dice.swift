@@ -71,7 +71,7 @@ struct ScoreStrip: View {
                     }
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .frame(minWidth: 84)
-                    .background(.white.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Color.primary.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 14))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(p.id == me ? "You" : RoomPlayer.stripBot(p.name))\(p.bot != nil ? ", bot" : ""), \(p.score) points\(turn == p.id ? ", their turn" : "")\(detail(p).map { ", \($0)" } ?? "")")
                 }

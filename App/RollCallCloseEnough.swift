@@ -174,7 +174,7 @@ struct CloseEnoughView: View {
     @ViewBuilder private func ask(_ q: CloseEnough.Question) -> some View {
         if view.lockedIn {
             let waiting = view.players.filter { !$0.lockedIn && !$0.left && $0.id != me }.map { RoomPlayer.stripBot($0.name) }
-            Label("Locked in: \(q.format(view.answerLo ?? 0)) to \(q.format(view.answerHi ?? 0))", systemImage: "lock.fill")
+            Label("Locked in: \(q.formatRange(view.answerLo ?? 0, view.answerHi ?? 0))", systemImage: "lock.fill")
                 .font(.headline).foregroundStyle(T2P.text)
             if !waiting.isEmpty { Text("Waiting for \(waiting.joined(separator: ", ")).").foregroundStyle(T2P.muted) }
         } else if view.common.seated {
@@ -229,7 +229,7 @@ struct CloseEnoughView: View {
                     if q.stage == "ask" && p.lockedIn { Image(systemName: "checkmark.circle.fill").foregroundStyle(T2P.good).accessibilityLabel("locked in") }
                     Spacer()
                     if q.stage == "reveal", let r = q.results[p.id], let a = r.lo, let b = r.hi {
-                        Text("\(q.format(a))–\(q.format(b))").font(.caption).foregroundStyle(T2P.muted)
+                        Text(q.formatRange(a, b)).font(.caption).foregroundStyle(T2P.muted)
                     }
                     Text("\(p.score)").font(.headline.monospacedDigit()).foregroundStyle(T2P.text)
                 }

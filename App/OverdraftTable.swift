@@ -195,7 +195,7 @@ struct HandView: View {
                             CardImage(name: c.artName, width: w)
                                 .overlay(RoundedRectangle(cornerRadius: w / 14).stroke(ok ? T2P.gold : .clear, lineWidth: 3))
                                 .shadow(color: ok ? T2P.gold.opacity(0.5) : .black.opacity(0.4), radius: ok ? 8 : 3)
-                                .brightness(ok || !view.yourTurn ? 0 : -0.25)
+                                .brightness(ok || !view.yourTurn ? 0 : -0.12)
                         }
                         .buttonStyle(.plain)
                         .offset(x: CGFloat(i) * step, y: ok ? -16 : 0)
@@ -281,7 +281,7 @@ struct TableTopBar: View {
         HStack {
             Button(action: onLeave) {
                 Image(systemName: "chevron.left").font(.headline).foregroundStyle(T2P.text)
-                    .frame(width: 44, height: 44).background(.white.opacity(0.08), in: Circle())
+                    .frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
             }
             .accessibilityLabel("Leave").accessibilityIdentifier("leave")
             Spacer()
@@ -297,7 +297,7 @@ struct TableTopBar: View {
                 Button("Leave", role: .destructive, action: onLeave)
             } label: {
                 Image(systemName: "ellipsis").font(.headline).foregroundStyle(T2P.text)
-                    .frame(width: 44, height: 44).background(.white.opacity(0.08), in: Circle())
+                    .frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
             }
             .accessibilityLabel("Room menu")
         }
@@ -319,13 +319,13 @@ struct ReactionBar: View {
                 Button(r == .gg ? "GG" : r.words) { room.react(r) }
                     .font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
                     .padding(.horizontal, 14).frame(minHeight: 44)
-                    .background(.white.opacity(0.08), in: Capsule())
+                    .background(Color.primary.opacity(0.08), in: Capsule())
                     .accessibilityLabel("Send \(r.words)")
             }
             Spacer(minLength: 0)
             if !room.offline {
                 Button { tv = true } label: { Image(systemName: "tv").font(.headline) }
-                    .foregroundStyle(T2P.text).frame(width: 44, height: 44).background(.white.opacity(0.08), in: Circle())
+                    .foregroundStyle(T2P.text).frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
                     .accessibilityLabel("Show on TV").accessibilityIdentifier("show-on-tv")
             }
         }
