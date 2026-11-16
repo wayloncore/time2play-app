@@ -75,4 +75,13 @@ final class ViewsTests: XCTestCase {
         XCTAssertEqual(lib.search("hot").map(\.key), ["farkle-live"])
         XCTAssertNil(Library(["items": [:]]))
     }
+
+    /// A website blurb with HTML in it reads as plain words in the app (the Library screenshot showed "<strong>").
+    func testLibraryBlurbIsPlainText() {
+        XCTAssertEqual(Library.plain("<strong>This one needs wifi.</strong>  Put the host screen on &amp; play"),
+                       "This one needs wifi. Put the host screen on & play")
+        XCTAssertEqual(Library.plain("No tags here"), "No tags here")
+        let j: JSON = ["v": 1, "items": [["key": "buzzer", "title": "Live Buzzer", "category": "Live", "blurb": "<em>Fast</em> &ldquo;Buzzer&rdquo;"]]]
+        XCTAssertEqual(Library(j)!.items[0].blurb, "Fast “Buzzer”")
+    }
 }

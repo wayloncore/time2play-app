@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""App Store Connect helper for the TestFlight workflow (#406). Runs on a GitHub runner, never prints a key.
+
+  asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and the App Store profile
+  asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
+  asc.py status              lists the app's builds (number, state) for the log
+
+Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
+
+The distribution certificate's private key isn't stored anywhere. It's re-made on each run from the App Store Connect
+key (a one-way hash of it seeds the generator), so every run gets the same key, finds the certificate Apple already
+issued for it, and Apple's limit on distribution certificates is never reached. A new App Store Connect key makes one
+new certificate, once.
+"""
+import base64, hashlib, hmac, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+API = "https://api.appstoreconnect.apple.com"
+BUNDLE_ID = "live.time2play.app"
+VERSION = "1.0"
+
+
+def die(msg):
+    print(f"::error::{msg}")
+    sys.exit(1)
+
+
+def key_text():
+    with open(os.environ["ASC_KEY_PATH"], "rb") as f:
+        return f.read()
+
+
+def token():
+    import jwt  # pyjwt
+    now = int(time.time())
+    return jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 15 * 60, "aud": "appstoreconnect-v1"},
+                      key_text(), algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
+
+
+def call(method, path, body=None, ok_missing=False):
+    url = path if path.startswith("http") else API + path
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        if ok_missing and e.code == 404:
+            return None
+        # Apple's errors name the problem (a missing permission says FORBIDDEN_ERROR); they never contain the key
+        print(f"App Store Connect said {e.code} to {method} {urllib.parse.urlparse(url).path}:\n{detail}")
+        raise SystemExit(2)
+
+
+def q(params):
+    return "?" + urllib.parse.urlencode(params)
+
+
+def the_app():
+    apps = call("GET", "/v1/apps" + q({"filter[bundleId]": BUNDLE_ID}))["data"]
+    apps = [a for a in apps if a["attributes"]["bundleId"] == BUNDLE_ID]
+    if not apps:
+        die(f"No App Store Connect app with bundle id {BUNDLE_ID}")
+    return apps[0]
+
+
+# ---------- signing ----------
+
+class Stream:
+    """A deterministic byte stream from a secret seed (SHA-512 in counter mode)."""
+    def __init__(self, seed):
+        self.seed, self.n, self.buf = seed, 0, b""
+
+    def __call__(self, k):
+        while len(self.buf) < k:
+            self.buf += hashlib.sha512(self.seed + self.n.to_bytes(8, "big")).digest()
+            self.n += 1
+        out, self.buf = self.buf[:k], self.buf[k:]
+        return out
+
+
+def distribution_key():
+    from Crypto.PublicKey import RSA  # pycryptodome, pinned in the workflow so the same seed makes the same key
+    seed = hmac.new(key_text(), b"time2play app store distribution key v1", hashlib.sha256).digest()
+    return RSA.generate(2048, randfunc=Stream(seed))
+
+
+def signing(outdir):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.x509.oid import NameOID
+
+    os.makedirs(outdir, exist_ok=True)
+    os.chmod(outdir, 0o700)
+    rsa = distribution_key()
+    pem = rsa.export_key(pkcs=8)
+    key = serialization.load_pem_private_key(pem, password=None)
+    n = key.public_key().public_numbers().n
+
+    # the certificate Apple issued for this key, if there is one
+    cert_id, cert_der = None, None
+    for c in call("GET", "/v1/certificates" + q({"filter[certificateType]": "DISTRIBUTION", "limit": 200}))["data"]:
+        der = base64.b64decode(c["attributes"]["certificateContent"])
+        if x509.load_der_x509_certificate(der).public_key().public_numbers().n == n:
+            cert_id, cert_der = c["id"], der
+            break
+    if cert_id:
+        print(f"Distribution certificate: found ({cert_id})")
+    else:
+        csr = (x509.CertificateSigningRequestBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Time2Play GitHub builds"),
+                                        x509.NameAttribute(NameOID.COUNTRY_NAME, "US")]))
+               .sign(key, hashes.SHA256()))
+        csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode()
+        made = call("POST", "/v1/certificates", {"data": {"type": "certificates", "attributes": {
+            "certificateType": "DISTRIBUTION", "csrContent": csr_pem}}})["data"]
+        cert_id, cert_der = made["id"], base64.b64decode(made["attributes"]["certificateContent"])
+        print(f"Distribution certificate: made a new one ({cert_id})")
+
+    # the App Store profile for the app, with this certificate
+    ids = call("GET", "/v1/bundleIds" + q({"filter[identifier]": BUNDLE_ID}))["data"]
+    ids = [b for b in ids if b["attributes"]["identifier"] == BUNDLE_ID]
+    if not ids:
+        die(f"The App ID {BUNDLE_ID} isn't registered")
+    bundle = ids[0]["id"]
+    caps = call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]
+    print("App ID capabilities: " + ", ".join(sorted(c["attributes"]["capabilityType"] for c in caps)))
+
+    name = f"Time2Play App Store {cert_id[:6]}"
+    profile = None
+    found = call("GET", "/v1/profiles" + q({"filter[name]": name, "filter[profileType]": "IOS_APP_STORE",
+                                             "include": "certificates", "limit": 50}))
+    for p in found["data"]:
+        certs = [c["id"] for c in p["relationships"]["certificates"]["data"] or []]
+        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs:
+            profile = p
+    if profile:
+        print(f"App Store profile: found ({name})")
+    else:
+        if found["data"]:  # same name but out of date (a capability changed): a fresh one with a dated name
+            name = f"{name} {time.strftime('%Y%m%d%H%M')}"
+        profile = call("POST", "/v1/profiles", {"data": {"type": "profiles", "attributes": {
+            "name": name, "profileType": "IOS_APP_STORE"}, "relationships": {
+            "bundleId": {"data": {"type": "bundleIds", "id": bundle}},
+            "certificates": {"data": [{"type": "certificates", "id": cert_id}]}}}})["data"]
+        print(f"App Store profile: made ({name})")
+
+    # a .p12 the Mac's keychain accepts (its importer wants the older SHA-1 / 3DES packing), with a throwaway password
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    import secrets
+    password = secrets.token_hex(16).encode()
+    enc = (serialization.PrivateFormat.PKCS12.encryption_builder().kdf_rounds(50000)
+           .key_cert_algorithm(pkcs12.PBES.PBESv1SHA1And3KeyTripleDESCBC).hmac_hash(hashes.SHA1()).build(password))
+    p12 = pkcs12.serialize_key_and_certificates(b"Time2Play distribution", key, x509.load_der_x509_certificate(cert_der), None, enc)
+    with open(os.path.join(outdir, "dist.p12"), "wb") as f:
+        f.write(p12)
+    with open(os.path.join(outdir, "dist.p12.pass"), "wb") as f:
+        f.write(password)
+    with open(os.path.join(outdir, "app.mobileprovision"), "wb") as f:
+        f.write(base64.b64decode(profile["attributes"]["profileContent"]))
+    with open(os.environ.get("GITHUB_ENV", os.devnull), "a") as f:
+        f.write(f"T2P_PROFILE_NAME={profile['attributes']['name']}\nT2P_PROFILE_UUID={profile['attributes']['uuid']}\n")
+
+
+# ---------- after the upload ----------
+
+def builds(app_id, number=None):
+    params = {"filter[app]": app_id, "sort": "-uploadedDate", "limit": 20, "fields[builds]": "version,processingState,uploadedDate,expired"}
+    if number:
+        params["filter[version]"] = number
+    return call("GET", "/v1/builds" + q(params))["data"]
+
+
+def status():
+    app = the_app()
+    print(f"App: {app['attributes']['name']} ({app['id']})")
+    for b in builds(app["id"]):
+        a = b["attributes"]
+        print(f"  build {a['version']}: {a['processingState']} (uploaded {a['uploadedDate']})")
+
+
+def internal_testing(app_id):
+    groups = call("GET", f"/v1/apps/{app_id}/betaGroups")["data"]
+    internal = [g for g in groups if g["attributes"].get("isInternalGroup")]
+    if internal:
+        group = internal[0]
+        print(f"Internal testing group: {group['attributes']['name']} (already there)")
+    else:
+        group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": {
+            "name": "Tyler", "isInternalGroup": True, "hasAccessToAllBuilds": True},
+            "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+        print("Internal testing group: made \"Tyler\" (every new build goes to it)")
+    # add the Account Holder; internal testers have to be App Store Connect users
+    try:
+        users = call("GET", "/v1/users" + q({"filter[roles]": "ACCOUNT_HOLDER", "limit": 5}))["data"]
+    except SystemExit:
+        print("Couldn't list the team's users with this key; add yourself in TestFlight → Internal Testing")
+        return
+    have = call("GET", f"/v1/betaGroups/{group['id']}/betaTesters" + q({"limit": 50}))["data"]
+    have_emails = {(t["attributes"].get("email") or "").lower() for t in have}
+    for u in users:
+        email = u["attributes"]["username"]
+        print(f"::add-mask::{email}")
+        if email.lower() in have_emails:
+            print("The Account Holder is already an internal tester")
+            continue
+        try:
+            call("POST", "/v1/betaTesters", {"data": {"type": "betaTesters", "attributes": {
+                "email": email, "firstName": u["attributes"].get("firstName") or "Tyler",
+                "lastName": u["attributes"].get("lastName") or "Locke"},
+                "relationships": {"betaGroups": {"data": [{"type": "betaGroups", "id": group["id"]}]}}}})
+            print("Added the Account Holder as an internal tester")
+        except SystemExit:
+            print("Couldn't add the Account Holder as a tester with this key; add yourself in TestFlight → Internal Testing")
+
+
+def wait(number, minutes=40):
+    app = the_app()
+    end = time.time() + minutes * 60
+    state = None
+    while time.time() < end:
+        found = builds(app["id"], number)
+        if found:
+            state = found[0]["attributes"]["processingState"]
+            print(f"{time.strftime('%H:%M:%S')} build {number}: {state}")
+            if state in ("VALID", "FAILED", "INVALID"):
+                break
+        else:
+            print(f"{time.strftime('%H:%M:%S')} build {number}: not listed yet")
+        time.sleep(60)
+    with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as f:
+        f.write(f"Build {number} on App Store Connect: {state or 'not listed yet'}\n")
+    internal_testing(app["id"])
+    if state in ("FAILED", "INVALID"):
+        die(f"Apple marked build {number} {state}; App Store Connect emails the reason")
+    if state != "VALID":
+        print(f"Build {number} is still processing after {minutes} minutes; it shows in TestFlight when Apple finishes")
+
+
+# ---------- the App Store listing (#407): fills things in, never submits ----------
+
+SHOT_TYPES = {"iphone": "APP_IPHONE_67", "ipad": "APP_IPAD_PRO_3GEN_129"}  # 6.9" iPhone, 13" iPad
+
+
+def one(path):
+    got = call("GET", path, ok_missing=True)
+    return got.get("data") if got else None
+
+
+def upload_shot(set_id, path):
+    data = open(path, "rb").read()
+    made = call("POST", "/v1/appScreenshots", {"data": {"type": "appScreenshots", "attributes": {
+        "fileName": os.path.basename(path), "fileSize": len(data)},
+        "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})["data"]
+    for op in made["attributes"]["uploadOperations"]:
+        part = data[op["offset"]:op["offset"] + op["length"]]
+        req = urllib.request.Request(op["url"], data=part, method=op["method"],
+                                     headers={h["name"]: h["value"] for h in op.get("requestHeaders", [])})
+        urllib.request.urlopen(req, timeout=120).read()
+    call("PATCH", f"/v1/appScreenshots/{made['id']}", {"data": {"type": "appScreenshots", "id": made["id"], "attributes": {
+        "uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+
+
+def store(meta_path, shots_dir):
+    meta = json.load(open(meta_path))
+    loc = meta["locale"]
+    app = the_app()
+    app_id = app["id"]
+    print(f"App: {app['attributes']['name']} ({app_id})")
+
+    # the version (1.0, still being prepared)
+    versions = call("GET", f"/v1/apps/{app_id}/appStoreVersions" + q({"filter[platform]": "IOS", "limit": 20}))["data"]
+    editable = [v for v in versions if v["attributes"].get("appStoreState") in
+                ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED")]
+    if editable:
+        version = editable[0]
+    else:
+        version = call("POST", "/v1/appStoreVersions", {"data": {"type": "appStoreVersions", "attributes": {
+            "platform": "IOS", "versionString": VERSION},
+            "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+    vid = version["id"]
+    call("PATCH", f"/v1/appStoreVersions/{vid}", {"data": {"type": "appStoreVersions", "id": vid, "attributes": {
+        "copyright": meta["copyright"]}}})
+    print(f"Version {version['attributes']['versionString']}: {version['attributes'].get('appStoreState')}")
+
+    # the version's words
+    fields = {k: meta[k] for k in ("description", "keywords", "promotionalText", "supportUrl", "marketingUrl")}
+    locs = call("GET", f"/v1/appStoreVersions/{vid}/appStoreVersionLocalizations")["data"]
+    vloc = next((l for l in locs if l["attributes"]["locale"] == loc), None)
+    if vloc:
+        call("PATCH", f"/v1/appStoreVersionLocalizations/{vloc['id']}", {"data": {
+            "type": "appStoreVersionLocalizations", "id": vloc["id"], "attributes": fields}})
+    else:
+        vloc = call("POST", "/v1/appStoreVersionLocalizations", {"data": {"type": "appStoreVersionLocalizations",
+            "attributes": dict(fields, locale=loc),
+            "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})["data"]
+    print("Description, keywords, promotional text, support and marketing links: set")
+
+    # the app's name, subtitle, privacy link and category
+    infos = call("GET", f"/v1/apps/{app_id}/appInfos")["data"]
+    info = next((i for i in infos if i["attributes"].get("appStoreState") != "READY_FOR_SALE"), infos[0])
+    ilocs = call("GET", f"/v1/appInfos/{info['id']}/appInfoLocalizations")["data"]
+    iloc = next((l for l in ilocs if l["attributes"]["locale"] == loc), None)
+    attrs = {"name": meta["name"], "subtitle": meta["subtitle"], "privacyPolicyUrl": meta["privacyPolicyUrl"]}
+    if iloc:
+        call("PATCH", f"/v1/appInfoLocalizations/{iloc['id']}", {"data": {"type": "appInfoLocalizations", "id": iloc["id"], "attributes": attrs}})
+    print("Name, subtitle and privacy policy link: set")
+    rel = {"primaryCategory": meta["primaryCategory"], "primarySubcategoryOne": meta["primarySubcategoryOne"],
+           "primarySubcategoryTwo": meta["primarySubcategoryTwo"]}
+    call("PATCH", f"/v1/appInfos/{info['id']}", {"data": {"type": "appInfos", "id": info["id"], "relationships": {
+        k: {"data": {"type": "appCategories", "id": v}} for k, v in rel.items()}}})
+    print("Category: Games (Card, Family)")
+
+    # App Review's details; the review key goes in from the secret, here only
+    r = meta["review"]
+    notes = r["notes"].replace("{REVIEW_KEY}", os.environ.get("REVIEW_SIGNIN_KEY") or "(the review key: add it here)")
+    rattrs = {"contactFirstName": r["contactFirstName"], "contactLastName": r["contactLastName"],
+              "contactEmail": r["contactEmail"], "demoAccountRequired": r["demoAccountRequired"], "notes": notes}
+    detail = one(f"/v1/appStoreVersions/{vid}/appStoreReviewDetail")
+    if detail:
+        call("PATCH", f"/v1/appStoreReviewDetails/{detail['id']}", {"data": {"type": "appStoreReviewDetails", "id": detail["id"], "attributes": rattrs}})
+    else:
+        call("POST", "/v1/appStoreReviewDetails", {"data": {"type": "appStoreReviewDetails", "attributes": rattrs,
+            "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+    print("Review notes and contact: set (the phone number is Tyler's to add)")
+
+    # screenshots: only into an empty set, so a re-run never doubles them and never deletes any
+    sets = call("GET", f"/v1/appStoreVersionLocalizations/{vloc['id']}/appScreenshotSets")["data"]
+    for device, kind in SHOT_TYPES.items():
+        files = sorted(f for f in os.listdir(shots_dir) if f.startswith(f"store-{device}-") and f.endswith(".png")
+                       and f not in meta.get("skipShots", []))
+        if not files:
+            print(f"Screenshots {kind}: none made")
+            continue
+        s = next((x for x in sets if x["attributes"]["screenshotDisplayType"] == kind), None)
+        if not s:
+            s = call("POST", "/v1/appScreenshotSets", {"data": {"type": "appScreenshotSets", "attributes": {
+                "screenshotDisplayType": kind}, "relationships": {"appStoreVersionLocalization": {
+                "data": {"type": "appStoreVersionLocalizations", "id": vloc["id"]}}}}})["data"]
+        have = call("GET", f"/v1/appScreenshotSets/{s['id']}/appScreenshots")["data"]
+        if have:
+            print(f"Screenshots {kind}: {len(have)} already there, left as they are")
+            continue
+        for f in files:
+            upload_shot(s["id"], os.path.join(shots_dir, f))
+        print(f"Screenshots {kind}: uploaded {len(files)}")
+
+    # the newest processed build, picked for this version (Tyler can pick another)
+    done = [b for b in builds(app_id) if b["attributes"]["processingState"] == "VALID" and not b["attributes"].get("expired")]
+    if done:
+        b = done[0]
+        call("PATCH", f"/v1/appStoreVersions/{vid}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
+        print(f"Build for review: {b['attributes']['version']}")
+    else:
+        print("Build for review: none processed yet")
+    print("Not submitted. Submitting for review is Tyler's call.")
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "signing":
+        signing(sys.argv[2])
+    elif cmd == "wait":
+        wait(sys.argv[2])
+    elif cmd == "status":
+        status()
+    elif cmd == "store":
+        store(sys.argv[2], sys.argv[3])
+    else:
+        die(__doc__)

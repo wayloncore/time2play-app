@@ -10,6 +10,12 @@ it applies here too.
 - `App/`: the SwiftUI app. `UITests/`: UI tests that run in the iPhone simulator.
 - `project.yml`: the XcodeGen spec. The Mac workflow makes `Time2Play.xcodeproj` from it; the project file isn't kept.
 - `.github/workflows/mac.yml`: the batched Mac run (package tests, build, UI tests, screenshots printed into the log).
+- `.github/workflows/testflight.yml`: the signed build, uploaded to TestFlight (#406). Start it with the REST dispatch
+  or `[testflight]` in a pushed commit's message on main. Its build number is the run number. `scripts/asc.py` talks
+  to App Store Connect with the API key in secrets (ASC_ISSUER_ID, ASC_KEY_ID, ASC_KEY_P8): the distribution
+  certificate, the App Store profile, waiting for processing, and the internal testing group.
+- `App/Assets.xcassets/AppIcon.appiconset`: the app icon (one 1024 × 1024 PNG, no transparency):
+  the website's Time2Play mark (the gold 2 in its ring).
 
 ## Testing
 - **In a cloud session:** `bash scripts/install-swift.sh` (Swift from swift.org, signature checked), then
@@ -40,4 +46,5 @@ it applies here too.
 - The server only adds to the protocol; an old app must survive a newer server (`ServerMessage.unknown`).
 - Hosted rooms started from the website's game page must work exactly as they do now.
 - Keys (App Store Connect, push, Sign in with Apple) live only in GitHub secrets: never in the repo, an issue or a log.
-- The bundle id `live.time2play.app` isn't registered with Apple yet; it's fixed once the App Store record exists.
+- Apple: Team ID `6WK983RXJT`, bundle id `live.time2play.app`, App Store name "Time2Play Live" (the home screen says
+  "Time2Play"). None of these is secret.
