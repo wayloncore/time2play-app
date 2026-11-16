@@ -5,6 +5,11 @@
 name: Mac build
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Run only these UI tests (xcodebuild -only-testing values, space-separated; empty runs them all)"
+        required: false
+        default: ""
   push:
     branches: [main]
 permissions:
@@ -52,44 +57,34 @@ jobs:
           xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
           echo "boot_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Build and run the UI tests
+        env:
+          ONLY: ${{ github.event.inputs.only }}
         run: |
           t=$(date +%s)
           set -o pipefail
+          mkdir -p "$HOME/t2p-shots"
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          sel=""; for o in $ONLY; do sel="$sel -only-testing:$o"; done
           xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
             -destination "id=$UDID" -derivedDataPath build -resultBundlePath build/ui.xcresult \
-            CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|\*\* TEST|Executed" | tail -30
+            -parallel-testing-enabled NO $sel \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -60
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
-      - name: Install, launch and screenshot
-        run: |
-          t=$(date +%s); mkdir -p shots
-          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
-          APP=$(find build/Build/Products -maxdepth 2 -name 'Time2Play.app' | head -1)
-          xcrun simctl install "$UDID" "$APP"
-          xcrun simctl launch "$UDID" live.time2play.app
-          sleep 6
-          xcrun simctl io "$UDID" screenshot shots/home.png
-          xcrun simctl ui "$UDID" appearance light
-          sleep 3
-          xcrun simctl io "$UDID" screenshot shots/home-light-system.png
-          xcrun simctl ui "$UDID" appearance dark
-          xcrun simctl ui "$UDID" content_size extra-extra-extra-large
-          sleep 3
-          xcrun simctl io "$UDID" screenshot shots/home-larger-text.png
-          echo "shot_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Screenshots into the log
+        if: always()
         run: |
-          for f in shots/*.png; do echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"; done
+          for f in "$HOME"/t2p-shots/*.png; do [ -f "$f" ] || continue; echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"; done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mac-shots
           path: |
-            shots/
+            ~/t2p-shots/
             build/ui.xcresult
           retention-days: 14
       - name: Timing
         if: always()
         run: |
           total=$(( $(date +%s) - start ))
-          { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, screenshots: ${shot_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
-          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} shot=${shot_s:-?} total=$total"
+          { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} total=$total"

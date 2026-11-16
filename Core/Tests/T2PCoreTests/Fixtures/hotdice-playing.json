@@ -1,0 +1,122 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "playing",
+ "code": "K7QP",
+ "ones": 1000,
+ "target": 10000,
+ "rules": {
+  "board": true,
+  "three": true
+ },
+ "players": [
+  {
+   "id": "p1",
+   "name": "Sam",
+   "face": 9,
+   "score": 0,
+   "bot": null,
+   "held": false,
+   "connected": true,
+   "seated": true,
+   "left": false,
+   "on": false,
+   "strikes": 0
+  },
+  {
+   "id": "p2",
+   "name": "June",
+   "face": 8,
+   "score": 0,
+   "bot": "steady",
+   "held": false,
+   "connected": true,
+   "seated": true,
+   "left": false,
+   "on": false,
+   "strikes": 0
+  }
+ ],
+ "turn": {
+  "id": "p1",
+  "n": 1,
+  "state": "choose",
+  "seq": 1,
+  "pts": 0,
+  "dice": [
+   {
+    "id": 0,
+    "v": 4
+   },
+   {
+    "id": 1,
+    "v": 1
+   },
+   {
+    "id": 2,
+    "v": 4
+   },
+   {
+    "id": 3,
+    "v": 4
+   },
+   {
+    "id": 4,
+    "v": 5
+   },
+   {
+    "id": 5,
+    "v": 6
+   }
+  ],
+  "kept": [],
+  "live": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "sel": [],
+  "selPts": 0,
+  "selName": "",
+  "revealed": true,
+  "note": "",
+  "hl": {
+   "tier": 1,
+   "name": "Three 4s",
+   "points": 400,
+   "ids": [
+    0,
+    2,
+    3
+   ],
+   "seq": 1
+  },
+  "hot": 0,
+  "lastSet": null,
+  "lost": 0,
+  "auto": false,
+  "three": false,
+  "penalty": 0,
+  "need": 500,
+  "endsAt": 1800000065000,
+  "bot": false
+ },
+ "final": null,
+ "last": null,
+ "winners": null,
+ "turnNo": 1,
+ "hostless": true,
+ "owner": "p1",
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "score": 0,
+  "seated": true
+ },
+ "yourTurn": true,
+ "held": false
+}

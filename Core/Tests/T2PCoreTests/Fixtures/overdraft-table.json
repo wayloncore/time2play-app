@@ -1,0 +1,126 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "playing",
+ "code": "K7QP",
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "seat": 0,
+  "table": 1
+ },
+ "table": {
+  "n": 1,
+  "turnEndsAt": 1800000045000,
+  "suit": "wave",
+  "top": {
+   "kind": "number",
+   "suit": "wave",
+   "n": 3
+  },
+  "pile": [
+   {
+    "kind": "number",
+    "suit": "wave",
+    "n": 3,
+    "k": 0
+   }
+  ],
+  "stack": 0,
+  "jumpIn": false,
+  "seq": 0,
+  "jump": null,
+  "taking": false,
+  "direction": 1,
+  "drawLeft": 202,
+  "turn": "p1",
+  "over": false,
+  "winner": null,
+  "seats": [
+   {
+    "id": "p1",
+    "seat": 0,
+    "name": "Sam",
+    "face": 9,
+    "cards": 7,
+    "connected": true,
+    "held": false
+   },
+   {
+    "id": "p3",
+    "seat": 1,
+    "name": "Bea (bot)",
+    "face": 1,
+    "cards": 7,
+    "connected": true,
+    "held": false
+   },
+   {
+    "id": "p2",
+    "seat": 2,
+    "name": "Ada (bot)",
+    "face": 0,
+    "cards": 7,
+    "connected": true,
+    "held": false
+   }
+  ]
+ },
+ "yourTurn": true,
+ "hand": [
+  {
+   "id": "c160",
+   "kind": "number",
+   "suit": "wave",
+   "n": 9
+  },
+  {
+   "id": "c183",
+   "kind": "number",
+   "suit": "bolt",
+   "n": 6
+  },
+  {
+   "id": "c106",
+   "kind": "wild",
+   "suit": null,
+   "n": null
+  },
+  {
+   "id": "c133",
+   "kind": "number",
+   "suit": "ember",
+   "n": 8
+  },
+  {
+   "id": "c81",
+   "kind": "number",
+   "suit": "leaf",
+   "n": 3
+  },
+  {
+   "id": "c204",
+   "kind": "number",
+   "suit": "leaf",
+   "n": 1
+  },
+  {
+   "id": "c8",
+   "kind": "number",
+   "suit": "ember",
+   "n": 8
+  }
+ ],
+ "legal": [
+  "c160",
+  "c106",
+  "c81"
+ ],
+ "jump": [],
+ "drawn": null,
+ "held": false,
+ "tour": null,
+ "hostless": true,
+ "owner": "p1"
+}

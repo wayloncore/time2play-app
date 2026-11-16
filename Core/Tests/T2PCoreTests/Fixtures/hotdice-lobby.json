@@ -1,0 +1,56 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "lobby",
+ "code": "K7QP",
+ "ones": 1000,
+ "target": 10000,
+ "rules": {
+  "board": true,
+  "three": true
+ },
+ "players": [
+  {
+   "id": "p1",
+   "name": "Sam",
+   "face": 9,
+   "score": 0,
+   "bot": null,
+   "held": false,
+   "connected": true,
+   "seated": false,
+   "left": false,
+   "on": false,
+   "strikes": 0
+  },
+  {
+   "id": "p2",
+   "name": "June",
+   "face": 8,
+   "score": 0,
+   "bot": "steady",
+   "held": false,
+   "connected": true,
+   "seated": false,
+   "left": false,
+   "on": false,
+   "strikes": 0
+  }
+ ],
+ "turn": null,
+ "final": null,
+ "last": null,
+ "winners": null,
+ "turnNo": 0,
+ "hostless": true,
+ "owner": "p1",
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "score": 0,
+  "seated": false
+ },
+ "yourTurn": false,
+ "held": false
+}

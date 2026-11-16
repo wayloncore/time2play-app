@@ -1,0 +1,99 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "playing",
+ "code": "K7QP",
+ "quick": false,
+ "rounds": 13,
+ "players": [
+  {
+   "id": "p1",
+   "name": "Sam",
+   "face": 9,
+   "bot": null,
+   "held": false,
+   "connected": true,
+   "left": false,
+   "scores": {},
+   "extra": 0,
+   "total": 0
+  },
+  {
+   "id": "p2",
+   "name": "Rosa",
+   "face": 30,
+   "bot": "medium",
+   "held": false,
+   "connected": true,
+   "left": false,
+   "scores": {},
+   "extra": 0,
+   "total": 0
+  }
+ ],
+ "turn": {
+  "id": "p1",
+  "dice": [
+   1,
+   4,
+   4,
+   5,
+   6
+  ],
+  "held": [
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "rolls": 1,
+  "endsAt": 1800000060000
+ },
+ "last": null,
+ "winners": null,
+ "hostless": true,
+ "owner": "p1",
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "seated": true
+ },
+ "yourTurn": true,
+ "held": false,
+ "options": {
+  "allowed": [
+   "ones",
+   "twos",
+   "threes",
+   "fours",
+   "fives",
+   "sixes",
+   "three",
+   "four",
+   "full",
+   "small",
+   "large",
+   "five",
+   "chance"
+  ],
+  "scores": {
+   "three": 0,
+   "four": 0,
+   "full": 0,
+   "small": 0,
+   "large": 0,
+   "five": 0,
+   "chance": 20,
+   "ones": 1,
+   "twos": 0,
+   "threes": 0,
+   "fours": 8,
+   "fives": 5,
+   "sixes": 6
+  },
+  "instruction": "Choose one open box",
+  "bonus": 0
+ }
+}
