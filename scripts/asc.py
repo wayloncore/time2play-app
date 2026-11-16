@@ -329,7 +329,8 @@ def store(meta_path, shots_dir):
     # screenshots: only into an empty set, so a re-run never doubles them and never deletes any
     sets = call("GET", f"/v1/appStoreVersionLocalizations/{vloc['id']}/appScreenshotSets")["data"]
     for device, kind in SHOT_TYPES.items():
-        files = sorted(f for f in os.listdir(shots_dir) if f.startswith(f"store-{device}-") and f.endswith(".png"))
+        files = sorted(f for f in os.listdir(shots_dir) if f.startswith(f"store-{device}-") and f.endswith(".png")
+                       and f not in meta.get("skipShots", []))
         if not files:
             print(f"Screenshots {kind}: none made")
             continue
