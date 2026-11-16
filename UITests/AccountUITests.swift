@@ -83,7 +83,12 @@ final class AccountUITests: XCTestCase {
         XCUIDevice.shared.system.open(URL(string: "https://time2play.live/\(code)")!)
         let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 20))
-        sleep(6)
+        // A fresh simulator's Safari covers the page with its Start Page card the first time: close it
+        let close = safari.buttons.matching(NSPredicate(format: "label == 'Close' OR identifier == 'CloseButton'")).firstMatch
+        if close.waitForExistence(timeout: 5) { close.tap() }
+        // the join page itself: its name box (the website's guest join)
+        XCTAssertTrue(safari.webViews.firstMatch.waitForExistence(timeout: 20), "time2play.live's page")
+        sleep(4)
         let s = XCUIScreen.main.screenshot()
         let a = XCTAttachment(screenshot: s); a.name = "404-website-fallback"; a.lifetime = .keepAlways; add(a)
         let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] ?? NSTemporaryDirectory()
