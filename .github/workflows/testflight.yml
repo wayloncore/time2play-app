@@ -61,12 +61,20 @@ jobs:
               DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="$BUILD" "$@" archive 2>&1 \
               | grep -E "error:|warning: .*(sign|profile|provision)|\*\* ARCHIVE" | tail -40
           }
-          # The archive can't use Apple's automatic signing here: that wants a development profile, and the team has
-          # no registered devices (run 4). So the archive is signed locally ("Sign to Run Locally", which keeps the
-          # entitlements in the app), and the export below re-signs it for the App Store with cloud-managed signing.
-          # A: signed locally. B: not signed at all, if A is refused.
-          if archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- PROVISIONING_PROFILE_SPECIFIER= ; then echo "ARCHIVE_WAY=A (signed locally)"
-          else echo "A failed; trying B"; rm -rf build/Time2Play.xcarchive; archive CODE_SIGNING_ALLOWED=NO; echo "ARCHIVE_WAY=B (unsigned)"; fi
+          # Apple's automatic signing can't archive here: it wants a development profile, and the team has no
+          # registered devices (run 4). Xcode 26 also refuses "Sign to Run Locally" for iOS (run 6). So the archive is
+          # built unsigned, then the app is signed locally with codesign and its entitlements (Sign in with Apple,
+          # invite links, alerts), so the export below can read them and re-sign for the App Store with Apple's
+          # cloud-managed distribution certificate.
+          archive CODE_SIGNING_ALLOWED=NO
+          APP=build/Time2Play.xcarchive/Products/Applications/Time2Play.app
+          ENT="$RUNNER_TEMP/Time2Play.entitlements"
+          cp App/Time2Play.entitlements "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :application-identifier string $TEAM.live.time2play.app" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM" "$ENT"
+          find "$APP" -depth \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" \) -exec codesign --force --sign - {} \;
+          codesign --force --sign - --entitlements "$ENT" --generate-entitlement-der "$APP"
+          codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -p - | head -20
           echo "archive_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Export and upload to TestFlight
         env:
@@ -96,14 +104,17 @@ jobs:
             | grep -v -E "^\s*$" | tail -40
           echo "export_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
           echo "UPLOADED version 1.0 build $BUILD (destination: $DEST)"
-      - name: What was signed
+      - name: What was built
         if: always()
         run: |
           APP=build/Time2Play.xcarchive/Products/Applications/Time2Play.app
           [ -d "$APP" ] || exit 0
-          codesign -dv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier=" | head -5
-          codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$APP/Info.plist" 2>/dev/null || echo "no CFBundleIconName"
+          ls "$APP" | head -40
+          plutil -p "$APP/Info.plist" | grep -E "CFBundle(Icon|Version|ShortVersion|DisplayName)|Icon" || true
+          for f in build/export/*.ipa; do [ -f "$f" ] && ls -la "$f"; done
+          ls "$RUNNER_TEMP"/../*/*.xcdistributionlogs 2>/dev/null | head -3 || true
+          L=$(ls -d /var/folders/*/*/T/Time2Play_*.xcdistributionlogs 2>/dev/null | tail -1)
+          [ -n "$L" ] && { ls "$L"; grep -h -i -E "error|forbidden|detail" "$L"/*.log 2>/dev/null | grep -v -i -E "key|token|authorization|bearer" | tail -15; } || true
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
