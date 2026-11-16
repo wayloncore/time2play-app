@@ -1,0 +1,56 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "lobby",
+ "code": "K7QP",
+ "opts": {
+  "set": "general",
+  "count": 10,
+  "timer": 60
+ },
+ "sets": [
+  {
+   "key": "general",
+   "name": "Everyday numbers",
+   "size": 16
+  }
+ ],
+ "players": [
+  {
+   "id": "p1",
+   "name": "Sam",
+   "face": 9,
+   "bot": null,
+   "connected": true,
+   "left": false,
+   "score": 0,
+   "hits": 0,
+   "misses": 0,
+   "in": false
+  },
+  {
+   "id": "p2",
+   "name": "Rosa",
+   "face": 30,
+   "bot": "medium",
+   "connected": true,
+   "left": false,
+   "score": 0,
+   "hits": 0,
+   "misses": 0,
+   "in": false
+  }
+ ],
+ "question": null,
+ "winners": null,
+ "hostless": true,
+ "owner": "p1",
+ "maxPoints": 20,
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "seated": false
+ },
+ "answer": null
+}

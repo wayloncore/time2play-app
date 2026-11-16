@@ -1,0 +1,67 @@
+{
+ "t": "you",
+ "ok": true,
+ "phase": "playing",
+ "code": "K7QP",
+ "opts": {
+  "set": "general",
+  "count": 10,
+  "timer": 60
+ },
+ "sets": [
+  {
+   "key": "general",
+   "name": "Everyday numbers",
+   "size": 16
+  }
+ ],
+ "players": [
+  {
+   "id": "p1",
+   "name": "Sam",
+   "face": 9,
+   "bot": null,
+   "connected": true,
+   "left": false,
+   "score": 0,
+   "hits": 0,
+   "misses": 0,
+   "in": false
+  },
+  {
+   "id": "p2",
+   "name": "Rosa",
+   "face": 30,
+   "bot": "medium",
+   "connected": true,
+   "left": false,
+   "score": 0,
+   "hits": 0,
+   "misses": 0,
+   "in": false
+  }
+ ],
+ "question": {
+  "n": 1,
+  "of": 10,
+  "q": "What percentage of an adult human body is water?",
+  "note": "By mass.",
+  "unit": "%",
+  "floor": 0,
+  "ceiling": 100,
+  "step": 1,
+  "stage": "ask",
+  "endsAt": 1800000060000
+ },
+ "winners": null,
+ "hostless": true,
+ "owner": "p1",
+ "maxPoints": 20,
+ "you": {
+  "id": "p1",
+  "name": "Sam",
+  "face": 9,
+  "seated": true
+ },
+ "answer": null
+}
