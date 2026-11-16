@@ -108,9 +108,10 @@ final class AppModel: ObservableObject {
         let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting, session: api.session)
         room = r
         r.start()
+        TVModel.shared.watch(g, code: code, endpoints: endpoints)
     }
 
-    func closeRoom() { room?.close(); room = nil }
+    func closeRoom() { room?.close(); room = nil; TVModel.shared.watch(nil, code: nil, endpoints: endpoints) }
 
     /// The server's own rules, loaded once, for playing bots with no signal (#402).
     private lazy var offlineRules: OfflineRules? = OfflineRules.load()

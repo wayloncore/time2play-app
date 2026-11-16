@@ -10,6 +10,10 @@ on:
         description: "Run only these UI tests (xcodebuild -only-testing values, space-separated; empty runs them all)"
         required: false
         default: ""
+      ipad:
+        description: "Also run the screenshot tour (UITests/TourUITests) on an iPad simulator"
+        required: false
+        default: "false"
   push:
     branches: [main]
 permissions:
@@ -72,6 +76,30 @@ jobs:
             -parallel-testing-enabled NO $sel \
             CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -60
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: The tour again on an iPad (#405)
+        if: github.event.inputs.ipad == 'true'
+        run: |
+          t=$(date +%s)
+          IPAD=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys,re
+          d=json.load(sys.stdin)["devices"]
+          best=None
+          for rt,devs in d.items():
+              m=re.search(r"iOS-(\d+)-(\d+)",rt)
+              if not m: continue
+              for x in devs:
+                  if x["name"].startswith("iPad Pro") or x["name"].startswith("iPad Air"):
+                      k=((int(m.group(1)),int(m.group(2))),x["name"].startswith("iPad Pro"),x["name"])
+                      if best is None or k>best[0]: best=(k,x["udid"])
+          print(best[1])')
+          xcrun simctl boot "$IPAD"; xcrun simctl bootstatus "$IPAD" -b
+          xcrun simctl status_bar "$IPAD" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3
+          set -o pipefail
+          xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
+            -destination "id=$IPAD" -derivedDataPath build -resultBundlePath build/ipad.xcresult \
+            -parallel-testing-enabled NO -only-testing:Time2PlayUITests/TourUITests \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
+          echo "ipad_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Screenshots into the log
         if: always()
         run: |
@@ -89,4 +117,4 @@ jobs:
         run: |
           total=$(( $(date +%s) - start ))
           { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
-          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} total=$total"
+          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} ipad=${ipad_s:-0} total=$total"

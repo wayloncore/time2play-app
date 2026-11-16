@@ -9,6 +9,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         return true
     }
+    /// A TV over AirPlay gets the table as its own picture (#405), not a mirror of the phone.
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        if session.role == .windowExternalDisplayNonInteractive {
+            let c = UISceneConfiguration(name: "TV", sessionRole: session.role)
+            c.delegateClass = TVSceneDelegate.self
+            return c
+        }
+        return UISceneConfiguration(name: nil, sessionRole: session.role)
+    }
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Task { @MainActor in self.app?.registerDevice(deviceToken) }
     }

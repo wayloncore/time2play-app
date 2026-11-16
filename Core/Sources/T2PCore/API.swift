@@ -25,6 +25,7 @@ public final class API: @unchecked Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible {
         public var status: Int; public var message: String; public var code: String?
         public var description: String { message }
+        public init(status: Int, message: String, code: String?) { self.status = status; self.message = message; self.code = code }
     }
 
     /// GET or POST a path; JSON back. A non-2xx answer throws with the server's own words when it gave some.

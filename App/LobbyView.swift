@@ -31,6 +31,7 @@ struct LobbyView: View {
     @State private var removing: LobbyPlayer?
     @State private var confirmEnd = false
     @State private var showQR = false
+    @State private var tv = false
 
     private var players: [LobbyPlayer] { room.lobbyPlayers }
     private var owner: Bool { room.isOwner }
@@ -68,12 +69,17 @@ struct LobbyView: View {
             Button("Keep it open", role: .cancel) {}
         }
         .sheet(isPresented: $showQR) { BigQR(code: room.code, link: room.inviteLink) }
+        .sheet(isPresented: $tv) { ShowOnTV() }
     }
 
     private var topBar: some View {
         HStack {
             Button("Leave", action: onLeave).foregroundStyle(T2P.goldText).accessibilityIdentifier("leave")
             Spacer()
+            if !room.offline {
+                Button { tv = true } label: { Image(systemName: "tv").font(.headline).foregroundStyle(T2P.text).frame(width: 44, height: 44) }
+                    .accessibilityLabel("Show on TV").accessibilityIdentifier("show-on-tv")
+            }
             if owner {
                 Label("You own this room", systemImage: "crown.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)

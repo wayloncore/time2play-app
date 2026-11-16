@@ -312,6 +312,7 @@ struct TableTopBar: View {
 /// The four preset reactions. Nothing typed, ever.
 struct ReactionBar: View {
     @ObservedObject var room: RoomModel
+    @State private var tv = false
     var body: some View {
         HStack(spacing: 8) {
             ForEach(Reaction.allCases) { r in
@@ -322,8 +323,14 @@ struct ReactionBar: View {
                     .accessibilityLabel("Send \(r.words)")
             }
             Spacer(minLength: 0)
+            if !room.offline {
+                Button { tv = true } label: { Image(systemName: "tv").font(.headline) }
+                    .foregroundStyle(T2P.text).frame(width: 44, height: 44).background(.white.opacity(0.08), in: Circle())
+                    .accessibilityLabel("Show on TV").accessibilityIdentifier("show-on-tv")
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+        .sheet(isPresented: $tv) { ShowOnTV() }
     }
 }
 
