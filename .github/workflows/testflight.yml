@@ -1,0 +1,113 @@
+# TestFlight (#406): sign a Release build on a GitHub Mac with the App Store Connect API key and upload it to
+# TestFlight. It never submits for App Review (that's #407, and only after Tyler says go). Start it by hand:
+# Actions -> TestFlight -> Run workflow, or
+#   gh api -X POST repos/wayloncore/time2play-app/actions/workflows/testflight.yml/dispatches -f ref=main
+# Keys: ASC_ISSUER_ID, ASC_KEY_ID, ASC_KEY_P8 live only in this repo's Actions secrets. The .p8 is written to the
+# runner's temp folder for the run and deleted at the end; it is never printed.
+# Signing is automatic (cloud-managed): xcodebuild makes the distribution certificate and App Store profile itself.
+name: TestFlight
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload to TestFlight (false: sign and export only)"
+        required: false
+        default: "true"
+permissions:
+  contents: read
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      TEAM: 6WK983RXJT
+      # Each upload needs a higher build number than the last; the run number only grows.
+      BUILD: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Versions
+        run: |
+          echo "start=$(date +%s)" >> "$GITHUB_ENV"
+          X=$(ls -d /Applications/Xcode_26*.app | grep -v -i beta | sort -V | tail -1)
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          sw_vers; xcodebuild -version
+      - name: Invite links' file on time2play.live (#404)
+        run: |
+          curl -sS -m 20 -D - https://time2play.live/.well-known/apple-app-site-association -o aasa.json | grep -i -E "^HTTP|content-type" || true
+          python3 -c 'import json; d=json.load(open("aasa.json")); print("AASA appIDs:", [a for x in d.get("applinks",{}).get("details",[]) for a in (x.get("appIDs") or [x.get("appID")])])' || head -c 400 aasa.json
+      - name: Generate the Xcode project
+        run: brew install xcodegen >/dev/null && xcodegen generate
+      - name: The App Store Connect key, for this run only
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          [ -n "$ASC_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] || { echo "::error::ASC_KEY_P8 or ASC_KEY_ID is missing"; exit 1; }
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"; chmod 600 "$KEY"
+          grep -q "BEGIN PRIVATE KEY" "$KEY" || { echo "(adding the BEGIN/END lines)"; { echo "-----BEGIN PRIVATE KEY-----"; tr -d ' \r\n' < "$KEY" | fold -w 64; echo; echo "-----END PRIVATE KEY-----"; } > "$KEY.tmp"; mv "$KEY.tmp" "$KEY"; }
+          echo "KEY=$KEY" >> "$GITHUB_ENV"
+      - name: Archive (signed, Release)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          t=$(date +%s)
+          set -o pipefail
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          archive() {
+            xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Release \
+              -destination 'generic/platform=iOS' -archivePath build/Time2Play.xcarchive "${AUTH[@]}" \
+              CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM" \
+              CURRENT_PROJECT_VERSION="$BUILD" "$@" archive 2>&1 | grep -E "error:|warning: .*(sign|profile|provision)|Signing Identity|Provisioning Profile|\*\* ARCHIVE" | tail -40
+          }
+          # A: sign the archive for distribution straight away (needs no registered device).
+          # B: Xcode's default (development signing, re-signed at export), if A is refused.
+          if archive CODE_SIGN_IDENTITY="Apple Distribution"; then echo "ARCHIVE_WAY=A (Apple Distribution)"
+          else echo "A failed; trying B"; rm -rf build/Time2Play.xcarchive; archive; echo "ARCHIVE_WAY=B (default)"; fi
+          echo "archive_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Export and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          UPLOAD: ${{ github.event.inputs.upload }}
+        run: |
+          t=$(date +%s)
+          DEST=upload; [ "$UPLOAD" = "false" ] && DEST=export
+          cat > build/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>$DEST</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>testFlightInternalTestingOnly</key><false/>
+          </dict></plist>
+          EOF
+          set -o pipefail
+          xcodebuild -exportArchive -archivePath build/Time2Play.xcarchive -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 \
+            | grep -v -E "^\s*$" | tail -40
+          echo "export_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+          echo "UPLOADED version 1.0 build $BUILD (destination: $DEST)"
+      - name: What was signed
+        if: always()
+        run: |
+          APP=build/Time2Play.xcarchive/Products/Applications/Time2Play.app
+          [ -d "$APP" ] || exit 0
+          codesign -dv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier=" | head -5
+          codesign -d --entitlements :- "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$APP/Info.plist" 2>/dev/null || echo "no CFBundleIconName"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+      - name: Timing
+        if: always()
+        run: echo "TIMING archive=${archive_s:-?} export=${export_s:-?} total=$(( $(date +%s) - start ))"
