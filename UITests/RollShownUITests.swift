@@ -11,7 +11,7 @@ final class RollShownUITests: XCTestCase {
         startOffline(app, "farkle", bot: "bold")
         let roll = app.buttons["roll"]
         let banner = app.descendants(matching: .any)["farkle-banner"]
-        let status = app.staticTexts["dice-status"]
+        let status = app.descendants(matching: .any)["dice-status"].firstMatch
         var shotAir = false, shotScores = false
         for _ in 0..<20 {
             XCTAssertTrue(waitEnabled(roll, 90), "your roll")

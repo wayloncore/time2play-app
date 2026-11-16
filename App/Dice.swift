@@ -326,9 +326,9 @@ struct HotDiceView: View {
                     Text((farkled ? 0 : t.pts + (t.state == "choose" ? t.selPts : 0)).formatted()).font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(farkled ? T2P.ember : T2P.text).contentTransition(.numericText())
                     Text(status).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center)
-                        .accessibilityIdentifier("dice-status")
                 }
                 .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("dice-status")
                 dice(t)
                 if farkled {
                     let w = farkleWords(t)
