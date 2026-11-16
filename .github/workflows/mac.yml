@@ -14,6 +14,14 @@ on:
         description: "Also run the screenshot tour (UITests/TourUITests) on an iPad simulator"
         required: false
         default: "false"
+      iphone:
+        description: "Simulator name contains this (e.g. Pro Max for App Store screenshots at 6.9 inches); empty picks the newest iPhone or iPhone Pro"
+        required: false
+        default: ""
+      ipad_name:
+        description: "iPad simulator name contains this (e.g. 13-inch for App Store screenshots); empty picks the newest iPad Pro or Air"
+        required: false
+        default: ""
   push:
     branches: [main]
 permissions:
@@ -42,10 +50,12 @@ jobs:
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate
       - name: Pick and boot an iPhone simulator
+        env:
+          WANT: ${{ github.event.inputs.iphone }}
         run: |
           t=$(date +%s)
           UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json,sys,re
+          import json,sys,re,os
           d=json.load(sys.stdin)["devices"]
           best=None
           for rt,devs in d.items():
@@ -53,7 +63,8 @@ jobs:
               if not m: continue
               v=(int(m.group(1)),int(m.group(2)))
               for x in devs:
-                  if re.fullmatch(r"iPhone \d+( Pro)?",x["name"]):
+                  want=os.environ.get("WANT","")
+                  if (want and x["name"].startswith("iPhone") and want in x["name"]) or (not want and re.fullmatch(r"iPhone \d+( Pro)?",x["name"])):
                       k=(v,x["name"])
                       if best is None or k>best[0]: best=(k,x["udid"],x["name"],rt)
           print(best[1]); print(best[2],best[3],file=sys.stderr)')
@@ -78,17 +89,20 @@ jobs:
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: The tour again on an iPad (#405)
         if: github.event.inputs.ipad == 'true'
+        env:
+          WANT: ${{ github.event.inputs.ipad_name }}
         run: |
           t=$(date +%s)
           IPAD=$(xcrun simctl list devices available -j | python3 -c '
-          import json,sys,re
+          import json,sys,re,os
           d=json.load(sys.stdin)["devices"]
           best=None
+          want=os.environ.get("WANT","")
           for rt,devs in d.items():
               m=re.search(r"iOS-(\d+)-(\d+)",rt)
               if not m: continue
               for x in devs:
-                  if x["name"].startswith("iPad Pro") or x["name"].startswith("iPad Air"):
+                  if (want and x["name"].startswith("iPad") and want in x["name"]) or (not want and (x["name"].startswith("iPad Pro") or x["name"].startswith("iPad Air"))):
                       k=((int(m.group(1)),int(m.group(2))),x["name"].startswith("iPad Pro"),x["name"])
                       if best is None or k>best[0]: best=(k,x["udid"])
           print(best[1])')
