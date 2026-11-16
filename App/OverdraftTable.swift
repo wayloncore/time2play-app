@@ -162,7 +162,7 @@ struct OverdraftTableView: View {
         withAnimation(reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.3)) { flash = f }
         UIAccessibility.post(notification: .announcement, argument: "\(f.word). \(f.detail)")
         Haptics.select()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if flash?.id == f.id { withAnimation(.easeOut(duration: 0.3)) { flash = nil } } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { if flash?.id == f.id { withAnimation(.easeOut(duration: 0.3)) { flash = nil } } }
     }
 
     /// The card just played flies to the pile: from the seats along the top, or up from your hand.
@@ -531,6 +531,7 @@ struct TableTopBar: View {
             VStack(spacing: 2) {
                 Text(game.title).font(.headline).foregroundStyle(T2P.text)
                 Text(room.offline ? "PRACTICE · \(line)" : "ROOM \(code) · \(line)").font(.caption.weight(.semibold)).tracking(1).foregroundStyle(T2P.muted)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
             .accessibilityElement(children: .combine)
             Spacer()

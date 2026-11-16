@@ -29,7 +29,7 @@ final class CloseEnoughUITests: XCTestCase {
                 shot(app, "489-ce-3-question")
             }
             lock.tap()
-            if n == 1 { usleep(500_000); shot(app, "489-ce-4-locked-in") }
+            if n == 2 { shot(app, "489-ce-4-locked-in") }   // locked in at once: the bots are still thinking
             XCTAssertTrue(app.staticTexts["ce-answer"].waitForExistence(timeout: 70), "question \(n)'s answer is revealed")
             sleep(1)                                          // the answer lands on the ranges
             if n == 1 || n == 6 {

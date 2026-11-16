@@ -30,7 +30,7 @@ final class OverdraftUITests: XCTestCase {
         usleep(350_000)
         shot(app, "489-od-2-deal")
 
-        var shotTurn = false, shotTheirs = false, shotDraw = false, shotFlash = false, shotLast = false, plays = 0
+        var shotTurn = false, shotTheirs = false, shotDraw = false, shotFlash = false, shotLast = false, plays = 0, turns = 0
         let deadline = Date().addingTimeInterval(360)
         let legal = NSPredicate(format: "identifier BEGINSWITH 'legal-'")
         while Date() < deadline {
@@ -42,7 +42,14 @@ final class OverdraftUITests: XCTestCase {
                 usleep(250_000); continue
             }
             if !shotTurn { shot(app, "489-od-4-your-turn"); shotTurn = true }
+            turns += 1
             let cards = app.buttons.matching(legal)
+            if !shotDraw && turns >= 2 && !app.buttons["keep"].exists {
+                // once, draw on purpose (a draw is allowed with cards that could go) to see the card arrive
+                app.buttons["draw"].tap()
+                usleep(700_000); shot(app, "489-od-5-you-drew"); shotDraw = true
+                usleep(400_000); continue
+            }
             if cards.count > 0 {
                 // tap the card's visible edge (the next card overlaps the rest of it)
                 cards.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).tap()
@@ -50,11 +57,12 @@ final class OverdraftUITests: XCTestCase {
                 let wave = app.buttons["Wave"]
                 if wave.waitForExistence(timeout: 1) { wave.tap() }
                 plays += 1
+                // your last card: the table says so before the winner screen covers it
+                if !shotLast && app.staticTexts["table-over"].waitForExistence(timeout: 0.8) { shot(app, "489-od-7-last-card"); shotLast = true }
             } else if app.buttons["keep"].exists {
                 app.buttons["keep"].tap()
             } else {
                 app.buttons["draw"].tap()
-                if !shotDraw { usleep(700_000); shot(app, "489-od-5-you-drew"); shotDraw = true }
             }
             if plays == 3 { shot(app, "400-mid-hand"); plays += 1 }
             usleep(600_000)

@@ -117,7 +117,7 @@ struct CloseEnoughView: View {
     @ViewBuilder private func lockedIn(_ q: CloseEnough.Question) -> some View {
         let inGame = view.players.filter { !$0.left && $0.seated }
         let done = inGame.filter(\.lockedIn).count
-        let waiting = inGame.filter { !$0.lockedIn && ($0.bot != nil || $0.connected) }.map(name)
+        let waiting = inGame.filter { !$0.lockedIn && $0.id != me && ($0.bot != nil || $0.connected) }.map(name)
         VStack(alignment: .leading, spacing: 4) {
             Text("\(done) of \(inGame.count) locked in").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
                 .contentTransition(.numericText()).animation(.default, value: done)
@@ -264,7 +264,7 @@ struct RangesChart: View {
                         .frame(height: 22)
                     }
                     .frame(height: 22)
-                    Text(r?.lo == nil ? "none" : "+\(r?.points ?? 0)").font(.footnote.weight(.bold).monospacedDigit())
+                    Text(r?.lo == nil ? "none" : (r?.points ?? 0) > 0 ? "+\(r?.points ?? 0)" : "0").font(.footnote.weight(.bold).monospacedDigit())
                         .foregroundStyle((r?.points ?? 0) > 0 ? T2P.good : T2P.faint).frame(width: 40, alignment: .trailing)
                 }
                 .accessibilityElement(children: .ignore)
