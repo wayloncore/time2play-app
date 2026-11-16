@@ -4,6 +4,9 @@ import XCTest
 final class OverdraftUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
+    /// #489: a whole hand against two bots, with a screenshot of each moment: the lobby and How to play, the deal,
+    /// a bot's turn, your turn, a draw, a big moment (Reverse, Skip, a train), the last card, the winner screen and
+    /// Play again.
     func testPlayAHandAgainstBots() throws {
         let app = launch()
         tapWhenReady(app.buttons["start-overdraft"])
@@ -18,16 +21,27 @@ final class OverdraftUITests: XCTestCase {
         app.buttons["addbot-normal"].tap()
         sleep(1)
         shot(app, "400-lobby-owner")
+        tapWhenReady(app.buttons["how-to-play"])
+        XCTAssertTrue(app.staticTexts["how-to-lede"].waitForExistence(timeout: 5), "How to play opens in one tap")
+        shot(app, "489-od-1-how-to-play")
+        tapWhenReady(app.buttons["how-to-done"])
         tapWhenReady(app.buttons["start-game"])
         XCTAssertTrue(app.buttons["draw"].waitForExistence(timeout: 20), "the table is dealt")
+        usleep(350_000)
+        shot(app, "489-od-2-deal")
 
-        var shotTurn = false, plays = 0
-        let deadline = Date().addingTimeInterval(300)
+        var shotTurn = false, shotTheirs = false, shotDraw = false, shotFlash = false, shotLast = false, plays = 0
+        let deadline = Date().addingTimeInterval(360)
         let legal = NSPredicate(format: "identifier BEGINSWITH 'legal-'")
         while Date() < deadline {
             if app.staticTexts["hand-over"].exists { break }
-            guard app.staticTexts["your-turn"].exists else { usleep(400_000); continue }
-            if !shotTurn { shot(app, "400-your-turn"); shotTurn = true }
+            if !shotFlash && app.descendants(matching: .any)["od-flash"].exists { shot(app, "489-od-6-big-moment"); shotFlash = true }
+            if !shotLast && app.staticTexts["table-over"].exists { shot(app, "489-od-7-last-card"); shotLast = true }
+            guard app.staticTexts["your-turn"].exists else {
+                if !shotTheirs && app.staticTexts["their-turn"].exists && plays > 0 { shot(app, "489-od-3-bot-turn"); shotTheirs = true }
+                usleep(250_000); continue
+            }
+            if !shotTurn { shot(app, "489-od-4-your-turn"); shotTurn = true }
             let cards = app.buttons.matching(legal)
             if cards.count > 0 {
                 // tap the card's visible edge (the next card overlaps the rest of it)
@@ -40,13 +54,23 @@ final class OverdraftUITests: XCTestCase {
                 app.buttons["keep"].tap()
             } else {
                 app.buttons["draw"].tap()
+                if !shotDraw { usleep(700_000); shot(app, "489-od-5-you-drew"); shotDraw = true }
             }
             if plays == 3 { shot(app, "400-mid-hand"); plays += 1 }
-            usleep(900_000)
+            usleep(600_000)
         }
+        if !shotLast, app.staticTexts["table-over"].waitForExistence(timeout: 3) { shot(app, "489-od-7-last-card") }
         XCTAssertTrue(app.staticTexts["hand-over"].waitForExistence(timeout: 30), "the hand ends with a winner")
-        shot(app, "400-hand-over")
+        sleep(1)
+        shot(app, "489-od-8-winner")
         XCTAssertTrue(app.buttons["play-again"].exists, "the owner can deal again")
+        XCTAssertTrue(app.buttons["back-to-library"].exists, "anyone can go back to the Library")
+        app.buttons["play-again"].tap()
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["hand-over"])
+        wait(for: [gone], timeout: 20)
+        XCTAssertTrue(app.buttons["draw"].waitForExistence(timeout: 20), "Play again deals a new hand")
+        usleep(300_000)
+        shot(app, "489-od-9-play-again")
         app.buttons["leave"].tap()
         tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Leave the'")).firstMatch, 5)
     }
