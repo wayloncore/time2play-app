@@ -23,6 +23,15 @@ final class OfflineTests: XCTestCase {
         }
     }
 
+    /// #488: the faces in a roll that can score, by the website's own scoring.
+    func testScoringFaces() throws {
+        let rules = try XCTUnwrap(OfflineRules.load())
+        XCTAssertEqual(rules.scoringFaces([1, 2, 3, 4, 6, 6], ones: 1000), [1])
+        XCTAssertEqual(rules.scoringFaces([5, 4, 4, 4, 2], ones: 1000), [4, 5])
+        XCTAssertEqual(rules.scoringFaces([2, 3, 4, 6], ones: 1000), [], "a Farkle: nothing scores")
+        XCTAssertEqual(rules.scoringFaces([2, 2, 3, 3, 6, 6], ones: 1000), [2, 3, 6], "three pairs")
+    }
+
     /// An offline room through the same RoomSession the screens use: join, two bots, deal, and the bots play.
     func testOfflineOverdraftThroughTheSession() throws {
         let rules = try XCTUnwrap(OfflineRules.load())

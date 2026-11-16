@@ -26,7 +26,7 @@ jobs:
   simulator:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mac]')
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45   # the full suite with #488's tests runs past 30 (Nov 16)
     steps:
       - uses: actions/checkout@v7
       - name: Versions
@@ -106,6 +106,16 @@ jobs:
             -parallel-testing-enabled NO -only-testing:Time2PlayUITests/TourUITests \
             CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           echo "ipad_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Why tests failed (the result bundle's failure messages)
+        if: always()
+        run: |
+          [ -d build/ui.xcresult ] || exit 0
+          xcrun xcresulttool get test-results summary --path build/ui.xcresult --format json > summary.json 2>/dev/null || exit 0
+          python3 -c '
+          import json
+          s=json.load(open("summary.json"))
+          print("RESULT", s.get("result"), "passed", s.get("passedTests"), "failed", s.get("failedTests"), "skipped", s.get("skippedTests"))
+          for f in s.get("testFailures", []): print("FAILURE", f.get("testIdentifierString") or f.get("testName"), "::", f.get("failureText"))'
       - name: Screenshots into the log
         if: always()
         run: |

@@ -6,6 +6,7 @@ import Overdraft from '@site/src/live/overdraft/room-core.cjs';
 import * as Farkle from '@site/src/live/farkle/room-core.js';
 import * as RollCall from '@site/src/live/rollcall/room-core.js';
 import * as CloseEnough from '@site/src/live/closeenough/room-core.js';
+import { scoringOptions } from '@site/src/games/farkle/scoring.js';
 import { parityRun } from './parity.js';
 
 export const CORES = { overdraft: Overdraft, farkle: Farkle, rollcall: RollCall, closeenough: CloseEnough };
@@ -71,5 +72,12 @@ globalThis.T2POffline = {
 	tick(id, now) { const r = rooms.get(id); return JSON.stringify(r && r.tick(now) ? r.views() : []); },
 	next(id) { const r = rooms.get(id); const n = r ? r.next() : null; return n == null ? -1 : n; },
 	close(id) { rooms.delete(id); },
-	parity(game, seed) { return JSON.stringify(parityRun(game, seed, OfflineRoom)); }
+	parity(game, seed) { return JSON.stringify(parityRun(game, seed, OfflineRoom)); },
+	/** Hot Dice (#488): which faces in a roll can score, by the website's own scoringOptions (its phone marks the rest
+	    "dead" the same way). values: the live dice's faces as JSON; ones: what three 1s score. Returns the faces as JSON. */
+	scoring(values, ones) {
+		const faces = new Set();
+		for (const o of scoringOptions(JSON.parse(values).map((value, id) => ({ id, value })), ones || 1000)) for (const k of o.key) faces.add(Number(k));
+		return JSON.stringify([...faces].sort());
+	}
 };

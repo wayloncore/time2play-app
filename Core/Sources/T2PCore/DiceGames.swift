@@ -100,6 +100,13 @@ public enum HotDice {
         public func player(_ id: String?) -> ScorePlayer? { players.first { $0.id == id } }
         public var me: ScorePlayer? { player(common.meId) }
     }
+
+    /// Why a roll of this many dice is a Farkle (#488), in words: what would have scored and didn't come up. A Farkle
+    /// has no 1, no 5 and no three of a kind; with all six dice, no three pairs either (the other six-dice sets hold a
+    /// 1 and a 5, or three of a kind).
+    public static func farkleWhy(dice: Int) -> String {
+        dice >= 6 ? "No 1s, no 5s, no three of a kind, no three pairs" : "No 1s, no 5s, no three of a kind"
+    }
 }
 
 /// Roll Call (five dice, thirteen boxes). Bots: Pip (easy), Rosa (medium), Viktor (hard).
@@ -125,8 +132,12 @@ public enum RollCall {
         public var turn: Turn?
         public var options: Options?
         public var lastLine: String?
+        /// The dice the last box was scored with, and which score that was (#488: everyone sees what landed).
+        public var lastDice: [Int]
+        public var lastN: Int
         public init(_ j: JSON) {
             common = CommonView(j); quick = j["quick"].bool ?? false; rounds = j["rounds"].int ?? 13
+            lastDice = j["last"]["dice"].array.compactMap(\.int); lastN = j["last"]["n"].int ?? 0
             players = j["players"].array.map(ScorePlayer.init)
             let t = j["turn"]
             turn = t.object == nil ? nil : Turn(id: t["id"].string ?? "", dice: t["dice"].array.compactMap(\.int),
@@ -146,6 +157,8 @@ public enum RollCall {
         public var me: ScorePlayer? { players.first { $0.id == common.meId } }
         /// The dice are stale until the turn's first roll (they're the last turn's), so the app hides them.
         public var diceShown: Bool { (turn?.rolls ?? 0) > 0 }
+        /// One roll's name (#488): whose turn and which roll of it. A new one means fresh dice to land.
+        public var rollKey: String? { turn.flatMap { $0.rolls > 0 ? "\($0.id)#\(lastN)#\($0.rolls)" : nil } }
         public var round: Int {
             guard let t = turn, let p = players.first(where: { $0.id == t.id }) else { return 1 }
             return min(rounds, p.scores.count + 1)

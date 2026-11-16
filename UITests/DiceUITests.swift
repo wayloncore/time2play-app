@@ -21,10 +21,23 @@ final class DiceUITests: XCTestCase {
             if bank.exists && bank.isEnabled { bank.tap(); break }
             if roll.exists && roll.isEnabled { roll.tap() }
         }
-        XCTAssertTrue(app.staticTexts["dice-status"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.descendants(matching: .any)["dice-status"].firstMatch.waitForExistence(timeout: 30))
         sleep(3)
         shot(app, "401-after-your-turn")
-        XCTAssertFalse(roll.exists && roll.isEnabled && app.staticTexts["dice-status"].label.contains("Roll all six"), "the turn moved on")
+        XCTAssertFalse(roll.exists && roll.isEnabled && app.descendants(matching: .any)["dice-status"].firstMatch.label.contains("Roll all six"), "the turn moved on")
+        // #488: the bot's roll lands on this phone too, faces showing, not just its result
+        let end = Date().addingTimeInterval(30)
+        var seen = false, said = "", faces: [String] = []
+        while Date() < end && !seen {
+            let status = app.descendants(matching: .any)["dice-status"].firstMatch
+            said = status.exists ? status.label : "(no status)"
+            faces = dieLabels(app)
+            if said.contains("June") && !faces.isEmpty && faces.allSatisfy({ $0.hasPrefix("Die showing") }) { seen = true }
+            else { usleep(300_000) }
+        }
+        if !seen { shot(app, "488-online-bot-roll-missing") }
+        XCTAssertTrue(seen, "June's roll lands on your screen; last status: \(said), dice: \(faces)")
+        shot(app, "488-online-bot-roll")
     }
 
     func testRollCallTurn() {

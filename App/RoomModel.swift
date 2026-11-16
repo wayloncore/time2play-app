@@ -28,7 +28,7 @@ final class RoomModel: ObservableObject, Identifiable {
         self.game = game; self.code = code; self.app = app; self.taken = taken; self.starting = starting
         self.offline = offline != nil
         if let rules = offline {
-            transport = OfflineTransport(rules: rules, game: game)
+            transport = app.offlineSeed.map { OfflineTransport(rules: rules, game: game, seed: $0) } ?? OfflineTransport(rules: rules, game: game)
             session = RoomSession(game: game, code: code, endpoints: app.endpoints, appVersion: AppModel.appVersion,
                                   transport: transport, store: MemorySeatStore())
         } else {
@@ -58,6 +58,9 @@ final class RoomModel: ObservableObject, Identifiable {
     func join(name: String, face: Int?) { session.join(name: name, face: face) }
     func send(_ m: JSON) { session.send(m) }
     func move(_ t: String, _ fields: [String: JSON] = [:]) { session.move(t, fields) }
+    /// The website's own Farkle scoring, for marking the dice that can score (#488).
+    var rules: OfflineRules? { app?.offlineRules }
+
     func react(_ r: Reaction) { session.send(Out.react(r)); Haptics.select() }
 
     func pause() { if offline { return }; retry?.cancel(); session.pause() }

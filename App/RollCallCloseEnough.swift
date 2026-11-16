@@ -2,10 +2,15 @@ import SwiftUI
 import T2PCore
 
 /// Roll Call: five dice, three rolls, thirteen boxes; against Pip, Rosa and Viktor or friends. The room scores every box.
+/// #488: every roll (yours, a friend's or a bot's) tumbles and lands before the boxes it can go in show.
 struct RollCallView: View {
     @ObservedObject var room: RoomModel
+    @Environment(\.accessibilityReduceMotion) private var still
     let view: RollCall.View
     var onLeave: () -> Void
+    /// The roll in the air (its RollCall.View.rollKey), and the last roll seen, so a view arriving mid-turn doesn't tumble.
+    @State private var tumbling: String?
+    @State private var seen: String?
 
     private var me: String { view.common.meId }
     private var mine: Bool { view.common.yourTurn }
@@ -24,10 +29,10 @@ struct RollCallView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         Text(turnLine).font(.headline).foregroundStyle(T2P.text).accessibilityIdentifier("rollcall-turn")
-                        if let l = view.lastLine { Text(l).font(.footnote).foregroundStyle(T2P.muted) }
+                        if let l = view.lastLine { lastScored(l) }
                         dice
                         if mine { rollButton }
-                        if let o = view.options, mine, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
+                        if let o = view.options, mine, tumbling == nil, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
                             Text(o.instruction).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.gold)
                         }
                         scorecard
@@ -39,6 +44,29 @@ struct RollCallView: View {
             }
         }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
+        .onAppear { seen = view.rollKey }
+        .onChange(of: view.rollKey) { _, key in
+            guard let key, key != seen else { return }
+            seen = key
+            if still { if mine { Haptics.play() }; return }
+            tumbling = key
+            DispatchQueue.main.asyncAfter(deadline: .now() + (mine ? 0.6 : 0.45)) {
+                if tumbling == key { tumbling = nil; if mine { Haptics.play() } }
+            }
+        }
+    }
+
+    /// Who scored what last, with the dice they scored it with (#488), so a bot's turn doesn't just vanish.
+    private func lastScored(_ line: String) -> some View {
+        HStack(spacing: 8) {
+            Text(line).font(.footnote).foregroundStyle(T2P.muted)
+            if !view.lastDice.isEmpty {
+                HStack(spacing: 3) { ForEach(Array(view.lastDice.enumerated()), id: \.offset) { _, v in DieView(value: v, size: 20) } }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(view.lastDice.isEmpty ? line : "\(line), with \(view.lastDice.map(String.init).joined(separator: ", "))")
+        .accessibilityIdentifier("rollcall-last")
     }
 
     private var topLine: String {
@@ -49,6 +77,7 @@ struct RollCallView: View {
     private var turnLine: String {
         guard let t = view.turn else { return "" }
         if view.common.held { return "A bot is playing your seat" }
+        if tumbling != nil { return mine ? "Rolling…" : "\(name(t.id)) is rolling…" }
         if mine { return t.rolls == 0 ? "Your turn: roll the dice" : t.rolls < RollCall.maxRolls ? "Your turn · roll \(t.rolls) of 3: hold dice, roll again or pick a box" : "Your turn: pick a box" }
         return "\(name(t.id))’s turn"
     }
@@ -59,18 +88,26 @@ struct RollCallView: View {
                 ForEach(0..<5, id: \.self) { i in
                     let held = i < t.held.count && t.held[i]
                     let canHold = mine && t.rolls > 0 && t.rolls < RollCall.maxRolls
+                    let air = tumbling != nil && !held
                     Button { if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() } } label: {
                         VStack(spacing: 4) {
-                            DieView(value: view.diceShown && i < t.dice.count ? t.dice[i] : nil, size: 56, held: held)
+                            if air {
+                                TumblingDie(size: 56, seed: i)
+                            } else if held || !view.diceShown {
+                                DieView(value: view.diceShown && i < t.dice.count ? t.dice[i] : nil, size: 56, held: held)
+                            } else {
+                                DieView(value: i < t.dice.count ? t.dice[i] : nil, size: 56).modifier(Landing())
+                            }
                             Text(held ? "HELD" : " ").font(.caption2.weight(.bold)).foregroundStyle(T2P.gold)
                         }
                     }
-                    .buttonStyle(.plain).disabled(!canHold)
-                    .accessibilityLabel(view.diceShown && i < t.dice.count ? "Die showing \(t.dice[i])" : "Die, not rolled yet")
+                    .buttonStyle(DieButtonStyle()).disabled(!canHold || tumbling != nil)
+                    .accessibilityLabel(air ? "Die, rolling" : view.diceShown && i < t.dice.count ? "Die showing \(t.dice[i])" : "Die, not rolled yet")
                     .accessibilityValue(held ? "held" : "")
                     .accessibilityIdentifier("rc-die-\(i)")
                 }
             }
+            .id(view.rollKey ?? "unrolled")
         }
     }
 
@@ -81,13 +118,13 @@ struct RollCallView: View {
             Text(rolls == 0 ? "Roll" : "Roll again (\(RollCall.maxRolls - rolls) left)")
         }
         .buttonStyle(GoldButtonStyle())
-        .disabled(rolls >= RollCall.maxRolls || (rolls > 0 && allHeld) || view.common.held)
+        .disabled(rolls >= RollCall.maxRolls || (rolls > 0 && allHeld) || view.common.held || tumbling != nil)
         .accessibilityIdentifier("rc-roll")
     }
 
     private var scorecard: some View {
         let mePlayer = view.me
-        let allowed = Set(mine ? view.options?.allowed ?? [] : [])
+        let allowed = Set(mine && tumbling == nil ? view.options?.allowed ?? [] : [])
         return VStack(spacing: 0) {
             ForEach(Array(RollCall.boxes.enumerated()), id: \.offset) { i, b in
                 let filled = mePlayer?.scores[b.key]

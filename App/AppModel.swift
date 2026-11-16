@@ -116,7 +116,14 @@ final class AppModel: ObservableObject {
     func closeRoom() { room?.close(); room = nil; TVModel.shared.watch(nil, code: nil, endpoints: endpoints) }
 
     /// The server's own rules, loaded once, for playing bots with no signal (#402).
-    private lazy var offlineRules: OfflineRules? = OfflineRules.load()
+    /// Hot Dice also asks them which dice in a roll can score (#488), online too.
+    lazy var offlineRules: OfflineRules? = OfflineRules.load()
+    /// A test can fix an offline room's dice: -t2p-seed 3 (#488's Farkle test).
+    let offlineSeed: UInt32? = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-t2p-seed"), i + 1 < args.count else { return nil }
+        return UInt32(args[i + 1])
+    }()
 
     /// An offline practice room with bots: the same screens, the same rules, no server. Nothing here counts.
     func startOffline(_ g: Game) {
