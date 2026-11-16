@@ -265,14 +265,17 @@ struct RulesEditor: View {
     }
 
     private func toggle(_ title: String, _ detail: String, _ on: Bool, _ change: @escaping (Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(get: { on }, set: change)) {
+        // the words beside the switch, not inside it: a switch's own label is drawn dimmed, too faint to read
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline).foregroundStyle(T2P.text)
                 Text(detail).font(.subheadline).foregroundStyle(T2P.muted)
             }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: Binding(get: { on }, set: change)).labelsHidden().tint(T2P.gold).disabled(!editable)
         }
-        .tint(T2P.gold)
-        .disabled(!editable)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(detail)
     }
 
     private func picker(_ title: String, _ options: [Int], _ value: Int, label: @escaping (Int) -> String, _ change: @escaping (Int) -> Void) -> some View {

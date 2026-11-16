@@ -38,7 +38,7 @@ struct AgeGate: View {
                             Text("Not yet").tag(Bool?.some(false))
                         }
                     }
-                } footer: { Text("We keep only whether you’re 13 or older, never the year.") }
+                } footer: { Text("We keep only whether you’re 13 or older, never the year.").foregroundStyle(T2P.muted) }
                 .listRowBackground(T2P.panel)
                 Section {
                     Button("Continue") { if let a = answer { onAnswer(a); dismiss() } }
@@ -106,7 +106,7 @@ struct ReviewSignIn: View {
                         .accessibilityIdentifier("review-key")
                     Button("Sign in for review") { Task { await app.signInForReview(key: key.trimmingCharacters(in: .whitespaces)); dismiss() } }
                         .disabled(key.isEmpty).accessibilityIdentifier("review-sign-in")
-                } footer: { Text("For App Review. The key is in the review notes.") }
+                } footer: { Text("For App Review. The key is in the review notes.").foregroundStyle(T2P.muted) }
             }
             .navigationTitle("Review sign-in")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
@@ -152,7 +152,7 @@ struct YouView: View {
                     Section {
                         Button("Sign out") { Task { await app.signOut() } }.accessibilityIdentifier("sign-out")
                         Button("Delete account", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("delete-account")
-                    } footer: { Text("Deleting removes your account, friends, groups and invites from Time2Play for good. You can still play as a guest.") }
+                    } footer: { Text("Deleting removes your account, friends, groups and invites from Time2Play for good. You can still play as a guest.").foregroundStyle(T2P.muted) }
                     .listRowBackground(T2P.panel)
                 } else {
                     Section { SignInPanel() }.listRowBackground(T2P.panel)
@@ -163,6 +163,7 @@ struct YouView: View {
                     Link("Privacy", destination: URL(string: "https://tyleralocke.com/privacy")!)
                 } footer: {
                     Text("Time2Play \(AppModel.appVersion) · protocol v\(protocolVersion)")
+                        .foregroundStyle(T2P.muted)
                         .onTapGesture { taps += 1; if taps >= 5 { taps = 0; review = true } }
                         .accessibilityIdentifier("version")
                 }
@@ -246,7 +247,7 @@ struct FriendsView: View {
                                 }
                                 .contextMenu { personMenu(p, friend: false) }
                             }
-                        } header: { Text("You played with") } footer: { Text("Signed-in players from your games in the last 30 days.") }
+                        } header: { Text("You played with") } footer: { Text("Signed-in players from your games in the last 30 days.").foregroundStyle(T2P.muted) }
                         .listRowBackground(T2P.panel)
                     }
                     if !app.friends.outgoing.isEmpty {
