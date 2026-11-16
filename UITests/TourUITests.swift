@@ -5,7 +5,7 @@ import XCTest
 final class TourUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone" }
-    private let xxxl = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+    private let xxxl = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-t2p-name", "Sim"]
 
     func testLargestTextTour() {
         let app = launch(xxxl)
@@ -13,8 +13,8 @@ final class TourUITests: XCTestCase {
         shot(app, "405-\(device)-home-xxxl")
         app.swipeUp(); app.swipeUp()
         tapWhenReady(app.buttons["offline-overdraft"])
-        let name = app.textFields["name"]
-        if name.waitForExistence(timeout: 10) { name.tap(); name.typeText("Sim"); shot(app, "405-\(device)-name-xxxl"); tapWhenReady(app.buttons["join-room"]) }
+        // with a name already, an offline room skips the picker
+        if app.buttons["join-room"].waitForExistence(timeout: 5) { shot(app, "405-\(device)-name-xxxl"); app.buttons["join-room"].tap() }
         tapWhenReady(app.buttons["addbot-easy"]); sleep(1)
         app.buttons["addbot-normal"].tap(); sleep(1)
         shot(app, "405-\(device)-lobby-xxxl")

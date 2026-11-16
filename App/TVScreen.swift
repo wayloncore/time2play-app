@@ -66,8 +66,19 @@ struct TVTableView: View {
     var body: some View {
         ZStack {
             (model.game == .hotDice ? T2P.felt : model.game == .overdraft ? T2P.table : Color(hex: 0x0B1121)).ignoresSafeArea()
-            if let f = model.floor, let g = model.game {
+            if let f = model.floor, let g = model.game, f["phase"].string != "lobby" {
                 content(f, g)
+            } else if let f = model.floor, let c = model.code {
+                // the lobby on a TV: how to join, big enough to read across a room, and who's in
+                VStack(spacing: 28) {
+                    Text("Join at time2play.live").font(.system(size: 44, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                    Text(c).font(.system(size: 120, weight: .bold, design: .rounded)).tracking(16).foregroundStyle(.white)
+                    HStack(spacing: -12) {
+                        ForEach(Array((f["roster"].array.isEmpty ? f["players"].array : f["roster"].array).prefix(12).enumerated()), id: \.offset) { _, p in
+                            FaceView(face: p["face"].int ?? 0, size: 84)
+                        }
+                    }
+                }
             } else {
                 VStack(spacing: 24) {
                     if let logo = Art.image("t2p-logo") { Image(uiImage: logo).resizable().scaledToFit().frame(height: 120) }

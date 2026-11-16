@@ -5,8 +5,9 @@ final class AccountUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     private func pickYear(_ app: XCUIApplication, _ year: String) {
-        tapWhenReady(app.buttons["birth-year"])
-        tapWhenReady(app.buttons[year].firstMatch, 5)
+        let wheel = app.pickerWheels.firstMatch
+        XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+        wheel.adjust(toPickerWheelValue: year)
     }
 
     /// Guest first: signing in is optional and asks the neutral age question first; under 13 stays a guest.

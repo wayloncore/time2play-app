@@ -29,7 +29,7 @@ struct AgeGate: View {
                         Text("Choose a year").tag(Int?.none)
                         ForEach((now - 100...now - 3).reversed(), id: \.self) { Text(String($0)).tag(Int?.some($0)) }
                     }
-                    .pickerStyle(.menu)
+                    .pickerStyle(.wheel)
                     .accessibilityIdentifier("birth-year")
                     if needsMonth {
                         Picker("Has your birthday been this year?", selection: $birthdayPassed) {

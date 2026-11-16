@@ -60,6 +60,8 @@ final class AppModel: ObservableObject {
         api = API(endpoints: endpoints)
         api.appVersion = "ios \(AppModel.appVersion)"
         profile = AppModel.load("t2p.profile") ?? Profile()
+        // a test can start with a name (-t2p-name Sim), so the largest-text tour doesn't type
+        if let i = args.firstIndex(of: "-t2p-name"), i + 1 < args.count, profile.name.isEmpty { profile = Profile(name: args[i + 1], face: 9) }
         library = UserDefaults.standard.data(forKey: "t2p.library").flatMap { JSON.parse($0) }.flatMap { Library($0) } ?? Library()
         restoreAccount()
     }
