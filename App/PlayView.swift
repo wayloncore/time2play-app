@@ -87,10 +87,13 @@ struct PlayView: View {
 
     private var startRooms: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Start a room").font(.title2.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader).fixedSize()
+                    Spacer()
+                    Button("Library") { app.tab = .library }.foregroundStyle(T2P.goldText).fixedSize()
+                }
                 Text("Start a room").font(.title2.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button("Library") { app.tab = .library }.foregroundStyle(T2P.goldText)
             }
             Text("Private: only people with the code or link can join. Bots can fill seats.")
                 .font(.subheadline).foregroundStyle(T2P.muted)
@@ -163,6 +166,7 @@ struct CodeBoxes: View {
                 }
             }
             .accessibilityHidden(true)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)   // four boxes across, at every text size
             .onTapGesture { focused.wrappedValue = true }
             TextField("", text: Binding(get: { code }, set: { code = RoomCode.partial($0) }))
                 .textInputAutocapitalization(.characters)

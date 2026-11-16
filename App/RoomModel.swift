@@ -26,6 +26,8 @@ final class RoomModel: ObservableObject, Identifiable {
         self.game = game; self.code = code; self.app = app; self.taken = taken; self.starting = starting
         session = RoomSession(game: game, code: code, endpoints: app.endpoints, appVersion: AppModel.appVersion,
                               transport: transport, store: app.seats)
+        // the UI test for "Please update" says it speaks a protocol older than the server's oldest
+        if ProcessInfo.processInfo.arguments.contains("-t2p-old-protocol") { session.helloVersion = 0 }
         session.onChange = { [weak self] in self?.sync() }
         session.onNotice = { [weak self] n in self?.notice(n) }
     }

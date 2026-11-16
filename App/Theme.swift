@@ -76,8 +76,9 @@ struct GoldButtonStyle: ButtonStyle {
             .font(.headline)
             .frame(maxWidth: .infinity, minHeight: 50)
             .padding(.horizontal, 16)
-            .foregroundStyle(T2P.ink)
-            .background(T2P.gold.opacity(enabled ? 1 : 0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .foregroundStyle(enabled ? T2P.ink : T2P.faint)
+            .background(enabled ? T2P.gold : T2P.panelHi, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(enabled ? .clear : T2P.line))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .contentShape(Rectangle())
     }

@@ -47,8 +47,8 @@ public enum RoomCode {
 
 /// What the phone sends. Every message is a JSON object with a `t` field, as the website's phones send them.
 public enum Out {
-    public static func hello(app: String, session: String? = nil) -> JSON {
-        var o: [String: JSON] = ["t": "hello", "v": .number(Double(protocolVersion)), "app": .string(app)]
+    public static func hello(app: String, session: String? = nil, v: Int = protocolVersion) -> JSON {
+        var o: [String: JSON] = ["t": "hello", "v": .number(Double(v)), "app": .string(app)]
         if let s = session { o["session"] = .string(s) }
         return .object(o)
     }
