@@ -185,7 +185,7 @@ struct HandView: View {
         GeometryReader { g in
             let n = max(1, view.hand.count)
             let w: CGFloat = hsize == .regular ? 130 : 96
-            let step = min(w * 0.82, max(22, (g.size.width - 32 - w) / CGFloat(max(1, n - 1))))
+            let step = min(w * 0.82, max(44, (g.size.width - 32 - w) / CGFloat(max(1, n - 1))))   // 44 pt of every card to tap, at least
             let total = step * CGFloat(n - 1) + w
             ScrollView(.horizontal, showsIndicators: false) {
                 ZStack(alignment: .bottomLeading) {
@@ -287,12 +287,12 @@ struct TableTopBar: View {
             Spacer()
             VStack(spacing: 2) {
                 Text(game.title).font(.headline).foregroundStyle(T2P.text)
-                Text("ROOM \(code) · \(line)").font(.caption.weight(.semibold)).tracking(1).foregroundStyle(T2P.muted)
+                Text(room.offline ? "PRACTICE · \(line)" : "ROOM \(code) · \(line)").font(.caption.weight(.semibold)).tracking(1).foregroundStyle(T2P.muted)
             }
             .accessibilityElement(children: .combine)
             Spacer()
             Menu {
-                ShareLink(item: room.inviteLink) { Label("Invite people", systemImage: "square.and.arrow.up") }
+                if !room.offline { ShareLink(item: room.inviteLink) { Label("Invite people", systemImage: "square.and.arrow.up") } }
                 if owner { Button("End the room", role: .destructive) { confirmEnd = true } }
                 Button("Leave", role: .destructive, action: onLeave)
             } label: {

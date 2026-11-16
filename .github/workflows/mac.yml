@@ -59,6 +59,8 @@ jobs:
       - name: Build and run the UI tests
         env:
           ONLY: ${{ github.event.inputs.only }}
+          # App Review's sign-in key (#403), for the account tests; they skip without it
+          TEST_RUNNER_REVIEW_KEY: ${{ secrets.REVIEW_SIGNIN_KEY }}
         run: |
           t=$(date +%s)
           set -o pipefail

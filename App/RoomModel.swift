@@ -8,8 +8,10 @@ final class RoomModel: ObservableObject, Identifiable {
     let game: Game
     let code: String
     let starting: Bool
+    /// An offline room (#402): the server's own rules and bots, run on this phone. Practice; nothing counts.
+    let offline: Bool
     private let session: RoomSession
-    private let transport = WebSocketTransport()
+    private let transport: RoomTransport
     private weak var app: AppModel?
     private var retry: DispatchWorkItem?
 
@@ -22,10 +24,20 @@ final class RoomModel: ObservableObject, Identifiable {
 
     struct ShownReaction: Identifiable, Equatable { let id = UUID(); let who: String; let words: String }
 
-    init(game: Game, code: String, app: AppModel, taken: [Int], starting: Bool) {
+    init(game: Game, code: String, app: AppModel, taken: [Int], starting: Bool, offline: OfflineRules? = nil, session account: String? = nil) {
         self.game = game; self.code = code; self.app = app; self.taken = taken; self.starting = starting
-        session = RoomSession(game: game, code: code, endpoints: app.endpoints, appVersion: AppModel.appVersion,
-                              transport: transport, store: app.seats)
+        self.offline = offline != nil
+        if let rules = offline {
+            transport = OfflineTransport(rules: rules, game: game)
+            session = RoomSession(game: game, code: code, endpoints: app.endpoints, appVersion: AppModel.appVersion,
+                                  transport: transport, store: MemorySeatStore())
+        } else {
+            transport = WebSocketTransport()
+            // a signed-in player's session goes in the room's first message (never the address): their seat carries
+            // their account, so the people they played with can become friends afterwards
+            session = RoomSession(game: game, code: code, endpoints: app.endpoints, appVersion: AppModel.appVersion,
+                                  sessionToken: account, transport: transport, store: app.seats)
+        }
         // the UI test for "Please update" says it speaks a protocol older than the server's oldest
         if ProcessInfo.processInfo.arguments.contains("-t2p-old-protocol") { session.helloVersion = 0 }
         session.onChange = { [weak self] in self?.sync() }
@@ -48,8 +60,8 @@ final class RoomModel: ObservableObject, Identifiable {
     func move(_ t: String, _ fields: [String: JSON] = [:]) { session.move(t, fields) }
     func react(_ r: Reaction) { session.send(Out.react(r)); Haptics.select() }
 
-    func pause() { retry?.cancel(); session.pause() }
-    func resume() { retry?.cancel(); session.reconnect() }
+    func pause() { if offline { return }; retry?.cancel(); session.pause() }
+    func resume() { if offline { return }; retry?.cancel(); session.reconnect() }
     func leave() { retry?.cancel(); session.leave() }
     func close() { retry?.cancel(); transport.close() }
 

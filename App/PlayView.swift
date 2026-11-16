@@ -14,7 +14,9 @@ struct PlayView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     header
                     joinPanel
+                    ForEach(app.challenges) { c in Panel { ChallengeRow(c: c) } }
                     startRooms
+                    offline
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
@@ -103,6 +105,26 @@ struct PlayView: View {
                         .buttonStyle(.plain)
                         .disabled(app.busy)
                         .accessibilityIdentifier("start-\(g.rawValue)")
+                }
+            }
+        }
+    }
+}
+
+extension PlayView {
+    /// Bots with no signal (#402): the server's own rules, run on the phone. Practice: nothing reaches the server.
+    var offline: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No signal? Practice with bots").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
+            Text("Same rules, played on your phone. Practice games don’t count.").font(.subheadline).foregroundStyle(T2P.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Game.allCases) { g in
+                        Button { app.startOffline(g) } label: { Label(g.title, systemImage: "airplane") }
+                            .buttonStyle(QuietButtonStyle())
+                            .accessibilityLabel("Practice \(g.title) offline")
+                            .accessibilityIdentifier("offline-\(g.rawValue)")
+                    }
                 }
             }
         }

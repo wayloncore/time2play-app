@@ -221,12 +221,12 @@ struct HotDiceView: View {
                 }
                 .accessibilityElement(children: .combine)
                 let live = t.dice.filter { t.live.contains($0.id) }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: min(6, max(3, live.count))), spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(70), spacing: 14), count: min(3, max(1, live.count))), spacing: 14) {
                     ForEach(live) { d in
                         let sel = t.sel.contains(d.id)
                         let tappable = mine && t.state == "choose" && !view.common.held
                         Button { if tappable { room.move("tap", ["die": .number(Double(d.id))]); Haptics.select() } } label: {
-                            DieView(value: t.state == "rolling" ? nil : d.v, size: 58, selected: sel, dimmed: t.state == "farkle")
+                            DieView(value: t.state == "rolling" ? nil : d.v, size: 64, selected: sel, dimmed: t.state == "farkle")
                         }
                         .buttonStyle(.plain)
                         .disabled(!tappable)
@@ -264,8 +264,9 @@ struct HotDiceView: View {
                 .buttonStyle(GoldButtonStyle()).disabled(!canRoll).accessibilityIdentifier("roll")
                 Button { room.move("bank"); Haptics.yourTurn() } label: {
                     VStack(spacing: 0) { Text("Bank"); Text("+\(((t?.pts ?? 0) + (t?.state == "choose" ? t?.selPts ?? 0 : 0)).formatted())").font(.caption) }
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(QuietButtonStyle()).frame(maxWidth: .infinity).disabled(!canBank).accessibilityIdentifier("bank")
+                .buttonStyle(QuietButtonStyle()).disabled(!canBank).accessibilityIdentifier("bank")
             }
             .padding(.horizontal, 20)
         }

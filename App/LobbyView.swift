@@ -26,6 +26,7 @@ extension RoomModel {
 /// Option A in the plan (#385): the owner runs the room, a player like everyone else. No big screen needed.
 struct LobbyView: View {
     @ObservedObject var room: RoomModel
+    @EnvironmentObject var app: AppModel
     var onLeave: () -> Void
     @State private var removing: LobbyPlayer?
     @State private var confirmEnd = false
@@ -41,10 +42,11 @@ struct LobbyView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(room.game.title).font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                        Text(room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
+                        Text(room.offline ? "Practice with bots, on this phone · nothing here counts"
+                             : room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
                             .foregroundStyle(T2P.muted)
                     }
-                    codePanel
+                    if !room.offline { codePanel }
                     if room.phase == "playing" || room.phase == "done" {
                         Label(room.game == .overdraft ? "A hand is on. You’re dealt in at the next one." : "A game is on. You’ll play in the next one.",
                               systemImage: "hourglass").foregroundStyle(T2P.muted)
@@ -152,6 +154,13 @@ struct LobbyView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel([me ? "You" : p.name, sub].filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityIdentifier("player-\(p.id)")
+        .contextMenu {
+            // report a name from any player list (#395); guests can too. No free text: a preset reason.
+            if !me && p.bot == nil && !room.offline {
+                Button("Report their name") { Task { try? await app.api.report(name: p.name, why: "name", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
+                Button("Report how they play") { Task { try? await app.api.report(name: p.name, why: "behavior", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
+            }
+        }
     }
 
     private var addBots: some View {
@@ -195,7 +204,7 @@ struct LobbyView: View {
                 .buttonStyle(GoldButtonStyle())
                 .disabled(!enough)
                 .accessibilityIdentifier("start-game")
-                Text(enough ? "No big screen needed. Anyone can put it on a TV."
+                Text(room.offline ? "Offline: just you and the bots." : enough ? "No big screen needed. Anyone can put it on a TV."
                      : "Add a bot or invite someone: \(room.game.minPlayers) or more can play.")
                     .font(.footnote).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
                 Button("End the room") { confirmEnd = true }.font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)

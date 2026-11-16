@@ -37,21 +37,31 @@ final class AppModel: ObservableObject {
     @Published var tab: Tab = .play
     @Published var busy = false
     @Published var problem: String?
+    /// The signed-in account (#403), or nil: a guest. Nobody needs one to play.
+    @Published var account: SavedAccount?
+    @Published var accountProblem: String?
+    @Published var notice: String?
+    @Published var friends = Friends()
+    @Published var groups: [PlayerGroup] = []
+    @Published var challenges: [Challenge] = []
 
     enum Tab: Hashable { case play, friends, library, you }
 
     init() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-uitest-reset") {
-            for k in ["t2p.profile", "t2p.seats", "t2p.library"] { UserDefaults.standard.removeObject(forKey: k) }
+            for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account"] { UserDefaults.standard.removeObject(forKey: k) }
+            Keychain.delete()
         }
         // A test (or a check against staging) can point the app elsewhere: -t2p-base https://…
         if let i = args.firstIndex(of: "-t2p-base"), i + 1 < args.count, let u = URL(string: args[i + 1]) {
             endpoints = Endpoints(base: u, joinSite: Endpoints.live.joinSite)
         } else { endpoints = .live }
         api = API(endpoints: endpoints)
+        api.appVersion = "ios \(AppModel.appVersion)"
         profile = AppModel.load("t2p.profile") ?? Profile()
         library = UserDefaults.standard.data(forKey: "t2p.library").flatMap { JSON.parse($0) }.flatMap { Library($0) } ?? Library()
+        restoreAccount()
     }
 
     private static func load<T: Decodable>(_ key: String) -> T? {
@@ -95,12 +105,24 @@ final class AppModel: ObservableObject {
 
     func open(_ g: Game, code: String, taken: [Int], starting: Bool = false) {
         room?.close()
-        let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting)
+        let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting, session: api.session)
         room = r
         r.start()
     }
 
     func closeRoom() { room?.close(); room = nil }
+
+    /// The server's own rules, loaded once, for playing bots with no signal (#402).
+    private lazy var offlineRules: OfflineRules? = OfflineRules.load()
+
+    /// An offline practice room with bots: the same screens, the same rules, no server. Nothing here counts.
+    func startOffline(_ g: Game) {
+        guard let rules = offlineRules else { problem = "Offline play isn’t available right now."; return }
+        room?.close()
+        let r = RoomModel(game: g, code: "SOLO", app: self, taken: [], starting: true, offline: rules)
+        room = r
+        r.start()
+    }
 
     // MARK: the Library
 

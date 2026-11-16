@@ -30,7 +30,8 @@ final class OverdraftUITests: XCTestCase {
             if !shotTurn { shot(app, "400-your-turn"); shotTurn = true }
             let cards = app.buttons.matching(legal)
             if cards.count > 0 {
-                cards.element(boundBy: 0).tap()
+                // tap the card's visible edge (the next card overlaps the rest of it)
+                cards.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).tap()
                 // a Change Suit or a +4 asks for the suit
                 let wave = app.buttons["Wave"]
                 if wave.waitForExistence(timeout: 1) { wave.tap() }

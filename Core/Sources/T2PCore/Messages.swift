@@ -25,6 +25,10 @@ public enum RoomCode {
     /// the website's player pages (…?room=K7QP), or a bare code.
     public static func fromLink(_ url: URL) -> String? {
         if url.scheme == nil, url.host == nil { return normalize(url.absoluteString) }
+        // the app's own scheme: time2play://join/K7QP (a notification or a test opens it)
+        if url.scheme == "time2play" {
+            return url.host == "join" ? normalize(url.lastPathComponent) : nil
+        }
         guard let host = url.host?.lowercased() else { return nil }
         let ours = ["time2play.live", "www.time2play.live", "tyleralocke.com", "www.tyleralocke.com"]
         guard ours.contains(host) else { return nil }

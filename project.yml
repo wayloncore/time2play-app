@@ -14,6 +14,21 @@ targets:
     sources: [App]
     dependencies:
       - package: T2PCore
+    info:
+      path: App/Info.plist
+      properties:
+        # time2play://join/K7QP: the app's own links (a notification, a test); invite links are time2play.live/K7QP
+        CFBundleURLTypes:
+          - CFBundleURLName: live.time2play.app
+            CFBundleURLSchemes: [time2play]
+    # Used once builds are signed with Tyler's Apple account (#406): invite links that open the app, invite alerts,
+    # Sign in with Apple. Unsigned simulator builds leave them out.
+    entitlements:
+      path: App/Time2Play.entitlements
+      properties:
+        com.apple.developer.associated-domains: ["applinks:time2play.live"]
+        aps-environment: development
+        com.apple.developer.applesignin: [Default]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app
