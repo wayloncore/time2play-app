@@ -79,6 +79,7 @@ public enum Overdraft {
         public var jumpIn: Bool
         public var seq: Int
         public var jumpBy: String?
+        public var jumpSeq: Int?         // the play the last jump-in made (a new one is a new jump)
         public var taking: Bool
         public var direction: Int
         public var drawLeft: Int
@@ -90,7 +91,7 @@ public enum Overdraft {
             n = j["n"].int; turnEndsAt = j["turnEndsAt"].double; suit = j["suit"].string
             top = j["top"].isNull ? nil : Card(j["top"]); pile = j["pile"].array.map(Card.init)
             stack = j["stack"].int ?? 0; jumpIn = j["jumpIn"].bool ?? false; seq = j["seq"].int ?? 0
-            jumpBy = j["jump"]["id"].string; taking = j["taking"].bool ?? false
+            jumpBy = j["jump"]["id"].string; jumpSeq = j["jump"]["seq"].int; taking = j["taking"].bool ?? false
             direction = j["direction"].int ?? 1; drawLeft = j["drawLeft"].int ?? 0
             turn = j["turn"].string; over = j["over"].bool ?? false; winner = j["winner"].string
             seats = j["seats"].array.map(Seat.init)

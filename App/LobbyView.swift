@@ -77,6 +77,7 @@ struct LobbyView: View {
         HStack {
             Button("Leave", action: onLeave).foregroundStyle(T2P.goldText).accessibilityIdentifier("leave")
             Spacer()
+            HowToButton(game: room.game, view: room.view)   // #489: the rules, one tap away
             if !room.offline {
                 Button { tv = true } label: { Image(systemName: "tv").font(.headline).foregroundStyle(T2P.text).frame(width: 44, height: 44) }
                     .accessibilityLabel("Show on TV").accessibilityIdentifier("show-on-tv")
@@ -256,6 +257,9 @@ struct RulesEditor: View {
             case .rollCall:
                 toggle("Quick game", "6 rounds instead of 13", view["quick"].bool ?? false) { set(["quick": .bool($0)]) }
             case .closeEnough:
+                if let qs = view["sets"].array.first(where: { $0["key"].string == (view["opts"]["set"].string ?? "general") }) ?? view["sets"].array.first {
+                    Text("Questions from \(qs["name"].string ?? "the question set") · \(qs["size"].int ?? 0) in the set").font(.subheadline).foregroundStyle(T2P.muted)
+                }
                 picker("Questions", CloseEnough.counts, view["opts"]["count"].int ?? 10, label: { "\($0)" }) { set(["count": .number(Double($0))]) }
                 picker("Time for each", CloseEnough.timers, view["opts"]["timer"].int ?? 60, label: { $0 < 60 || $0 == 90 ? "\($0)s" : "\($0 / 60) min" }) {
                     set(["timer": .number(Double($0))])
