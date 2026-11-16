@@ -145,6 +145,7 @@ struct YouView: View {
                     Button("Change your face") { picking = true }
                 } footer: {
                     Text(app.signedIn ? "Friends see this name and face." : "Your name and face stay on this phone. Rooms see them while you play.")
+                        .foregroundStyle(T2P.muted)
                 }
                 .listRowBackground(T2P.panel)
 

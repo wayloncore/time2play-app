@@ -25,7 +25,7 @@ struct LibraryView: View {
                     ForEach(app.library.categories) { c in
                         let items = app.library.items(in: c).filter { $0.game == nil }
                         if !items.isEmpty {
-                            Section { ForEach(items) { item($0) } } header: { Text(c.name) } footer: { if !c.line.isEmpty { Text(c.line) } }
+                            Section { ForEach(items) { item($0) } } header: { Text(c.name) } footer: { if !c.line.isEmpty { Text(c.line).foregroundStyle(T2P.muted) } }
                         }
                     }
                 } else {
