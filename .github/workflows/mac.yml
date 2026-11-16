@@ -19,7 +19,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: mac-build
+  # one per branch, so two sessions' runs never cancel each other
+  group: mac-build-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   simulator:
