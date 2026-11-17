@@ -49,6 +49,12 @@ final class StoreUITests: XCTestCase {
         // iPad shows the tabs along the top, not in a tab bar
         let tab = app.tabBars.buttons["Library"]
         tapWhenReady(tab.waitForExistence(timeout: 5) ? tab : app.buttons["Library"].firstMatch); sleep(3)
+        // #487: no card named after a real TV game show (App Review checks names, guideline 5.2.1)
+        let labelled = { (words: String) in app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch }
+        XCTAssertTrue(labelled("Live Buzzer").waitForExistence(timeout: 10), "the website's cards have loaded")
+        for show in ["Millionaire", "Jeopardy", "America Says", "Chain Reaction", "Impossible"] {
+            XCTAssertFalse(labelled(show).exists, "the Library leaves out \(show)")
+        }
         shot(app, "store-\(device)-5-library")
     }
 }

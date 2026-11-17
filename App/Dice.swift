@@ -149,29 +149,49 @@ struct ScoreStrip: View {
     }
 }
 
-/// Who won, the final scores, and for the owner, Play again and Change seats.
+/// Who won and why, the final scores, and what next (#489): for the owner, Play again and Change seats; for everyone,
+/// Back to Library.
 struct GameOver: View {
     @ObservedObject var room: RoomModel
+    @EnvironmentObject var app: AppModel
     let players: [ScorePlayer]
     let winners: [String]
     let me: String
+    /// Why the game ended, in a sentence ("Ada reached 10,000, and everyone else had one last turn.").
+    var reason: String? = nil
     var line: (ScorePlayer) -> String = { "\($0.score.formatted())" }
+    /// A line under a player's name (Roll Call: the bonuses in their total).
+    var detail: (ScorePlayer) -> String? = { _ in nil }
     var body: some View {
         let sorted = players.filter { !$0.left || $0.score > 0 }.sorted { $0.score > $1.score }
         let names = winners.compactMap { w in players.first { $0.id == w } }.map { $0.id == me ? "You" : RoomPlayer.stripBot($0.name) }
         ScrollView {
             VStack(spacing: 16) {
-                Image(systemName: winners.contains(me) ? "trophy.fill" : "flag.checkered").font(.system(size: 48)).foregroundStyle(T2P.gold).accessibilityHidden(true)
+                if winners.count == 1, let w = players.first(where: { $0.id == winners[0] }) {
+                    FaceView(face: w.face, size: 76).overlay(Circle().stroke(T2P.gold, lineWidth: 3).padding(-3))
+                } else {
+                    Image(systemName: winners.contains(me) ? "trophy.fill" : "flag.checkered").font(.system(size: 48)).foregroundStyle(T2P.gold).accessibilityHidden(true)
+                }
                 Text(winners.count > 1 ? "A shared win!" : winners.contains(me) ? "You win!" : "\(names.first ?? "Someone") wins!")
                     .font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityIdentifier("game-over")
+                if let r = reason {
+                    Text(winners.count > 1 ? "\(r) \(names.joined(separator: " and ")) finished level." : r)
+                        .foregroundStyle(T2P.muted).multilineTextAlignment(.center).accessibilityIdentifier("game-over-why")
+                }
                 VStack(spacing: 0) {
                     ForEach(sorted) { p in
                         HStack(spacing: 12) {
                             FaceView(face: p.face, size: 40)
-                            Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.headline).foregroundStyle(T2P.text)
-                            if winners.contains(p.id) { Image(systemName: "crown.fill").foregroundStyle(T2P.gold) }
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.headline).foregroundStyle(T2P.text)
+                                    if p.bot != nil { Tag(text: "BOT") }
+                                    if winners.contains(p.id) { Image(systemName: "crown.fill").foregroundStyle(T2P.gold) }
+                                }
+                                if let d = detail(p) { Text(d).font(.subheadline).foregroundStyle(T2P.muted) }
+                            }
                             Spacer()
-                            Text(line(p)).font(.headline.monospacedDigit()).foregroundStyle(T2P.text)
+                            Text(line(p)).font(.title3.bold().monospacedDigit()).foregroundStyle(T2P.text)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .accessibilityElement(children: .combine)
@@ -183,10 +203,86 @@ struct GameOver: View {
                         .accessibilityIdentifier("play-again")
                     Button("Change seats") { room.send(Out.again) }.buttonStyle(QuietButtonStyle())
                 } else {
-                    Text("Waiting for \(room.ownerName ?? "the room’s owner") to start another.").foregroundStyle(T2P.muted)
+                    Text("If \(room.ownerName ?? "the room’s owner") starts another game, you’ll be in it.").foregroundStyle(T2P.muted).multilineTextAlignment(.center)
                 }
+                Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
+                    .font(.headline).foregroundStyle(T2P.goldText).frame(minHeight: 44)
+                    .accessibilityIdentifier("back-to-library")
             }
             .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
+        }
+        .onAppear { if winners.contains(me) { Haptics.yourTurn() } }
+    }
+}
+
+/// One line of what just happened at a dice table (#489), with the dice it was about when there are some.
+struct MomentLine: Identifiable, Equatable { let id = UUID(); let text: String; var dice: [Int] = [] }
+
+/// What just happened (#489): the newest line bright, the two before it fainter, as Overdraft's table shows it.
+struct MomentFeed: View {
+    let lines: [MomentLine]
+    let id: String
+    @Environment(\.accessibilityReduceMotion) private var still
+    var body: some View {
+        VStack(spacing: 3) {
+            ForEach(Array(lines.enumerated()), id: \.element.id) { i, l in
+                HStack(spacing: 6) {
+                    Text(l.text)
+                        .font(i == 0 ? Font.subheadline.weight(.semibold) : Font.footnote)
+                        .foregroundStyle(i == 0 ? T2P.text : T2P.muted.opacity(i == 1 ? 1 : 0.7))
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                    if !l.dice.isEmpty {
+                        HStack(spacing: 2) { ForEach(Array(l.dice.enumerated()), id: \.offset) { _, v in DieView(value: v, size: i == 0 ? 18 : 14) } }
+                            .opacity(i == 0 ? 1 : 0.7)
+                    }
+                }
+                .transition(still ? AnyTransition.opacity : AnyTransition.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: lines.isEmpty ? 0 : 44, alignment: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(lines.first.map { $0.dice.isEmpty ? $0.text : "\($0.text), with \($0.dice.map(String.init).joined(separator: ", "))" } ?? "")
+        .accessibilityIdentifier(id)
+    }
+
+    /// Adds a line at the top, keeping three.
+    static func add(_ text: String, dice: [Int] = [], to lines: inout [MomentLine], still: Bool) {
+        withAnimation(still ? nil : Animation.easeOut(duration: 0.25)) {
+            lines.insert(MomentLine(text: text, dice: dice), at: 0)
+            if lines.count > 3 { lines.removeLast(lines.count - 3) }
+        }
+    }
+}
+
+/// A big moment over the table for a moment (#489): a bank, hot dice, the last round, a bonus. It never takes a tap.
+struct BigMoment: Identifiable, Equatable { let id = UUID(); let icon: String; let word: String; let detail: String }
+
+struct BigMomentCard: View {
+    let m: BigMoment
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: m.icon).font(.title2.weight(.bold)).foregroundStyle(T2P.ink).accessibilityHidden(true)
+            Text(m.word).font(.title.bold()).foregroundStyle(T2P.ink)
+            Text(m.detail).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.ink).multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 26).padding(.vertical, 16)
+        .frame(maxWidth: 340)
+        .background(T2P.gold, in: RoundedRectangle(cornerRadius: 22))
+        .shadow(color: .black.opacity(0.35), radius: 16)
+        .padding(.horizontal, 24)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("big-moment")
+    }
+
+    /// Shows `m` over the table for about 1.6 seconds, said aloud to VoiceOver too.
+    static func show(_ m: BigMoment, in slot: Binding<BigMoment?>, still: Bool) {
+        withAnimation(still ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.3)) { slot.wrappedValue = m }
+        UIAccessibility.post(notification: .announcement, argument: "\(m.word). \(m.detail)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            if slot.wrappedValue?.id == m.id { withAnimation(.easeOut(duration: 0.3)) { slot.wrappedValue = nil } }
         }
     }
 }
@@ -194,6 +290,9 @@ struct GameOver: View {
 /// Hot Dice (#401): the website's Farkle Live, with no big screen, against Penny, June and Rex.
 /// #488: a roll tumbles, lands and stays on screen; the dice that can score are marked; a Farkle shows its dice, then
 /// why nothing scored, before the turn moves on. Everyone at the table sees each roll land, bots' too.
+/// #489: a line of what just happened (dice set aside, a bank, a Farkle, a turn the room finished), a bank, hot dice
+/// and the last round said big for a moment, who's up next, a tap that ends a Farkle's hold, and the end of the game
+/// saying why it ended.
 struct HotDiceView: View {
     @ObservedObject var room: RoomModel
     @Environment(\.horizontalSizeClass) private var hsize
@@ -204,6 +303,8 @@ struct HotDiceView: View {
     /// A Farkle stays up about as long as the room holds it (2.4 s), even if the next turn's view comes sooner; a tap
     /// clears it early.
     @State private var farkle: HotDice.Turn?
+    @State private var feed: [MomentLine] = []
+    @State private var big: BigMoment?
 
     private var me: String { view.common.meId }
     private var t: HotDice.Turn? { view.turn }
@@ -219,13 +320,15 @@ struct HotDiceView: View {
         VStack(spacing: 0) {
             TableTopBar(game: room.game, code: room.code, line: topLine, onLeave: onLeave, owner: room.isOwner, room: room)
             if view.common.phase == "done" {
-                GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me)
+                GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason)
             } else {
                 ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me) { p in
                     !view.board || p.on ? (p.strikes > 0 ? "\(p.strikes) Farkle\(p.strikes == 1 ? "" : "s")" : nil) : "not on the board"
                 }
                 .padding(.vertical, 8)
-                Text(targetLine).font(.footnote).foregroundStyle(T2P.muted)
+                Text(targetLine).font(.footnote).foregroundStyle(view.finalBy != nil ? T2P.goldText : T2P.muted)
+                    .multilineTextAlignment(.center).padding(.horizontal, 16).accessibilityIdentifier("hd-target")
+                MomentFeed(lines: feed, id: "hd-feed").padding(.top, 6)
                 Spacer(minLength: 6)
                 turnPanel
                 Spacer(minLength: 6)
@@ -234,7 +337,9 @@ struct HotDiceView: View {
             }
         }
         .overlay { if let c = celebrate { Celebration(h: c).onTapGesture { celebrate = nil } } }
+        .overlay { if let b = big, celebrate == nil { BigMomentCard(m: b).transition(still ? AnyTransition.opacity : AnyTransition.scale.combined(with: .opacity)) } }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)   // a table, like Overdraft's: words to the largest standard size
+        .onChange(of: view) { old, new in changed(from: old, to: new) }
         .onChange(of: t?.hl?.seq) { _, s in
             if mine, let h = t?.hl, s != nil, h.tier >= 2 {
                 celebrate = h; Haptics.yourTurn()
@@ -262,9 +367,79 @@ struct HotDiceView: View {
         return mine ? "YOUR TURN" : "\(name(t?.id).uppercased())’S TURN"
     }
 
+    /// The target, and who's up after this turn (in the last round, only those still to have their last turn).
     private var targetLine: String {
-        if let by = view.finalBy { return "\(name(by)) reached \(view.target.formatted()): everyone else gets one last turn" }
-        return [view.lastLine, "\(view.target.formatted()) wins"].compactMap { $0 }.joined(separator: " · ")
+        let next = upNext.map { "Up next: \($0 == me ? "you" : name($0))" }
+        if let by = view.finalBy {
+            return ["Last round: \(name(by)) reached \(view.target.formatted())", next].compactMap { $0 }.joined(separator: " · ")
+        }
+        return ["First to \(view.target.formatted()) wins", next].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var upNext: String? {
+        guard let t else { return nil }
+        let order = view.players.filter { $0.seated && !$0.left }
+        guard order.count > 1, let i = order.firstIndex(where: { $0.id == t.id }) else { return nil }
+        let id = order[(i + 1) % order.count].id
+        return view.finalBy == id ? nil : id   // who reached the target has had their last turn
+    }
+
+    private var endReason: String? {
+        guard let by = view.finalBy else { return nil }
+        return "\(name(by)) reached \(view.target.formatted()), and everyone else had one last turn."
+    }
+
+    // MARK: what just happened (#489)
+
+    private func changed(from old: HotDice.View, to new: HotDice.View) {
+        if old.common.phase != "playing" && new.common.phase == "playing" { feed = []; big = nil; farkle = nil }   // a new game
+        let moments = HotDice.moments(from: old, to: new)
+        for m in moments { if let w = words(m) { MomentFeed.add(w, to: &feed, still: still) } }
+        if let b = moments.last(where: \.isBig), let f = flash(b) { BigMomentCard.show(f, in: $big, still: still) }
+    }
+
+    private func words(_ m: HotDice.Moment) -> String? {
+        switch m {
+        case let .kept(who, combo, points):
+            return combo.isEmpty ? "\(name(who)) kept +\(points.formatted())" : "\(name(who)) kept \(combo.lowercased()): +\(points.formatted())"
+        case let .hot(who): return who == me ? "Hot dice! You roll all six again" : "Hot dice! \(name(who)) rolls all six again"
+        case let .banked(who, points, total):
+            return "\(name(who)) banked \(points.formatted()) · \(who == me ? "you have" : "now") \(total.formatted())"
+        case let .farkled(who, lost): return lost > 0 ? "\(name(who)) Farkled and lost \(lost.formatted())" : "\(name(who)) Farkled"
+        case let .threeFarkles(who, penalty):
+            return penalty > 0 ? "\(name(who)): three Farkles in a row, −\(penalty.formatted())" : "\(name(who)): three Farkles in a row"
+        case let .timedOut(who): return who == me ? "Out of time: the room is finishing your turn" : "\(name(who)) ran out of time: the room is finishing the turn"
+        case let .missed(who): return who == me ? "Your turn ran out" : "\(name(who))’s turn ran out"
+        case let .left(who): return "\(name(who)) left the game"
+        case let .lastRound(by): return "\(name(by)) reached \(view.target.formatted()): last round"
+        }
+    }
+
+    private func flash(_ m: HotDice.Moment) -> BigMoment? {
+        switch m {
+        case let .banked(who, points, total):
+            if who == me { Haptics.yourTurn() }
+            return BigMoment(icon: "tray.and.arrow.down.fill", word: "Banked +\(points.formatted())",
+                             detail: who == me ? "You have \(total.formatted())" : "\(name(who)) has \(total.formatted())")
+        case let .hot(who):
+            return BigMoment(icon: "flame.fill", word: "Hot dice!", detail: who == me ? "Roll all six again" : "\(name(who)) rolls all six again")
+        case let .lastRound(by):
+            Haptics.select()
+            return BigMoment(icon: "flag.checkered", word: "Last round",
+                             detail: "\(name(by)) reached \(view.target.formatted()). Everyone else gets one more turn.")
+        default: return nil   // a Farkle has its own banner, under its dice
+        }
+    }
+
+    /// A Farkle's hold can end early (#489): the player who Farkled taps it, or the room's owner for a bot's.
+    private var canSkipFarkle: Bool {
+        guard view.farkleSkip, let t, t.state == "farkle" else { return false }
+        return t.id == me ? !view.common.held : (t.bot && room.isOwner)
+    }
+
+    private func skipFarkle() {
+        if canSkipFarkle { room.move("next"); Haptics.select(); farkle = nil }
+        else if t?.state != "farkle" { farkle = nil }   // the room has moved on: the tap clears what this phone still holds
     }
 
     private var status: String {
@@ -336,6 +511,9 @@ struct HotDiceView: View {
                         Text(w.title).font(.title.bold()).foregroundStyle(T2P.ember)
                         Text(w.line).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
                         Text(HotDice.farkleWhy(dice: t.live.count)).font(.subheadline).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
+                        if canSkipFarkle {
+                            Text("Tap to go on").font(.caption.weight(.bold)).foregroundStyle(T2P.goldText).padding(.top, 4)
+                        }
                     }
                     .padding(.horizontal, 20).padding(.vertical, 12)
                     .background(T2P.ember.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
@@ -343,7 +521,9 @@ struct HotDiceView: View {
                     .id("farkle-\(t.n)-\(t.seq)")
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("farkle-banner")
-                    .onTapGesture { if self.t?.state != "farkle" { farkle = nil } }   // the room has moved on: a tap clears it
+                    .accessibilityHint(canSkipFarkle ? "Double-tap to go on" : "")
+                    .accessibilityAction { skipFarkle() }
+                    .onTapGesture { skipFarkle() }
                 }
                 if mine && t.state == "choose" && !t.sel.isEmpty {
                     Text(t.selPts > 0 ? "\(t.selName.isEmpty ? "Kept" : t.selName) · +\(t.selPts.formatted())" : "Those don’t score together")

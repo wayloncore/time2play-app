@@ -20,8 +20,6 @@
     "demoAccountRequired": false,
     "notes": "Time2Play Live works without an account. Three quick ways to try it:\n\n1. Offline, no network needed: on the Play tab, scroll to \"No signal? Practice with bots\" and tap Overdraft. Type any name and tap Join. Tap Easy and Normal to add two bots, then tap Start.\n2. An online room with bots: on the Play tab, under \"Start a room\", tap Hot Dice. Type a name, add a bot, then tap Start.\n3. Joining: a second device can join with the room code shown in the lobby, in the app or in a browser at time2play.live.\n\nSigning in is optional (it adds friends, groups and challenges). The app only offers Sign in with Apple. Because you can't sign in with our Apple ID, there's a review sign-in:\n1. Open the You tab.\n2. Tap the version line at the bottom five times.\n3. Enter the review key below and tap \"Sign in for review\".\nReview key: {REVIEW_KEY}\n\nYou're then signed in as \"Reviewer\". You can open Friends, and delete the account under You, then Delete account (it signs you out and deletes everything for that account). Before Sign in with Apple, the app asks for a birth year; pick a year at least 13 years ago (under 13 stays a guest and can still play).\n\nOther notes:\n- Overdraft is a card game with no bets, stakes, chips or money of any kind.\n- The camera is used only to scan a room's QR code to join it.\n- Alerts are only for invites and challenges from friends.\n- There's no chat; players can send only four set reactions. Display names go through a name filter, and any name can be reported or blocked from the player list."
   },
-  "skipShots": [
-    "store-ipad-5-library.png"
-  ],
-  "_skipShots": "The iPad Library shot lists website games with real game show names; Apple's review checks trademarks (5.2.1), so it stays out until #407's Library question is settled."
+  "skipShots": [],
+  "_skipShots": "Screenshots to leave out of the listing, by file name. Empty since #487: the app's Library leaves out cards named after real TV game shows (the feed marks them showName), so the iPad Library shot is back in."
 }

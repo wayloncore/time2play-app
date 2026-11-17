@@ -1,7 +1,8 @@
 import Foundation
 
 /// The Library, read from the server (/live/library.json on tyleralocke.com, #399): the same cards the website's
-/// Library shows. The app keeps the last copy it read, so the Library opens with no signal.
+/// Library shows, less the ones named after real TV game shows (#487: the feed marks them `showName`; App Review
+/// checks names for trademarks). The app keeps the last copy it read, so the Library opens with no signal.
 public struct Library: Equatable, Sendable {
     public struct Category: Equatable, Sendable, Identifiable { public var id: String; public var name: String; public var line: String }
     public struct Item: Equatable, Sendable, Identifiable {
@@ -33,7 +34,8 @@ public struct Library: Equatable, Sendable {
             return Category(id: id, name: name, line: $0["line"].string ?? "")
         }
         items = j["items"].array.compactMap {
-            guard let key = $0["key"].string, let title = $0["title"].string else { return nil }
+            // #487: a card named after a real TV game show (the feed marks it) stays on the website, not in the app
+            guard let key = $0["key"].string, let title = $0["title"].string, $0["showName"].bool != true else { return nil }
             let p = $0["facts"]["players"].array.compactMap(\.int)
             let game = $0["app"].string.flatMap(Game.init(rawValue:))
             return Item(key: key, title: game != nil ? ($0["appTitle"].string ?? title) : title,

@@ -4,7 +4,7 @@
 //   src/live/overdraft/room-core.cjs b36d501a05e3ca03
 //   src/live/overdraft/engine.cjs ddad7eb146a2e65e
 //   src/live/overdraft/bots.cjs 0dc99e53482d0dbb
-//   src/live/farkle/room-core.js 75a067faa341e32d
+//   src/live/farkle/room-core.js 45d82a2fcce42f38
 //   src/games/farkle/scoring.js fedad9bf68802f12
 //   src/live/rollcall/room-core.js 34bad0bc1bf26202
 //   src/live/rollcall/rules.js 0e237043d36d0038
@@ -51,9 +51,9 @@
     mod
   ));
 
-  // ../tyleralocke-src/src/live/overdraft/engine.cjs
+  // ../tl-l-skip/src/live/overdraft/engine.cjs
   var require_engine = __commonJS({
-    "../tyleralocke-src/src/live/overdraft/engine.cjs"(exports, module) {
+    "../tl-l-skip/src/live/overdraft/engine.cjs"(exports, module) {
       "use strict";
       (function(root, factory) {
         var api = factory();
@@ -748,9 +748,9 @@
     }
   });
 
-  // ../tyleralocke-src/src/live/overdraft/bots.cjs
+  // ../tl-l-skip/src/live/overdraft/bots.cjs
   var require_bots = __commonJS({
-    "../tyleralocke-src/src/live/overdraft/bots.cjs"(exports, module) {
+    "../tl-l-skip/src/live/overdraft/bots.cjs"(exports, module) {
       "use strict";
       var LEVELS3 = ["easy", "normal"];
       function botPace(S, me, rng4) {
@@ -820,9 +820,9 @@
     }
   });
 
-  // ../tyleralocke-src/src/live/overdraft/room-core.cjs
+  // ../tl-l-skip/src/live/overdraft/room-core.cjs
   var require_room_core = __commonJS({
-    "../tyleralocke-src/src/live/overdraft/room-core.cjs"(exports, module) {
+    "../tl-l-skip/src/live/overdraft/room-core.cjs"(exports, module) {
       "use strict";
       var O = typeof __require === "function" ? require_engine() : self.Overdraft;
       var Bots = typeof __require === "function" ? require_bots() : null;
@@ -2111,7 +2111,7 @@
   // rules/offline.js
   var import_room_core = __toESM(require_room_core());
 
-  // ../tyleralocke-src/src/live/farkle/room-core.js
+  // ../tl-l-skip/src/live/farkle/room-core.js
   var room_core_exports = {};
   __export(room_core_exports, {
     AWAY_TURN_MS: () => AWAY_TURN_MS,
@@ -2171,7 +2171,7 @@
     waitingOn: () => waitingOn
   });
 
-  // ../tyleralocke-src/src/games/farkle/scoring.js
+  // ../tl-l-skip/src/games/farkle/scoring.js
   var TARGET = 1e4;
   var TRIPLE_ONES = 1e3;
   var TRIPLE_ONES_OPTIONS = [1e3, 300];
@@ -2309,7 +2309,7 @@
     }
   };
 
-  // ../tyleralocke-src/src/live/farkle/room-core.js
+  // ../tl-l-skip/src/live/farkle/room-core.js
   var MAX_PLAYERS = 8;
   var TABLE_MIN = 2;
   var FACE_COUNT = 47;
@@ -2772,10 +2772,21 @@
     if (!token || token !== p.token) return fail("That is not your seat.");
     if (R.phase !== "playing") return fail("Nothing is in play.");
     const t = R.game.turn;
+    if (msg.t === "next") return skipFarkle(R, p, t, now);
     if (!t || t.id !== p.id) return fail("It isn\u2019t your turn.");
     if (p.held) return fail("A bot is playing your seat until your next turn.");
     if (t.auto) return fail("The room is finishing this turn for you.");
     return move(R, t, msg, now);
+  }
+  function skipFarkle(R, p, t, now) {
+    if (!R.hostless || !t || t.state !== "farkle") return OK({ stale: true });
+    const who = player(R, t.id);
+    const mine = t.id === p.id && !p.held;
+    const botsFarkle = !!botStyle(who) && R.owner === p.id;
+    if (!mine && !botsFarkle) return OK({ stale: true });
+    note(R, "skip", { id: t.id, by: p.id });
+    endTurn(R, now);
+    return OK();
   }
   function move(R, t, msg, now) {
     switch (msg.t) {
@@ -3017,6 +3028,8 @@
          and the last turn that ran out while one round of the table hasn't gone by since */
       days: R.days || null,
       daysOk: !!(R.hostless && R.daysOk),
+      /* a tap may end a Farkle's hold early (#489, skipFarkle): the app sends { t: 'next' } only when this says so */
+      farkleSkip: !!R.hostless,
       missed: G && G.missed && G.turnNo - G.missed.n <= G.order.length ? { id: G.missed.id, banked: G.missed.banked || 0 } : null
     };
   }
@@ -3073,7 +3086,7 @@
     return R;
   }
 
-  // ../tyleralocke-src/src/live/rollcall/room-core.js
+  // ../tl-l-skip/src/live/rollcall/room-core.js
   var room_core_exports2 = {};
   __export(room_core_exports2, {
     AWAY_TURN_MS: () => AWAY_TURN_MS2,
@@ -3121,7 +3134,7 @@
     viewFor: () => viewFor2
   });
 
-  // ../tyleralocke-src/src/live/rollcall/rules.js
+  // ../tl-l-skip/src/live/rollcall/rules.js
   var CATS = [
     ["ones", "Ones"],
     ["twos", "Twos"],
@@ -3182,7 +3195,7 @@
   var upperBonus = (scores, rounds2) => rounds2 === ROUNDS && upper(scores) >= UPPER_BONUS_AT ? UPPER_BONUS : 0;
   var total = (scores, extra, rounds2) => Object.values(scores).reduce((a, b) => a + b, 0) + upperBonus(scores, rounds2) + (extra || 0);
 
-  // ../tyleralocke-src/src/live/rollcall/room-core.js
+  // ../tl-l-skip/src/live/rollcall/room-core.js
   var MAX_PLAYERS2 = 8;
   var TABLE_MIN2 = 1;
   var FACE_COUNT2 = 47;
@@ -3658,7 +3671,7 @@
     return R;
   }
 
-  // ../tyleralocke-src/src/live/closeenough/room-core.js
+  // ../tl-l-skip/src/live/closeenough/room-core.js
   var room_core_exports3 = {};
   __export(room_core_exports3, {
     BOT_ERROR: () => BOT_ERROR,
@@ -3712,7 +3725,7 @@
     viewFor: () => viewFor3
   });
 
-  // ../tyleralocke-src/src/live/closeenough/questions.js
+  // ../tl-l-skip/src/live/closeenough/questions.js
   var SETS = {
     general: {
       name: "Everyday numbers",
@@ -3866,7 +3879,7 @@
   };
   var SET_KEYS = Object.keys(SETS);
 
-  // ../tyleralocke-src/src/live/closeenough/room-core.js
+  // ../tl-l-skip/src/live/closeenough/room-core.js
   var MAX_PLAYERS3 = 8;
   var TABLE_MIN3 = 1;
   var FACE_COUNT3 = 47;
