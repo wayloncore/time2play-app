@@ -612,25 +612,31 @@ struct HotDiceView: View {
         if let t = shown {
             let farkled = t.state == "farkle" && settled
             VStack(spacing: 6) {
-                VStack(spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text((farkled ? 0 : t.pts + (t.state == "choose" ? t.selPts : 0)).formatted())
-                            .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(farkled ? T2P.ember : T2P.text).contentTransition(.numericText())
-                        Text("this turn").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
+                // the turn's points and what to do, or (in the same place, so the tray never moves) a Farkle and why
+                Group {
+                    if farkled {
+                        arenaFarkle(t)
+                    } else {
+                        VStack(spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text((t.pts + (t.state == "choose" ? t.selPts : 0)).formatted())
+                                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                                    .foregroundStyle(T2P.text).contentTransition(.numericText())
+                                Text("this turn").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
+                            }
+                            Text(status).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center).padding(.horizontal, 16)
+                                .lineLimit(2).minimumScaleFactor(0.8)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("dice-status")
                     }
-                    Text(status).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center).padding(.horizontal, 16)
-                        .lineLimit(2).minimumScaleFactor(0.8)
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("dice-status")
+                .frame(minHeight: 104)
                 DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
                     if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Haptics.select() }
                 })
                 .frame(maxWidth: 760)
                 .frame(minHeight: 250, maxHeight: .infinity)
-                // the Farkle's words sit over the empty felt above the tray, clear of the dice they explain
-                .overlay(alignment: .top) { if farkled { farkleBanner(t).padding(.horizontal, 24).padding(.top, 2) } }
                 keepLine(t).frame(minHeight: 24)
             }
         } else {
@@ -668,19 +674,24 @@ struct HotDiceView: View {
             .accessibilityIdentifier("keep-line")
     }
 
-    private func farkleBanner(_ t: HotDice.Turn) -> some View {
+    /// The Farkle over the 3D tray: what was lost and why nothing scored, where the turn's points were.
+    private func arenaFarkle(_ t: HotDice.Turn) -> some View {
         let w = farkleWords(t)
-        return VStack(spacing: 4) {
-            Text(w.title).font(.title.bold()).foregroundStyle(T2P.ember)
-            Text(w.line).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
+        return VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(w.title).font(.title2.bold()).foregroundStyle(T2P.ember)
+                Text(w.line).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
+            }
             Text(HotDice.farkleWhy(dice: t.live.count)).font(.subheadline).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
+                .lineLimit(2).minimumScaleFactor(0.8)
             if canSkipFarkle {
-                Text("Tap to go on").font(.caption.weight(.bold)).foregroundStyle(T2P.goldText).padding(.top, 4)
+                Text("Tap to go on").font(.caption.weight(.bold)).foregroundStyle(T2P.goldText).padding(.top, 2)
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(Color(hex: 0x1A0F0A).opacity(0.86), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(T2P.ember.opacity(0.5)))
+        .padding(.horizontal, 18).padding(.vertical, 8)
+        .background(T2P.ember.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
+        .contentShape(Rectangle())
         .modifier(AfterTheDice())
         .id("farkle-\(t.n)-\(t.seq)")
         .accessibilityElement(children: .combine)

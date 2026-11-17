@@ -210,7 +210,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         // the cup's node sits at its mouth; the body hangs below it (local -Y)
         let h = DiceArena.cupHeight, r = DiceArena.cupRadius
         let leather = Self.material(Self.leatherImage(UIColor(red: 0.34, green: 0.17, blue: 0.10, alpha: 1)), specular: 0.18, shine: 0.3, scale: 1)
-        let inside = SCNMaterial(); inside.lightingModel = .blinn; inside.diffuse.contents = UIColor(red: 0.08, green: 0.05, blue: 0.04, alpha: 1)
+        let inside = SCNMaterial(); inside.lightingModel = .blinn; inside.diffuse.contents = UIColor(red: 0.30, green: 0.17, blue: 0.10, alpha: 1)
+        inside.emission.contents = UIColor(red: 0.10, green: 0.05, blue: 0.03, alpha: 1)
         let tube = SCNTube(innerRadius: CGFloat(r - 0.1), outerRadius: CGFloat(r), height: CGFloat(h))
         tube.radialSegmentCount = 40
         tube.materials = [leather, inside, leather, leather]
@@ -533,7 +534,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             let t = now - gl.start
             let o: Double = t < 0 ? 0 : t < 0.3 ? t / 0.3 : t < 0.8 ? 1 : max(0, 1 - (t - 0.8) / 0.9)
             g.opacity = CGFloat(o * gl.peak)
-            if let p = dice[id]?.pose.p { g.simdPosition = [p.x, 0.012, p.z] }
+            if let p = dice[id]?.pose.p { g.simdPosition = [p.x, 0.035, p.z] }
             if t > 1.8 || dice[id]?.at != .felt { glowing[id] = nil; g.opacity = 0 }
         }
     }
@@ -547,7 +548,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         for id in lit {
             guard let g = glowNodes[id] else { continue }
             g.geometry?.firstMaterial?.diffuse.contents = s.farkle ? glowEmber : glowGold
-            glowing[id] = (start: now + 0.05, peak: s.farkle ? 0.55 : 0.6)
+            glowing[id] = (start: now + 0.05, peak: s.farkle ? 0.7 : 0.85)
         }
         moment(.landed)
     }
@@ -560,7 +561,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         case .away: return Pose(p: Self.f(DiceArena.cupMouth) + [0.6, 7.5, -1.5], q: up)
         case .hover: return Pose(p: Self.f(DiceArena.cupMouth) + [0, 0.25, 0], q: up)
         case .rest: return Pose(p: Self.f(DiceArena.cupRest) + [0, Float(DiceArena.cupHeight), 0], q: up)
-        case .tipped: return Pose(p: Self.f(DiceArena.cupMouth) + [0, -0.05, 0.15], q: simd_quatf(angle: 2.0, axis: [1, 0, 0]))
+        case .tipped: return Pose(p: Self.f(DiceArena.cupMouth) + [0, -0.05, 0.15], q: simd_quatf(angle: 1.65, axis: [1, 0, 0]))
         }
     }
 
