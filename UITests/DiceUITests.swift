@@ -8,35 +8,48 @@ final class DiceUITests: XCTestCase {
         let app = launch()
         startAsOwner(app, game: "farkle", bot: "steady")
         shot(app, "401-lobby")
-        tapWhenReady(app.buttons["start-game"])
         let roll = app.buttons["roll"], bank = app.buttons["bank"]
-        XCTAssertTrue(waitEnabled(roll, 120), "your turn comes round")
-        roll.tap()
+        let status = app.descendants(matching: .any)["dice-status"].firstMatch
         var tookShot = false
-        for _ in 0..<12 {
-            sleep(2)
-            if !roll.exists { break }                         // a Farkle, or banked: the turn has passed
-            for i in 0..<6 where app.buttons["die-\(i)"].exists && app.buttons["die-\(i)"].isEnabled { app.buttons["die-\(i)"].tap() }
-            if !tookShot { shot(app, "401-your-turn"); tookShot = true }
-            if bank.exists && bank.isEnabled { bank.tap(); break }
-            if roll.exists && roll.isEnabled { roll.tap() }
+        /// One turn of yours: roll, keep what scores, bank when you can (or Farkle).
+        func playATurn() {
+            XCTAssertTrue(waitEnabled(roll, 120), "your turn comes round")
+            roll.tap()
+            for _ in 0..<12 {
+                sleep(2)
+                if !roll.exists { break }                         // a Farkle, or banked: the turn has passed
+                for i in 0..<6 where app.buttons["die-\(i)"].exists && app.buttons["die-\(i)"].isEnabled { app.buttons["die-\(i)"].tap() }
+                if !tookShot { shot(app, "401-your-turn"); tookShot = true }
+                if bank.exists && bank.isEnabled { bank.tap(); break }
+                if roll.exists && roll.isEnabled { roll.tap() }
+            }
+            XCTAssertTrue(status.waitForExistence(timeout: 30))
         }
-        XCTAssertTrue(app.descendants(matching: .any)["dice-status"].firstMatch.waitForExistence(timeout: 30))
-        sleep(3)
+        /// #488: the bot's roll lands on this phone too, faces showing, not just its result. Watched from the moment
+        /// your turn ends: a bot that Farkles on its first roll can be done (and the turn back to you) in a few seconds.
+        func watchJunesRoll() -> (seen: Bool, said: String, faces: [String]) {
+            let end = Date().addingTimeInterval(30)
+            var said = "", faces: [String] = []
+            while Date() < end {
+                said = status.exists ? status.label : "(no status)"
+                faces = dieLabels(app)
+                if said.contains("June") && !faces.isEmpty && faces.allSatisfy({ $0.hasPrefix("Die showing") }) { return (true, said, faces) }
+                if said.contains("Roll all six") && roll.exists && roll.isEnabled { break }   // June's turn came and went
+                usleep(300_000)
+            }
+            return (false, said, faces)
+        }
+        tapWhenReady(app.buttons["start-game"])
+        playATurn()
+        var watched = watchJunesRoll()
         shot(app, "401-after-your-turn")
-        XCTAssertFalse(roll.exists && roll.isEnabled && app.descendants(matching: .any)["dice-status"].firstMatch.label.contains("Roll all six"), "the turn moved on")
-        // #488: the bot's roll lands on this phone too, faces showing, not just its result
-        let end = Date().addingTimeInterval(30)
-        var seen = false, said = "", faces: [String] = []
-        while Date() < end && !seen {
-            let status = app.descendants(matching: .any)["dice-status"].firstMatch
-            said = status.exists ? status.label : "(no status)"
-            faces = dieLabels(app)
-            if said.contains("June") && !faces.isEmpty && faces.allSatisfy({ $0.hasPrefix("Die showing") }) { seen = true }
-            else { usleep(300_000) }
+        if !watched.seen {
+            // June's whole turn fit between two looks (the live server can bunch its messages up): one more round.
+            playATurn()
+            watched = watchJunesRoll()
         }
-        if !seen { shot(app, "488-online-bot-roll-missing") }
-        XCTAssertTrue(seen, "June's roll lands on your screen; last status: \(said), dice: \(faces)")
+        if !watched.seen { shot(app, "488-online-bot-roll-missing") }
+        XCTAssertTrue(watched.seen, "the turn moves on and June's roll lands on your screen; last status: \(watched.said), dice: \(watched.faces)")
         shot(app, "488-online-bot-roll")
     }
 
