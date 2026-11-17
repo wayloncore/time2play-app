@@ -6,6 +6,7 @@ struct RoomView: View {
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
     @State private var confirmLeave = false
+    @AppStorage(Table3DSwitch.key) private var table3D = false
 
     var body: some View {
         ZStack {
@@ -59,7 +60,11 @@ struct RoomView: View {
             switch room.game {
             case .overdraft:
                 // a late joiner waiting for the next hand has no table yet: the lobby says so
-                if v["table"].object != nil { OverdraftTableView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
+                if v["table"].object != nil {
+                    // #496: the 3D table, behind its switch (off by default until Tyler approves it)
+                    if table3D || Table3DSwitch.forced { Table3DView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
+                    else { OverdraftTableView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
+                }
                 else { LobbyView(room: room, onLeave: { confirmLeave = true }) }
             case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true })
             case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true })
