@@ -190,7 +190,7 @@ static float2 rimSK(float2 p) {
 static float4 turnFlow(float2 p, constant T3DU& u) {
     if (u.f.w < .001) return float4(0.);
     float2 sk = rimSK(p);
-    float v = (sk.y - .975) / (1.09 - .975);
+    float v = (sk.y - .96) / (1.095 - .96);
     if (v <= 0. || v >= 1.) return float4(0.);
     float s = sk.x, L = u.e.y;
     float x = (s - u.e.x) * u.g.x; float rel = x - PERIM * floor(x / PERIM);   // past whoever is on, in the arc's direction
@@ -199,15 +199,15 @@ static float4 turnFlow(float2 p, constant T3DU& u) {
     float dn = abs(rel - L); dn = min(dn, PERIM - dn);                         // how far from whoever is next
     float b;
     if (u.b.w > .5) {
-        b = inArc * u.g.y * (.30 + .65 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .3) * .85 * u.g.y;
+        b = inArc * u.g.y * (.40 + .70 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .5) * 1.1 * u.g.y;
     } else {
         float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
         float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
         float comet = mix(back, fwd, vd * .5 + .5) * 1.6;                     // the bright head leads, its tail trails
-        float glow = exp(-dn * dn / .35) * (.75 + .2 * sin(u.a.x * 3.4));
-        b = .10 * comet + inArc * u.g.y * (.85 * comet + .20) + glow * u.g.y;   // faint all round, bright on the arc
+        float glow = exp(-dn * dn / .5) * (1. + .25 * sin(u.a.x * 3.4));
+        b = .14 * comet + inArc * u.g.y * (1.1 * comet + .45) + glow * u.g.y;   // faint all round, bright on the arc
     }
-    float a = clamp(b * across * u.f.w, 0., .9);
+    float a = clamp(b * across * u.f.w, 0., .92);
     return float4(mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.)), a);
 }
 
