@@ -181,17 +181,39 @@ def status():
         print(f"  build {a['version']}: {a['processingState']} (uploaded {a['uploadedDate']})")
 
 
-def internal_testing(app_id):
-    groups = call("GET", f"/v1/apps/{app_id}/betaGroups")["data"]
+def internal_testing(app_id, build_id=None):
+    """Puts the build in front of Tyler's internal testers. Prints every testing group it sees (names only, never a key),
+    so a run that can't find the group says what it found instead."""
+    groups = call("GET", "/v1/betaGroups" + q({"filter[app]": app_id, "limit": 200,
+                                                 "fields[betaGroups]": "name,isInternalGroup,hasAccessToAllBuilds"}))["data"]
+    for g in groups:
+        a = g["attributes"]
+        print(f"Testing group: {a.get('name')} (internal: {a.get('isInternalGroup')}, every build: {a.get('hasAccessToAllBuilds')})")
+    if not groups:
+        print("Testing groups: none listed for this app")
     internal = [g for g in groups if g["attributes"].get("isInternalGroup")]
     if internal:
         group = internal[0]
         print(f"Internal testing group: {group['attributes']['name']} (already there)")
     else:
-        group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": {
-            "name": "Tyler", "isInternalGroup": True, "hasAccessToAllBuilds": True},
-            "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
-        print("Internal testing group: made \"Tyler\" (every new build goes to it)")
+        try:
+            group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": {
+                "name": "Tyler", "isInternalGroup": True, "hasAccessToAllBuilds": True},
+                "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+            print("Internal testing group: made \"Tyler\" (every new build goes to it)")
+        except SystemExit:
+            print("::warning::No internal testing group, and App Store Connect wouldn't make one with this key. The build is "
+                  "uploaded: in App Store Connect open the app, then TestFlight, then the + next to Internal Testing, name "
+                  "the group, turn on automatic distribution, add yourself, and the build appears in the TestFlight app.")
+            return
+    # a group that doesn't get every build automatically gets this one by hand
+    for g in internal or [group]:
+        if build_id and not g["attributes"].get("hasAccessToAllBuilds"):
+            try:
+                call("POST", f"/v1/betaGroups/{g['id']}/relationships/builds", {"data": [{"type": "builds", "id": build_id}]})
+                print(f"Added this build to {g['attributes'].get('name')}")
+            except SystemExit:
+                print(f"::warning::Couldn't add this build to {g['attributes'].get('name')}; add it in TestFlight")
     # add the Account Holder; internal testers have to be App Store Connect users
     try:
         users = call("GET", "/v1/users" + q({"filter[roles]": "ACCOUNT_HOLDER", "limit": 5}))["data"]
@@ -232,7 +254,8 @@ def wait(number, minutes=40):
         time.sleep(60)
     with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as f:
         f.write(f"Build {number} on App Store Connect: {state or 'not listed yet'}\n")
-    internal_testing(app["id"])
+    found = builds(app["id"], number)
+    internal_testing(app["id"], found[0]["id"] if found and state == "VALID" else None)
     if state in ("FAILED", "INVALID"):
         die(f"Apple marked build {number} {state}; App Store Connect emails the reason")
     if state != "VALID":

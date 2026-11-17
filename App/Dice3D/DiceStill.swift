@@ -9,6 +9,8 @@ import T2PCore
 struct DiceStill {
     var game = "hot"
     var moment = "settled"
+    /// #523: the view zoomed this much (and turned a little), as a pinch would leave it.
+    var zoom: Double?
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> DiceStill? {
         guard let i = args.firstIndex(of: "-t2p-dice-still") else { return nil }
@@ -18,6 +20,7 @@ struct DiceStill {
             guard kv.count == 2 else { continue }
             if kv[0] == "game" { s.game = kv[1] }
             if kv[0] == "moment" { s.moment = kv[1] }
+            if kv[0] == "zoom" { s.zoom = Double(kv[1]) }
         }
         return s
     }
@@ -118,6 +121,7 @@ struct DiceStillView: View {
     private func start() {
         guard room == nil else { return }
         DiceArenaStage.stillFreeze = still.freeze
+        DiceArenaStage.stillZoom = still.zoom
         room = RoomModel(game: still.game == "rollcall" ? .rollCall : .hotDice, code: "SOLO", app: app, taken: [], starting: false,
                          offline: app.offlineRules)
         if still.game == "rollcall" {

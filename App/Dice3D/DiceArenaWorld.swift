@@ -11,6 +11,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     var reduced = false
+    /// The tray's shape: Hot Dice's (shelf and cup) or Roll Call's row (#523).
+    let tray: DiceTray
+    private var row: Bool { !tray.shelf }
 
     // talking to the render thread
     private let lock = NSLock()
@@ -29,10 +32,15 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     var onSpots: (([Int: DiceSpot]) -> Void)?
     var onLanded: ((String) -> Void)?
     var onFirstHit: (() -> Void)?
+    /// The player has moved the view away from the fitted one (or put it back).
+    var onMoved: ((Bool) -> Void)?
+    private var movedSaid = false
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
     private var glowNodes: [Int: SCNNode] = [:]
+    private var ringNodes: [Int: SCNNode] = [:]
+    private var ringGold: UIImage?
     private let cup = SCNNode()
     private var glowGold: UIImage?, glowEmber: UIImage?
     private var glowing: [Int: (start: Double, peak: Double)] = [:]
@@ -78,6 +86,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         /// Played faster than real time (someone else's quick roll), with every die out from the start.
         var speed = 1.0
         var allOut = false
+        /// The tumble is over and the dice are gliding to their places (Roll Call's slots, a reduced-motion drop):
+        /// the throw lands when they're all there.
+        var awaitingTweens = false
     }
     enum CupPhase { case away, hover, rest, tipped }
     struct CupRun {
@@ -89,7 +100,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         var tipAt = 0.0
     }
 
-    override init() {
+    init(tray: DiceTray = .classic) {
+        self.tray = tray
         super.init()
         build()
     }
@@ -112,6 +124,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         }
         clock += dt
         if dt > 0 || first { step() }
+        if dt > 0 || first || rigDirty { aimCamera(dt) }
     }
 
     private func moment(_ m: Moment) {
@@ -154,7 +167,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         scene.rootNode.addChildNode(fn)
 
         buildTray()
-        buildCup()
+        if tray.shelf { buildCup() }
+        ringGold = Self.ringImage()
         glowGold = Self.glowImage(UIColor(red: 1, green: 0.84, blue: 0.48, alpha: 1))
         glowEmber = Self.glowImage(UIColor(red: 0.95, green: 0.38, blue: 0.16, alpha: 1))
     }
@@ -169,8 +183,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     }
 
     private func buildTray() {
-        let X = DiceArena.trayX, zb = DiceArena.zBack, zf = DiceArena.zFront, rw = DiceArena.rimW, rh = DiceArena.rimH
-        let sy = DiceArena.shelfY, z1 = DiceArena.shelfZ1
+        let X = tray.x, zb = tray.zBack, zf = tray.zFront, rw = tray.rimW, rh = tray.rimH
+        let sy = DiceArena.shelfY, z1 = tray.outerZ1
         let wood = Self.material(Self.woodImage(), specular: 0.22, shine: 0.3, scale: 1)
         let felt = Self.material(Self.feltImage(), specular: 0, shine: 0.05, scale: 3)
         felt.normal.contents = Self.feltNormal(); felt.normal.intensity = 0.5
@@ -185,6 +199,25 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             _ = box(rw, rh + 0.25, z1 - (zb - rw), chamfer: 0.1, wood, at: [Float(s * (X + rw / 2)), Float((rh - 0.25) / 2), Float((z1 + zb - rw) / 2)])
         }
         _ = box(2 * X + 0.02, rh + 0.25, rw, chamfer: 0.1, wood, at: [0, Float((rh - 0.25) / 2), Float(zb - rw / 2)])
+        if !tray.shelf {
+            // Roll Call: a plain front rim, and a faint mark on the felt for each die's place
+            _ = box(2 * X + 0.02, rh + 0.25, rw, chamfer: 0.1, wood, at: [0, Float((rh - 0.25) / 2), Float(zf + rw / 2)])
+            let mark = SCNMaterial(); mark.lightingModel = .constant
+            mark.diffuse.contents = UIColor(white: 0, alpha: 1); mark.transparency = 0.16
+            mark.writesToDepthBuffer = false; mark.blendMode = .alpha
+            for i in 0..<5 {
+                let spot = tray.slot(i, of: 5)
+                let n = SCNNode(geometry: SCNPlane(width: 1.18, height: 1.18))
+                (n.geometry as? SCNPlane)?.cornerRadius = 0.2
+                n.geometry?.firstMaterial = mark
+                n.eulerAngles.x = -.pi / 2
+                n.simdPosition = [Float(spot.x), 0.006, Float(spot.z)]
+                n.renderingOrder = 1
+                scene.rootNode.addChildNode(n)
+            }
+        }
+        addBlob(X: X, rw: rw, zb: zb, z1: z1)
+        guard tray.shelf else { return }
         // the keep shelf: wood, with a dark leather strip on top where kept dice sit, edged in thin gold
         _ = box(2 * X + 0.02, sy + 0.25, z1 - zf, chamfer: 0.08, wood, at: [0, Float((sy - 0.25) / 2), Float((zf + z1) / 2)])
         let leather = Self.material(Self.leatherImage(UIColor(red: 0.16, green: 0.10, blue: 0.07, alpha: 1)), specular: 0.12, shine: 0.25, scale: 2)
@@ -196,7 +229,10 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         for s in [-1.0, 1.0] {
             _ = box(2 * X - 0.3, 0.035, 0.035, gold, at: [0, Float(sy + 0.02), Float((zf + z1) / 2 + s * (stripL / 2 + 0.02))])
         }
-        // a soft shadow round the tray, so it sits on the screen's felt
+    }
+
+    /// A soft shadow round the tray, so it sits on the screen's felt.
+    private func addBlob(X: Double, rw: Double, zb: Double, z1: Double) {
         let blob = SCNNode(geometry: SCNPlane(width: CGFloat(2 * (X + rw) + 2.6), height: CGFloat(z1 - zb + rw + 2.6)))
         let bm = SCNMaterial(); bm.lightingModel = .constant; bm.diffuse.contents = Self.blobImage()
         bm.writesToDepthBuffer = false; bm.blendMode = .alpha
@@ -253,6 +289,19 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         glow.castsShadow = false
         scene.rootNode.addChildNode(glow)
         glowNodes[id] = glow
+        if row {
+            // a held die's gold ring on the felt, under it (#523)
+            let ring = SCNNode(geometry: SCNPlane(width: 1.62, height: 1.62))
+            let rm = SCNMaterial(); rm.lightingModel = .constant; rm.diffuse.contents = ringGold
+            rm.blendMode = .alpha; rm.writesToDepthBuffer = false; rm.isDoubleSided = true
+            ring.geometry?.firstMaterial = rm
+            ring.eulerAngles.x = -.pi / 2
+            ring.opacity = 0
+            ring.renderingOrder = 2
+            ring.castsShadow = false
+            scene.rootNode.addChildNode(ring)
+            ringNodes[id] = ring
+        }
         return n
     }
 
@@ -296,7 +345,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         let throwIds = newRoll ? s.dice.filter { $0.place == .tray }.map(\.id) : []
         // someone else's roll the room has already shown (Roll Call's bots roll every second or so): no cup, the dice
         // are picked up where they lie and thrown a little quicker, so the screen keeps up with the room
-        let quick = newRoll && !s.mine && !s.shaking && !reduced
+        // Roll Call's row always throws this way: the dice are picked up from their slots and tossed across the tray
+        let quick = newRoll && !reduced && (row || (!s.mine && !s.shaking))
         if quick, let key = s.roll, !throwIds.isEmpty {
             quickThrow(key, ids: throwIds, faces: throwIds.map { s.die($0)?.face ?? 1 }, now: now)
         }
@@ -316,7 +366,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
                 } else if case let .keep(slot, _) = d.place {
                     if run.at != .keep(slot) { run = sendToKeep(run, slot: slot, slots: s.slots, now: now) }
                 } else if d.place == .tray, run.at != .felt {
-                    let rest = run.rest ?? Pose(p: [Float(-3.0 + Double(d.id) * 1.2), 0.5, 0.2], q: Self.q(DiceArena.neat(run.face ?? 1)))
+                    let rest = row ? slotPose(d.id, face: run.face) : run.rest ?? Pose(p: [Float(-3.0 + Double(d.id) * 1.2), 0.5, 0.2], q: Self.q(DiceArena.neat(run.face ?? 1)))
                     run.rest = rest
                     run.tween = Tween(from: run.at == .cup ? Pose(p: rest.p + [0, 0.35, 0], q: rest.q) : run.pose, to: rest, t0: now,
                                       dur: reduced ? 0.16 : 0.34, arc: reduced || run.at == .cup ? 0 : 0.8, fadeIn: run.at == .cup, end: .felt)
@@ -330,7 +380,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         let cupDiceAll = s.dice.allSatisfy { $0.place == .cup }
         let gathering = dice.values.contains { $0.tween?.end == .cup }
         let needHover = gathering || s.shaking || (newRoll && !quick)
-        if !reduced {
+        if !reduced && tray.shelf {
             if needHover && cupRun.phase != .hover && cupRun.phase != .tipped && cupRun.tween?.then != .hover {
                 moveCup(to: .hover, dur: cupRun.phase == .rest ? 0.26 : 0.3, now: now)
             } else if !needHover && cupDiceAll && cupRun.phase == .hover && cupRun.tween == nil {
@@ -357,8 +407,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         if cupRun.phase == .tipped, cupRun.tween == nil, let p = play, now - p.t0 > 0.3 { moveCup(to: .away, dur: 0.5, now: now) }
 
         advance(now)
-        drawCup(now)
-        publishSpots()
+        if tray.shelf { drawCup(now) }
     }
 
     private func isInThrow(_ id: Int) -> Bool { guard let p = play else { return false }; return p.ids.contains(id) && !p.left.contains(id) }
@@ -366,8 +415,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     private func sendToCup(_ r0: DieRun, id: Int, now: Double) -> DieRun {
         var r = r0
         if r.at == .cup || r.at == .air && r.tween?.end == .cup { return r }
-        if reduced || dieNodes[id]?.opacity ?? 0 < 0.05 {
-            r.tween = Tween(from: r.pose, to: r.pose, t0: now, dur: reduced ? 0.15 : 0.01, arc: 0, fadeOut: true, end: .cup)
+        if reduced || row || dieNodes[id]?.opacity ?? 0 < 0.05 {
+            r.tween = Tween(from: r.pose, to: r.pose, t0: now, dur: reduced || row ? 0.18 : 0.01, arc: 0, fadeOut: true, end: .cup)
         } else {
             let order = Double(id % 6) * 0.05
             let mouth = Pose(p: Self.f(DiceArena.cupMouth) + [0, 0.25, 0], q: r.pose.q * simd_quatf(angle: 2.2, axis: simd_normalize(SIMD3<Float>(1, 0.4, 0.3))))
@@ -379,7 +428,12 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     private func sendToKeep(_ r0: DieRun, slot: Int, slots: Int, now: Double) -> DieRun {
         var r = r0
-        let spot = Pose(p: Self.f(DiceArena.keepSpot(slot, of: slots)), q: Self.q(DiceArena.neat(r.face ?? 1)) * simd_quatf(angle: 0, axis: [0, 1, 0]))
+        let spot = Pose(p: Self.f(tray.keep(slot, of: slots)), q: Self.q(DiceArena.neat(r.face ?? 1)))
+        if row && r.at == .felt {   // already in its own slot: it just becomes held
+            r.tween = Tween(from: r.pose, to: spot, t0: now, dur: 0.12, arc: 0, end: .keep(slot))
+            r.at = .air
+            return r
+        }
         let fromCup = r.at == .cup
         r.tween = Tween(from: fromCup ? Pose(p: spot.p + [0, 0.3, 0], q: spot.q) : r.pose, to: spot, t0: now,
                         dur: reduced || fromCup ? 0.18 : 0.36, arc: reduced || fromCup ? 0 : 0.95, fadeIn: fromCup, end: .keep(slot))
@@ -399,12 +453,12 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             // no tumble: each die drops a little onto its spot
             for (k, id) in ids.enumerated() {
                 let rest = th.rest[k]
-                let to = Pose(p: Self.f(rest.p), q: Self.q(rest.q) * fixes[k])
+                let to = row ? slotPose(id, face: faces[k]) : Pose(p: Self.f(rest.p), q: Self.q(rest.q) * fixes[k])
                 dice[id]?.rest = to
                 dice[id]?.tween = Tween(from: Pose(p: to.p + [0, 0.35, 0], q: to.q), to: to, t0: now, dur: 0.2, arc: 0, fadeIn: true, end: .felt)
                 dice[id]?.at = .air
             }
-            play = Throw(th: th, ids: ids, fixes: fixes, t0: now - th.duration, key: key, hitSaid: false, done: false)
+            play = Throw(th: th, ids: ids, fixes: fixes, t0: now - th.duration, key: key, hitSaid: false, done: true, awaitingTweens: true)
         } else {
             for (k, id) in ids.enumerated() {
                 let rest = th.rest[k]
@@ -418,7 +472,12 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     /// Someone else's roll, thrown straight from where the dice lie (no cup).
     private func quickThrow(_ key: String, ids: [Int], faces: [Int], now: Double) {
-        let th = DiceSim.run(count: ids.count, seed: seed(key))
+        // held dice lie still in their slots: the throw bounces off them
+        let held: [T3Vec] = row ? (want?.dice ?? []).compactMap { d in
+            if case let .keep(slot, _) = d.place { return tray.keep(slot, of: want?.slots ?? 5) }
+            return nil
+        } : []
+        let th = DiceSim.run(count: ids.count, seed: seed(key), maxT: row ? 1.5 : 2.4, tray: tray, still: held)
         let fixes = th.fixes(for: faces).map(Self.q)
         thrown = key
         landedKey = nil
@@ -429,19 +488,26 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             let start = Pose(p: Self.f(st.p), q: Self.q(st.q) * fixes[k])
             let hidden = r.at == .cup || (dieNodes[id]?.opacity ?? 0) < 0.05
             r.tween = Tween(from: hidden ? start : r.pose, to: start, t0: now, dur: lift, arc: hidden ? 0 : 0.6, fadeIn: hidden, end: .air)
-            r.rest = Pose(p: Self.f(rest.p), q: Self.q(rest.q) * fixes[k])
+            r.rest = row ? slotPose(id, face: faces[k]) : Pose(p: Self.f(rest.p), q: Self.q(rest.q) * fixes[k])
             r.at = .air
             dice[id] = r
         }
-        play = Throw(th: th, ids: ids, fixes: fixes, t0: now + lift, key: key, speed: 1.35, allOut: true)
+        play = Throw(th: th, ids: ids, fixes: fixes, t0: now + lift, key: key, speed: row && want?.mine == true ? 1.15 : 1.35, allOut: true)
         moment(.pour)
+    }
+
+    /// A die in its own slot of Roll Call's row, its face up and square to the row.
+    private func slotPose(_ id: Int, face: Int?) -> Pose {
+        Pose(p: Self.f(tray.slot(id, of: want?.slots ?? 5)), q: Self.q(DiceArena.neat(face ?? 1)))
     }
 
     /// Everything where it belongs with no animation: the screen opened mid-game.
     private func placeAtOnce(_ s: ArenaState) {
         if let key = s.roll {
             let ids = s.dice.filter { $0.place == .tray }.map(\.id)
-            if !ids.isEmpty {
+            if row {
+                for id in ids { let p = slotPose(id, face: s.die(id)?.face); dice[id]?.rest = p; dice[id]?.pose = p; dice[id]?.at = .felt }
+            } else if !ids.isEmpty {
                 let th = DiceSim.run(count: ids.count, seed: seed(key))
                 let fixes = th.fixes(for: ids.map { s.die($0)?.face ?? 1 }).map(Self.q)
                 for (k, id) in ids.enumerated() {
@@ -456,12 +522,12 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         }
         for d in s.dice {
             if case let .keep(slot, _) = d.place {
-                dice[d.id]?.pose = Pose(p: Self.f(DiceArena.keepSpot(slot, of: s.slots)), q: Self.q(DiceArena.neat(d.face ?? 1)))
+                dice[d.id]?.pose = Pose(p: Self.f(tray.keep(slot, of: s.slots)), q: Self.q(DiceArena.neat(d.face ?? 1)))
                 dice[d.id]?.at = .keep(slot)
             }
         }
         for (id, r) in dice { dieNodes[id]?.opacity = r.at == .cup ? 0 : 1; apply(r.pose, to: dieNodes[id]) }
-        if !reduced && s.dice.allSatisfy({ $0.place == .cup }) {
+        if !reduced && tray.shelf && s.dice.allSatisfy({ $0.place == .cup }) {
             cupRun.phase = .rest; cupRun.pose = cupPose(.rest); cupRun.alpha = 1
         }
     }
@@ -485,12 +551,22 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             }
             if t >= p.th.duration {
                 p.done = true
-                for id in p.ids where dice[id]?.tween == nil && !p.left.contains(id) {
-                    if let rest = dice[id]?.rest { dice[id]?.pose = rest; apply(rest, to: dieNodes[id]) }
-                    dice[id]?.at = .felt
-                    dieNodes[id]?.opacity = 1
+                if row {
+                    // each die glides from where it stopped into its own slot; the throw lands when they're all there
+                    for id in p.ids where dice[id]?.tween == nil && !p.left.contains(id) {
+                        guard let from = dice[id]?.pose, let to = dice[id]?.rest else { continue }
+                        dice[id]?.tween = Tween(from: from, to: to, t0: now, dur: 0.3, arc: 0.45, end: .felt)
+                        dice[id]?.at = .air
+                    }
+                    p.awaitingTweens = true
+                } else {
+                    for id in p.ids where dice[id]?.tween == nil && !p.left.contains(id) {
+                        if let rest = dice[id]?.rest { dice[id]?.pose = rest; apply(rest, to: dieNodes[id]) }
+                        dice[id]?.at = .felt
+                        dieNodes[id]?.opacity = 1
+                    }
+                    landed(p.key, ids: p.ids, now: now)
                 }
-                landed(p.key, ids: p.ids, now: now)
             }
             play = p
         }
@@ -515,10 +591,11 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
                     if cupRun.phase == .hover { cupRun.shakeSince = max(cupRun.shakeSince, now) }
                 } else { dieNodes[id]?.opacity = 1 }
                 if case .keep = tw.end { moment(.kept) }
-                // a reduced-motion throw lands when its last die has dropped
-                if let pl = play, reduced, !pl.done, pl.ids.contains(id), pl.ids.allSatisfy({ $0 == id || dice[$0]?.tween == nil }) {
-                    play?.done = true
-                    if want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
+                // a throw whose dice glide or drop into place lands when the last one is there
+                if let pl = play, pl.awaitingTweens, pl.ids.contains(id),
+                   pl.ids.allSatisfy({ $0 == id || pl.left.contains($0) || dice[$0]?.tween == nil }) {
+                    play?.awaitingTweens = false
+                    if reduced && want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
                     landed(pl.key, ids: pl.ids, now: now)
                 }
             }
@@ -528,6 +605,14 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         for (id, r) in dice where r.locked != r.shownLocked {
             dice[id]?.shownLocked = r.locked
             dieNodes[id]?.geometry?.materials.forEach { $0.multiply.contents = r.locked ? UIColor(white: 0.8, alpha: 1) : UIColor.white }
+        }
+        // a held die's ring (Roll Call's row)
+        for (id, ring) in ringNodes {
+            guard let r = dice[id] else { continue }
+            let held: Bool = { if case .keep = r.at { return true }; if case .keep = r.tween?.end { return true }; return false }()
+            let target: CGFloat = held && r.at != .cup ? 1 : 0
+            ring.opacity += (target - ring.opacity) * 0.25
+            ring.simdPosition = [r.pose.p.x, 0.02, r.pose.p.z]
         }
         // the light under the dice that could score, fading
         for (id, gl) in glowing {
@@ -542,6 +627,15 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     private func landed(_ key: String, ids: [Int], now: Double) {
         landedKey = key
+        // the camera leans in on where the dice came to rest, then eases back (Hot Dice, when the view is as fitted)
+        if !reduced && !row && user == Rig() {
+            let ps = ids.compactMap { dice[$0]?.pose.p }
+            if !ps.isEmpty {
+                let c = ps.reduce(SIMD3<Float>(0, 0, 0), +) / Float(ps.count)
+                push = (t0: now, focus: SIMD2<Float>(c.x, c.z))
+                rigDirty = true
+            }
+        }
         let cb = onLanded
         DispatchQueue.main.async { cb?(key) }
         guard let s = want, s.roll == key else { moment(.landed); return }
@@ -600,31 +694,125 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     // MARK: telling the screen where the dice are
 
     private func publishSpots() {
-        guard let s = want else { return }
+        guard let s = want, let cam = liveCam else { return }
         var spots: [Int: DiceSpot] = [:]
         for d in s.dice {
             guard let r = dice[d.id] else { continue }
+            var p = DiceArena.cupMouth, shown = false
             switch r.at {
-            case .felt: spots[d.id] = DiceSpot(p: Self.t3(r.pose.p), shown: true)
-            case let .keep(slot): spots[d.id] = DiceSpot(p: DiceArena.keepSpot(slot, of: s.slots), shown: true)
-            case .cup: spots[d.id] = DiceSpot(p: DiceArena.cupMouth, shown: false)
+            case .felt: p = Self.t3(r.pose.p); shown = true
+            case let .keep(slot): p = tray.keep(slot, of: s.slots); shown = true
+            case .cup: break
             case .air:
                 if let tw = r.tween {
                     switch tw.end {
-                    case .felt: spots[d.id] = DiceSpot(p: Self.t3(tw.to.p), shown: true)
-                    case let .keep(slot): spots[d.id] = DiceSpot(p: DiceArena.keepSpot(slot, of: s.slots), shown: true)
-                    default: spots[d.id] = DiceSpot(p: DiceArena.cupMouth, shown: false)
+                    case .felt, .keep: p = Self.t3(tw.to.p); shown = true
+                    default: break
                     }
-                } else if let rest = r.rest, isInThrow(d.id) {
-                    spots[d.id] = DiceSpot(p: Self.t3(rest.p), shown: true)
-                } else { spots[d.id] = DiceSpot(p: DiceArena.cupMouth, shown: false) }
+                } else if let rest = r.rest, isInThrow(d.id) { p = Self.t3(rest.p); shown = true }
             }
+            let top = p + T3Vec(0, DiceArena.half, 0)
+            let at = cam.project(top)
+            // whole points: the overlay only moves when a die moves on screen
+            spots[d.id] = DiceSpot(p: p, shown: shown, screen: CGPoint(x: at.x.rounded(), y: at.y.rounded()),
+                                   size: min(130, max(44, (cam.pointsPerUnit(at: top) * 1.15).rounded())))
         }
-        if spots != lastSpots {
+        spotFrame += 1
+        if spots != lastSpots && (spotFrame % 2 == 0 || !rigDirty) {
             lastSpots = spots
             let cb = onSpots
             DispatchQueue.main.async { cb?(spots) }
         }
+    }
+
+    // MARK: the camera (#523): the fitted view, what the player has done to it, a lean-in when dice land
+
+    struct Rig: Equatable {
+        var zoom: Float = 1, yaw: Float = 0, tilt: Float = 0
+        var pan = SIMD2<Float>(0, 0)
+    }
+    private var base: (eye: SIMD3<Float>, target: SIMD3<Float>, fov: Double, w: Double, h: Double)?
+    private var user = Rig(), shownRig = Rig()
+    private var push: (t0: Double, focus: SIMD2<Float>)?
+    private(set) var rigDirty = true
+    private var liveCam: Table3DCamera?
+    private var spotFrame = 0
+    static let zoomRange: ClosedRange<Float> = 1...2.8
+
+    /// The fitted camera for the view's size (render thread).
+    func setBase(_ cam: Table3DCamera) {
+        base = (Self.f(cam.eye), Self.f(tray.target), cam.fovY, cam.width, cam.height)
+        rigDirty = true
+    }
+    func zoom(by k: Float) {
+        user.zoom = min(Self.zoomRange.upperBound, max(Self.zoomRange.lowerBound, user.zoom * k))
+        rigDirty = true
+        noteMoved()
+    }
+    /// One finger: turn round the tray and tip toward or away from it (points dragged).
+    func orbit(dx: Float, dy: Float) {
+        user.yaw = min(0.75, max(-0.75, user.yaw - dx * 0.006))
+        user.tilt = min(0.32, max(-0.4, user.tilt + dy * 0.004))
+        rigDirty = true
+        noteMoved()
+    }
+    /// Two fingers: slide the view (points dragged); the middle of the view never leaves the tray.
+    func pan(dx: Float, dy: Float) {
+        guard let c = liveCam, let b = base else { return }
+        let ppu = Float(max(1, c.pointsPerUnit(at: Self.t3(b.target))))
+        let wx = -dx / ppu, wz = -dy / ppu, yw = shownRig.yaw
+        var p = user.pan + SIMD2<Float>(wx * cos(yw) + wz * sin(yw), -wx * sin(yw) + wz * cos(yw))
+        p.x = min(Float(tray.x) - b.target.x, max(-Float(tray.x) - b.target.x, p.x))
+        p.y = min(Float(tray.outerZ1) - b.target.z, max(Float(tray.zBack) - b.target.z, p.y))
+        user.pan = p
+        rigDirty = true
+        noteMoved()
+    }
+    func resetView() {
+        user = Rig()
+        if reduced { shownRig = user }
+        rigDirty = true
+        noteMoved()
+    }
+
+    private func noteMoved() {
+        let m = user != Rig()
+        guard m != movedSaid else { return }
+        movedSaid = m
+        let cb = onMoved
+        DispatchQueue.main.async { cb?(m) }
+    }
+
+    private func aimCamera(_ dt: Double) {
+        guard let b = base else { return }
+        let k = reduced || dt <= 0 ? 1 : Float(1 - exp(-14 * dt))
+        shownRig.zoom += (user.zoom - shownRig.zoom) * k
+        shownRig.yaw += (user.yaw - shownRig.yaw) * k
+        shownRig.tilt += (user.tilt - shownRig.tilt) * k
+        shownRig.pan += (user.pan - shownRig.pan) * k
+        var a: Float = 0
+        if let p = push {
+            let t = Float(clock - p.t0)
+            func ease(_ x: Float) -> Float { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
+            a = t < 0.6 ? ease(t / 0.6) : t < 1.4 ? 1 : 1 - ease((t - 1.4) / 0.9)
+            if t > 2.3 || user != Rig() { push = nil; a = 0 }
+        }
+        let o = b.eye - b.target, d = simd_length(o)
+        let pitch0 = asin(o.y / d), yaw0 = atan2(o.x, o.z)
+        var target = b.target + SIMD3<Float>(shownRig.pan.x, 0, shownRig.pan.y)
+        if let p = push { target += SIMD3<Float>(p.focus.x - b.target.x, 0, p.focus.y - b.target.z) * 0.35 * a }
+        let pitch = min(1.5, max(0.42, pitch0 + shownRig.tilt)), yaw = yaw0 + shownRig.yaw
+        let dist = d / (shownRig.zoom * (1 + 0.14 * a))
+        let eye = target + dist * SIMD3<Float>(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw))
+        cameraNode.simdPosition = eye
+        cameraNode.simdLook(at: target)
+        cameraNode.camera?.fieldOfView = CGFloat(b.fov)
+        liveCam = Table3DCamera.lookAt(eye: Self.t3(eye), target: Self.t3(target), fovY: b.fov, width: b.w, height: b.h)
+        let settled = abs(shownRig.zoom - user.zoom) < 0.001 && abs(shownRig.yaw - user.yaw) < 0.0005
+            && abs(shownRig.tilt - user.tilt) < 0.0005 && simd_length(shownRig.pan - user.pan) < 0.001
+        if settled { shownRig = user }
+        rigDirty = !settled || push != nil
+        publishSpots()
     }
 
     // MARK: small helpers
@@ -650,5 +838,6 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     }
 }
 
-/// Where a die is for the screen: its center in the world, and whether it's out of the cup.
-struct DiceSpot: Equatable { var p: T3Vec; var shown: Bool }
+/// Where a die is for the screen: its center in the world, whether it's out of the cup, and where its top is on the
+/// screen (points) with how big it looks there.
+struct DiceSpot: Equatable { var p: T3Vec; var shown: Bool; var screen: CGPoint = .zero; var size: Double = 44 }

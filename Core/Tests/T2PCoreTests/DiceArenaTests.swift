@@ -70,6 +70,47 @@ final class DiceArenaTests: XCTestCase {
         print("dice throws: average \(total / Double(runs)) s, longest \(longest) s")
     }
 
+    /// #523: Roll Call's shallow tray, with held dice lying in their slots: the throw stays in the tray, bounces off
+    /// the held dice and never comes to rest on or in them.
+    func testRowThrowsMissTheHeldDice() {
+        let tray = DiceTray.row
+        for seed in 1...30 {
+            let n = 1 + seed % 5
+            let held = (0..<(5 - n)).map { tray.slot($0, of: 5) }
+            let th = DiceSim.run(count: n, seed: UInt32(seed) &* 104_729, maxT: 1.5, tray: tray, still: held)
+            XCTAssertLessThan(th.duration, 2.6, "seed \(seed)")
+            for f in th.frames {
+                for d in f where d.out {
+                    XCTAssertLessThanOrEqual(abs(d.p.x), tray.x, "seed \(seed)")
+                    XCTAssertGreaterThanOrEqual(d.p.z, tray.zBack, "seed \(seed)")
+                    XCTAssertLessThanOrEqual(d.p.z, tray.zFront, "seed \(seed)")
+                }
+            }
+            for (i, d) in th.rest.enumerated() {
+                XCTAssertEqual(d.p.y, DiceArena.half, accuracy: 1e-6, "seed \(seed) die \(i) rests on the felt")
+                for h in held {
+                    XCTAssertLessThan(DiceSim.overlap(d.p, d.q, h, .identity)?.pen ?? 0, 0.045, "seed \(seed): clear of a held die")
+                }
+            }
+        }
+    }
+
+    func testTheRowFitsUnderTheScorecard() {
+        for (w, h) in [(375.0, 170.0), (390.0, 200.0), (430.0, 220.0), (820.0, 260.0)] {
+            let cam = DiceArena.camera(width: w, height: h, tray: .row)
+            for i in 0..<5 {
+                let s = cam.project(DiceTray.row.slot(i, of: 5))
+                XCTAssertTrue(s.x > 0 && s.x < w && s.y > 0 && s.y < h, "\(w)x\(h) slot \(i)")
+            }
+            XCTAssertGreaterThan(cam.pointsPerUnit(at: DiceTray.row.slot(2, of: 5)), 34, "\(w)x\(h): the dice are a good size")
+        }
+        // Hot Dice with the turn's words over the top of the scene: the tray stays below them
+        let cam = DiceArena.camera(width: 390, height: 560, top: 110)
+        for x in [-DiceArena.trayX, DiceArena.trayX] {
+            XCTAssertGreaterThan(cam.project(T3Vec(x, DiceArena.rimH, DiceArena.zBack - DiceArena.rimW)).y, 110)
+        }
+    }
+
     func testTheSameSeedThrowsTheSame() {
         XCTAssertEqual(DiceSim.run(count: 6, seed: 42), DiceSim.run(count: 6, seed: 42))
     }
@@ -131,5 +172,6 @@ final class DiceArenaTests: XCTestCase {
         XCTAssertEqual(s.die(1)?.place, .tray)
         XCTAssertEqual(s.roll, "a#3#2")
         XCTAssertTrue(s.mine)
+        XCTAssertTrue(s.row, "Roll Call's dice keep their own slots")
     }
 }

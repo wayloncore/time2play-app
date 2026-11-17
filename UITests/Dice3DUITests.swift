@@ -38,6 +38,11 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertTrue(banner.exists, "a Farkle shows why")
             XCTAssertTrue(banner.label.contains("No 1s, no 5s"), banner.label)
         }
+        // #523: pinched in and turned a little; the dice still answer where they are on screen
+        still("game=hot moment=settled zoom=1.8", "hot-5-zoomed") { app in
+            XCTAssertEqual(app.buttons["die-0"].value as? String, "scores")
+            XCTAssertTrue(app.buttons["dice-reset-view"].exists, "a moved view offers its reset")
+        }
         still("game=rollcall moment=settled", "rc-1-settled")
         still("game=rollcall moment=kept", "rc-2-two-held") { app in
             XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held")
@@ -100,7 +105,43 @@ final class Dice3DUITests: XCTestCase {
         XCTFail("no Farkle came up in 16 rolls")
     }
 
-    /// Roll Call offline against Pip with the 3D dice: roll, hold two (they go to the keep row), roll again, score.
+    /// #523: Hot Dice with the board pinched in: a die still picks where it is on screen, and the reset puts the view back.
+    func testHotDiceZoomed() {
+        let app = launch(["-t2p-dice3d", "-t2p-seed", "3"])
+        startOffline(app, "farkle", bot: "bold")
+        let arena = app.descendants(matching: .any)["dice-3d"].firstMatch
+        XCTAssertTrue(arena.waitForExistence(timeout: 20), "the 3D dice are on")
+        let roll = app.buttons["roll"]
+        let status = app.descendants(matching: .any)["dice-status"].firstMatch
+        for _ in 0..<12 {
+            XCTAssertTrue(waitEnabled(roll, 90), "your roll")
+            roll.tap()
+            let end = Date().addingTimeInterval(15)
+            while Date() < end && !(status.exists && status.label.contains("Tap the dice")) { usleep(200_000) }
+            guard status.exists && status.label.contains("Tap the dice") else { continue }   // a Farkle or hot dice: next roll
+            arena.pinch(withScale: 2.0, velocity: 1.5)
+            usleep(900_000)
+            shot(app, "523-\(device)hd-pinched")
+            XCTAssertTrue(app.buttons["dice-reset-view"].waitForExistence(timeout: 3), "a moved view offers its reset")
+            let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
+            if let pick = dice.first(where: { ($0.value as? String) == "scores" && $0.isHittable }) {
+                let id = pick.identifier
+                pick.tap()
+                XCTAssertTrue(waitValue(app.buttons[id], "kept", 4), "a die picks where it is on the zoomed board")
+                usleep(500_000)
+                shot(app, "523-\(device)hd-pinched-kept")
+            }
+            app.buttons["dice-reset-view"].tap()
+            usleep(900_000)
+            XCTAssertFalse(app.buttons["dice-reset-view"].exists, "the view is back where it was")
+            shot(app, "523-\(device)hd-reset")
+            return
+        }
+        XCTFail("no roll to choose from in 12 tries")
+    }
+
+    /// Roll Call offline against Pip with the 3D dice: roll, hold two (they stay in their places, marked HOLD), roll
+    /// again, score.
     func testRollCallPlayed() {
         let app = launch(["-t2p-dice3d", "-t2p-seed", "3"])
         startOffline(app, "rollcall", bot: "easy")
@@ -113,7 +154,7 @@ final class Dice3DUITests: XCTestCase {
         let faces = (0..<5).map { app.buttons["rc-die-\($0)"].label }
         XCTAssertTrue(faces.allSatisfy { $0.hasPrefix("Die showing") }, "landed: \(faces)")
         app.buttons["rc-die-0"].tap()
-        XCTAssertTrue(waitValue(app.buttons["rc-die-0"], "held", 4), "a held die goes to the keep row")
+        XCTAssertTrue(waitValue(app.buttons["rc-die-0"], "held", 4), "a held die stays in its place, marked held")
         app.buttons["rc-die-1"].tap()
         XCTAssertTrue(waitValue(app.buttons["rc-die-1"], "held", 4))
         usleep(600_000)
@@ -123,7 +164,7 @@ final class Dice3DUITests: XCTestCase {
         usleep(1_200_000)
         shot(app, "521-\(device)rc-play-2-reroll")
         XCTAssertTrue(box.waitForExistence(timeout: 12))
-        XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held", "held dice stay in the keep row through a roll")
+        XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held", "held dice stay in their places through a roll")
         box.tap()
         sleep(3)
         shot(app, "521-\(device)rc-play-3-bot-rolls")

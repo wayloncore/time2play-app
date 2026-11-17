@@ -207,6 +207,21 @@ extension DiceArenaWorld {
         }
     }
 
+    /// A held die's ring on the felt (#523): a soft gold band, clear in the middle.
+    static func ringImage() -> UIImage {
+        let s = CGSize(width: 128, height: 128)
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1; fmt.opaque = false
+        return UIGraphicsImageRenderer(size: s, format: fmt).image { ctx in
+            let c = ctx.cgContext
+            let gold = UIColor(red: 0.96, green: 0.76, blue: 0.33, alpha: 1)
+            c.setShadow(offset: .zero, blur: 10, color: gold.withAlphaComponent(0.9).cgColor)
+            c.setStrokeColor(gold.cgColor)
+            c.setLineWidth(7)
+            c.addPath(UIBezierPath(roundedRect: CGRect(x: 14, y: 14, width: 100, height: 100), cornerRadius: 22).cgPath)
+            c.strokePath()
+        }
+    }
+
     /// A pool of light, for the faint glow under dice that could score (added to what's under it).
     static func glowImage(_ color: UIColor) -> UIImage {
         let s = CGSize(width: 128, height: 128)
