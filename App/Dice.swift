@@ -314,6 +314,9 @@ struct HotDiceView: View {
     /// The turn the panel draws: the room's, or the Farkle still being shown while the next player gets ready.
     private var shown: HotDice.Turn? {
         if let f = farkle, let t, t.state == "start" || (t.n == f.n && t.state == "farkle") { return f }
+        // #521: the 3D dice show a Farkle for its full hold after they land, even if the next player has started
+        // rolling (the tray catches up a moment later); your own roll always takes over at once
+        if arena, let f = farkle, !(mine && t?.state != "start") { return f }
         return t
     }
     private var mine: Bool { view.common.yourTurn }
@@ -351,7 +354,14 @@ struct HotDiceView: View {
         .onChange(of: arenaStage.landed) { _, key in
             // #521: what a roll means waits for its dice to land
             guard arena, let key, let t = shown, key == "\(t.n).\(t.seq)" else { return }
-            if t.state == "farkle" && t.id == me { Haptics.nope() }
+            if t.state == "farkle" {
+                if t.id == me { Haptics.nope() }
+                // the hold starts when the Farkle can be seen
+                let k = "\(t.n):\(t.seq)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0)) {
+                    if let f = farkle, "\(f.n):\(f.seq)" == k { farkle = nil }
+                }
+            }
             celebrateRoll()
         }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
@@ -362,13 +372,15 @@ struct HotDiceView: View {
         .onChange(of: t.map { $0.state == "farkle" ? "\($0.n):\($0.seq)" : "" }) { _, key in
             guard let key, !key.isEmpty, let t else { return }
             farkle = t
-            // the 3D dice tumble for a second and a half before the Farkle shows: it stays up that much longer
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0) + (arena ? 1.8 : 0)) {
+            // the 3D dice hold it from when they land (above); this is their backstop if they never do
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0) + (arena ? 6 : 0)) {
                 if let f = farkle, "\(f.n):\(f.seq)" == key { farkle = nil }
             }
         }
         .onAppear { arenaStage.onFirstHit = { Haptics.play() } }
-        .onChange(of: t?.state) { _, s in if s != "start" && s != "farkle" { farkle = nil } }   // the next roll is up
+        .onChange(of: t?.state) { _, s in   // the next roll is up (with the 3D dice, only yours cuts a Farkle short)
+            if s != "start" && s != "farkle" && (!arena || mine) { farkle = nil }
+        }
     }
 
     /// A big roll of yours (three of a kind and up) said big for a moment.

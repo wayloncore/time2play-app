@@ -214,8 +214,9 @@ extension DiceArenaWorld {
         return UIGraphicsImageRenderer(size: s, format: fmt).image { ctx in
             UIColor.black.setFill(); ctx.fill(CGRect(origin: .zero, size: s))
             let space = CGColorSpaceCreateDeviceRGB()
-            guard let g = CGGradient(colorsSpace: space, colors: [color.cgColor, color.withAlphaComponent(0.35).cgColor,
-                                                                  UIColor(white: 0, alpha: 0).cgColor] as CFArray, locations: [0, 0.4, 1]) else { return }
+            guard let g = CGGradient(colorsSpace: space, colors: [color.cgColor, color.withAlphaComponent(0.75).cgColor,
+                                                                  color.withAlphaComponent(0.3).cgColor, UIColor(white: 0, alpha: 0).cgColor] as CFArray,
+                                     locations: [0, 0.35, 0.62, 1]) else { return }
             ctx.cgContext.drawRadialGradient(g, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64),
                                              endRadius: 64, options: [])
         }

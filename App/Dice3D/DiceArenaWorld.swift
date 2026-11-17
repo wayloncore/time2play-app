@@ -100,7 +100,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         lock.lock(); let work = pending; pending = []; lock.unlock()
         work.forEach { $0() }
         // a still keeps real time even when a slow simulator draws few frames, so it lands on time
-        var dt = min(freezeOn == nil ? 0.05 : 0.25, max(0, time - (lastTime ?? time)))
+        // (in play too, up to a tenth of a second a frame: a slow phone drops frames rather than falling behind the room)
+        var dt = min(freezeOn == nil ? 0.1 : 0.25, max(0, time - (lastTime ?? time)))
         if lastTime == nil { dt = 1.0 / 60 }
         lastTime = time
         if let f = freezeAt {
@@ -242,7 +243,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         n.opacity = 0
         scene.rootNode.addChildNode(n)
         dieNodes[id] = n
-        let glow = SCNNode(geometry: SCNPlane(width: 2.1, height: 2.1))
+        let glow = SCNNode(geometry: SCNPlane(width: 2.9, height: 2.9))
         let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = glowGold
         m.blendMode = .add; m.writesToDepthBuffer = false; m.isDoubleSided = true
         glow.geometry?.firstMaterial = m
