@@ -123,6 +123,7 @@ struct YouView: View {
     @State private var review = false
     @State private var name = ""
     @AppStorage(Table3DSwitch.key) private var table3D = false
+    @AppStorage(Dice3DSwitch.key) private var dice3D = false
 
     var body: some View {
         NavigationStack {
@@ -166,6 +167,16 @@ struct YouView: View {
                         .accessibilityIdentifier("toggle-3d")
                 } footer: {
                     Text("Plays Overdraft at the new 3D table. It's still being built; off plays the usual table.")
+                        .foregroundStyle(T2P.muted)
+                }
+                .listRowBackground(T2P.panel)
+
+                Section {
+                    Toggle("3D dice (preview)", isOn: $dice3D)
+                        .tint(T2P.gold)
+                        .accessibilityIdentifier("toggle-dice3d")
+                } footer: {
+                    Text("Rolls Hot Dice and Roll Call in a 3D dice tray. It's still being built; off shows the usual dice.")
                         .foregroundStyle(T2P.muted)
                 }
                 .listRowBackground(T2P.panel)

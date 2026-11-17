@@ -10,6 +10,10 @@ struct RollCallView: View {
     @Environment(\.accessibilityReduceMotion) private var still
     let view: RollCall.View
     var onLeave: () -> Void
+    /// #521: the 3D dice arena (You → "3D dice (preview)"); off draws the flat dice as before.
+    var arena = false
+    @StateObject private var arenaStage = DiceArenaStage()
+    @Environment(\.horizontalSizeClass) private var hsize
     /// The roll in the air (its RollCall.View.rollKey), and the last roll seen, so a view arriving mid-turn doesn't tumble.
     @State private var tumbling: String?
     @State private var seen: String?
@@ -39,7 +43,7 @@ struct RollCallView: View {
                         MomentFeed(lines: feed, id: "rollcall-last")
                         dice
                         if mine { rollButton }
-                        if let o = view.options, mine, tumbling == nil, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
+                        if let o = view.options, mine, !rolling, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
                             Text(o.instruction).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.gold)
                         }
                         scorecard
@@ -54,6 +58,7 @@ struct RollCallView: View {
         .onChange(of: view) { old, new in changed(from: old, to: new) }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
         .onAppear {
+            arenaStage.onFirstHit = { Haptics.play() }
             seen = view.rollKey
             // a table opened mid-game: the last box scored, so the screen doesn't start blank
             if feed.isEmpty, let l = view.last { feed = [MomentLine(text: scoredWords(l.id, l.key, l.points, l.extra), dice: l.dice)] }
@@ -61,6 +66,7 @@ struct RollCallView: View {
         .onChange(of: view.rollKey) { _, key in
             guard let key, key != seen else { return }
             seen = key
+            if arena { return }   // the 3D dice tap as they land
             if still { if mine { Haptics.play() }; return }
             tumbling = key
             DispatchQueue.main.asyncAfter(deadline: .now() + (mine ? 0.6 : 0.45)) {
@@ -131,13 +137,32 @@ struct RollCallView: View {
     private var turnLine: String {
         guard let t = view.turn else { return "" }
         if view.common.held { return "A bot is playing your seat" }
-        if tumbling != nil { return mine ? "Rolling…" : "\(name(t.id)) is rolling…" }
+        if rolling { return mine ? "Rolling…" : "\(name(t.id)) is rolling…" }
         if mine { return t.rolls == 0 ? "Your turn: roll the dice" : t.rolls < RollCall.maxRolls ? "Your turn · roll \(t.rolls) of 3: hold dice, roll again or pick a box" : "Your turn: pick a box" }
         return t.rolls == 0 ? "\(name(t.id))’s turn" : "\(name(t.id))’s turn · roll \(t.rolls) of 3"
     }
 
+    /// The dice are in the air: the flat dice's short tumble, or (#521) the 3D roll until every die has landed.
+    private var rolling: Bool {
+        if arena { return view.rollKey != nil && arenaStage.landed != view.rollKey }
+        return tumbling != nil
+    }
+
+    private var canHold: Bool { mine && (view.turn?.rolls ?? 0) > 0 && (view.turn?.rolls ?? 0) < RollCall.maxRolls && !rolling }
+
     @ViewBuilder private var dice: some View {
-        if let t = view.turn {
+        if arena, let t = view.turn {
+            DiceArenaView(stage: arenaStage, state: ArenaState.rollCall(view), button: { d in
+                let i = d.id, held = i < t.held.count && t.held[i]
+                return ArenaDieButton(id: "rc-die-\(i)",
+                                      label: !view.diceShown ? "Die, not rolled yet" : rolling && !held ? "Die, rolling" : "Die showing \(i < t.dice.count ? t.dice[i] : 0)",
+                                      value: held ? "held" : "", enabled: canHold)
+            }, onTap: { i in
+                if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() }
+            })
+            .frame(height: hsize == .regular ? 440 : 300)
+            .frame(maxWidth: 760)
+        } else if let t = view.turn {
             HStack(spacing: 10) {
                 ForEach(0..<5, id: \.self) { i in
                     let held = i < t.held.count && t.held[i]
@@ -172,13 +197,13 @@ struct RollCallView: View {
             Text(rolls == 0 ? "Roll" : "Roll again (\(RollCall.maxRolls - rolls) left)")
         }
         .buttonStyle(GoldButtonStyle())
-        .disabled(rolls >= RollCall.maxRolls || (rolls > 0 && allHeld) || view.common.held || tumbling != nil)
+        .disabled(rolls >= RollCall.maxRolls || (rolls > 0 && allHeld) || view.common.held || rolling)
         .accessibilityIdentifier("rc-roll")
     }
 
     private var scorecard: some View {
         let mePlayer = view.me
-        let allowed = Set(mine && tumbling == nil ? view.options?.allowed ?? [] : [])
+        let allowed = Set(mine && !rolling ? view.options?.allowed ?? [] : [])
         return VStack(spacing: 0) {
             ForEach(Array(RollCall.boxes.enumerated()), id: \.offset) { i, b in
                 let filled = mePlayer?.scores[b.key]
