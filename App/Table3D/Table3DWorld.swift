@@ -593,7 +593,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         var pos: [Float] = [], tex: [Float] = [], idx: [UInt32] = []
         for i in 0...N {
             let sP = Double(i) / Double(N) * P
-            for (k, v) in [(0.975, 0.0), (1.095, 1.0)] {
+            for (k, v) in [(0.96, 0.0), (1.10, 1.0)] {
                 let r = Table3D.rimPoint(sP, k)
                 pos += [Float(r.x), y, Float(r.z)]; tex += [Float(sP), Float(v)]
             }
@@ -672,7 +672,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         let a = (flow.a.truncatingRemainder(dividingBy: P) + P).truncatingRemainder(dividingBy: P)
         u.e = SIMD4<Float>(Float(a), Float(L), Float(flow.phase), Float(flow.vel))
         u.g.x = Float(flow.ad); u.g.y = Float(flow.arc)
-        u.f.w = Float(flow.show * (0.6 + 0.4 * flow.boost))
+        u.f.w = Float(flow.show * (0.75 + 0.25 * flow.boost))
         flowNode.isHidden = flow.show < 0.01
     }
 

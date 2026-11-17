@@ -451,16 +451,16 @@ fragment float4 t3d_flow_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffe
     float dn = abs(rel - L); dn = min(dn, P - dn);                     // how far from whoever is next
     float b;
     if (u.b.w > .5) {
-        b = inArc * u.g.y * (.18 + .62 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .25) * .55 * u.g.y;
+        b = inArc * u.g.y * (.30 + .65 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .3) * .85 * u.g.y;
     } else {
         float fr = fract((s - u.e.z) / sp), vd = clamp(u.e.w, -1., 1.);
         float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
         float comet = mix(back, fwd, vd * .5 + .5) * 1.6;               // the bright head leads, its tail trails
-        float glow = exp(-dn * dn / .3) * (.45 + .2 * sin(u.a.x * 3.4));
-        b = .20 * comet + inArc * u.g.y * (.75 * comet + .16) + glow * u.g.y;
+        float glow = exp(-dn * dn / .35) * (.75 + .2 * sin(u.a.x * 3.4));
+        b = .30 * comet + inArc * u.g.y * (1.0 * comet + .30) + glow * u.g.y;
     }
-    float a = clamp(b * across * u.f.w, 0., 1.);
+    float a = clamp(b * across * u.f.w, 0., .95);
     if (a < .004) discard_fragment();
-    float3 col = mix(u.f.rgb, float3(1.), .35 * clamp(b - .5, 0., 1.));
-    return float4(lin(col) * a, a);
+    float3 col = mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.));
+    return float4(lin(col), a);   // SceneKit's alpha blend multiplies by a itself (not premultiplied)
 }
