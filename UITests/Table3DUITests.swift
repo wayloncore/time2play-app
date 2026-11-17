@@ -67,14 +67,11 @@ final class Table3DUITests: XCTestCase {
         var shotTurn = false, shotThrow = false, shotTheirs = false, plays = 0, turns = 0
         let deadline = Date().addingTimeInterval(seconds)
         let legal = NSPredicate(format: "identifier BEGINSWITH 'legal-'")
-        // one look at the header per pass, every half second (fewer accessibility snapshots of a busy table)
-        let state = app.staticTexts.matching(NSPredicate(format: "identifier IN {'your-turn', 'their-turn', 'table-over', 'hand-over'}")).firstMatch
         while Date() < deadline {
-            let now = state.exists ? state.identifier : ""
-            if now == "hand-over" || now == "table-over" { break }
-            guard now == "your-turn" else {
-                if !shotTheirs && plays > 0 && now == "their-turn" { shot(app, "496-\(device)3d-play\(n)-4-bot-turn"); shotTheirs = true }
-                usleep(500_000); continue
+            if app.staticTexts["hand-over"].exists || app.staticTexts["table-over"].exists { break }
+            guard app.staticTexts["your-turn"].exists else {
+                if !shotTheirs && plays > 0 && app.staticTexts["their-turn"].exists { shot(app, "496-\(device)3d-play\(n)-4-bot-turn"); shotTheirs = true }
+                usleep(500_000); continue   // every half second: fewer accessibility snapshots of a busy table
             }
             turns += 1
             if !shotTurn { shot(app, "496-\(device)3d-play\(n)-2-your-turn"); shotTurn = true }
