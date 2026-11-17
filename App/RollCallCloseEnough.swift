@@ -137,7 +137,7 @@ struct RollCallView: View {
         guard let t = view.turn else { return "" }
         if view.common.held { return "A bot is playing your seat" }
         if rolling { return mine ? "Rolling…" : "\(name(t.id)) is rolling…" }
-        if mine { return t.rolls == 0 ? "Your turn: roll the dice" : t.rolls < RollCall.maxRolls ? "Your turn · roll \(t.rolls) of 3: hold dice, roll again or pick a box" : "Your turn: pick a box" }
+        if mine { return t.rolls == 0 ? "Your turn: roll the dice" : t.rolls < RollCall.maxRolls ? "Your turn · roll \(t.rolls) of 3 · hold, roll or score" : "Your turn: pick a box" }
         return t.rolls == 0 ? "\(name(t.id))’s turn" : "\(name(t.id))’s turn · roll \(t.rolls) of 3"
     }
 
@@ -179,7 +179,7 @@ struct RollCallView: View {
             }, onTap: { i in
                 if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() }
             })
-            .frame(height: hsize == .regular ? 250 : 170)
+            .frame(height: hsize == .regular ? 240 : 150)
         } else if let t = view.turn {
             let size: CGFloat = hsize == .regular ? 84 : 54
             HStack(spacing: hsize == .regular ? 24 : 12) {
@@ -245,7 +245,7 @@ struct RollCallView: View {
             .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
             Rectangle().fill(RCPaper.ink).frame(height: 2).padding(.horizontal, 10)
             GeometryReader { g in
-                let rowH = max(34, (g.size.height - 26) / 7)
+                let rowH = max(31, (g.size.height - 26) / 7)
                 ScrollView(showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(spacing: 0) {
