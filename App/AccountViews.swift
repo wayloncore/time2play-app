@@ -122,6 +122,7 @@ struct YouView: View {
     @State private var taps = 0
     @State private var review = false
     @State private var name = ""
+    @AppStorage(Table3DSwitch.key) private var table3D = false
 
     var body: some View {
         NavigationStack {
@@ -158,6 +159,16 @@ struct YouView: View {
                 } else {
                     Section { SignInPanel() }.listRowBackground(T2P.panel)
                 }
+
+                Section {
+                    Toggle("3D table (preview)", isOn: $table3D)
+                        .tint(T2P.gold)
+                        .accessibilityIdentifier("toggle-3d")
+                } footer: {
+                    Text("Plays Overdraft at the new 3D table. It's still being built; off plays the usual table.")
+                        .foregroundStyle(T2P.muted)
+                }
+                .listRowBackground(T2P.panel)
 
                 Section {
                     Link("Help and support", destination: URL(string: "https://tyleralocke.com/help#app-support")!)

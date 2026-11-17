@@ -45,6 +45,10 @@ struct Time2PlayApp: App {
     @StateObject private var app = AppModel()
     var body: some Scene {
         WindowGroup {
+            if let still = Table3DStill.fromArgs() {
+                // #496's screenshots: the 3D table, made up and stopped at a moment
+                Table3DView(view: still.view, onLeave: {}, still: still)
+            } else {
             RootView()
                 .environmentObject(app)
                 .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-t2p-light") ? .light : nil)
@@ -60,6 +64,7 @@ struct Time2PlayApp: App {
                     if let f = FriendLink.code(url) { Task { await app.openFriendLink(f) } }
                     else if let c = RoomCode.fromLink(url) { Task { await app.join(code: c) } }
                 }
+            }
         }
     }
 }
