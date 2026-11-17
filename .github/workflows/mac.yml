@@ -47,7 +47,9 @@ jobs:
           if grep -q "6WK983RXJT.live.time2play.app" aasa.json 2>/dev/null; then echo "AASA OK: names 6WK983RXJT.live.time2play.app"; else echo "::warning::time2play.live's apple-app-site-association doesn't name 6WK983RXJT.live.time2play.app"; fi
       - name: Core package tests (no UI)
         run: |
-          t=$(date +%s); cd Core && swift test > ../core.log 2>&1; tail -6 ../core.log; grep -E "error: " ../core.log | head -30
+          # bash -e stops at a failing command: print why before failing
+          t=$(date +%s); cd Core && swift test > ../core.log 2>&1 || { grep -E "error: |failed|XCTAssert" ../core.log | head -60; tail -15 ../core.log; exit 1; }
+          tail -6 ../core.log; grep -E "dice throws" ../core.log | head -3
           echo "core_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate

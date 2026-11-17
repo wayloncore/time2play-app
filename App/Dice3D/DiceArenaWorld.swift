@@ -498,9 +498,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             let k = Float(max(0, min(1, (now - tw.t0) / tw.dur)))
             if now < tw.t0 { continue }
             let e = k * k * (3 - 2 * k)
-            var p = tw.from.p + (tw.to.p - tw.from.p) * e
-            p.y += tw.arc * sin(.pi * e)
-            let pose = Pose(p: p, q: simd_slerp(tw.from.q, tw.to.q, e))
+            var at = tw.from.p + (tw.to.p - tw.from.p) * e
+            at.y += tw.arc * sin(Float.pi * e)
+            let pose = Pose(p: at, q: simd_slerp(tw.from.q, tw.to.q, e))
             r.pose = pose
             apply(pose, to: dieNodes[id])
             if tw.fadeIn { dieNodes[id]?.opacity = CGFloat(min(1, k * 2.5)) }
@@ -514,10 +514,10 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
                 } else { dieNodes[id]?.opacity = 1 }
                 if case .keep = tw.end { moment(.kept) }
                 // a reduced-motion throw lands when its last die has dropped
-                if let p = play, reduced, !p.done, p.ids.contains(id), p.ids.allSatisfy({ $0 == id || dice[$0]?.tween == nil }) {
+                if let pl = play, reduced, !pl.done, pl.ids.contains(id), pl.ids.allSatisfy({ $0 == id || dice[$0]?.tween == nil }) {
                     play?.done = true
                     if want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
-                    landed(p.key, ids: p.ids, now: now)
+                    landed(pl.key, ids: pl.ids, now: now)
                 }
             }
             dice[id] = r
