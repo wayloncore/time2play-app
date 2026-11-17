@@ -172,6 +172,45 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
     return float4(lin(backdropTone(col)), 1.);
 }
 
+// ---------- the turn flow: light running round the rim in turn order (#496, Nov 17) ----------
+// Drawn by the glass itself (opaque, so it never depends on blending). The whole rim flows faintly in play's
+// direction; the arc from whoever is on to whoever is next is bright, and whoever is next glows. Reduce Motion: a
+// still arc that brightens toward whoever is next.
+constant float RX = 2.2, A0 = 3.2, QA = 3.4557519, PERIM = 26.6230077, SPACING = 26.6230077 / 24.;
+
+// Where a point on the glass is round the rim (s, as Table3D.rimPoint counts it) and how far out (k: 1 is the felt's edge).
+static float2 rimSK(float2 p) {
+    float x = p.x, z = p.y;
+    if (z > A0) { float2 d = float2(x, z - A0); float th = atan2(d.x, d.y); return float2(th <= 0. ? -th * RX : PERIM - th * RX, length(d) / RX); }
+    if (z < -A0) { float2 d = float2(x, z + A0); return float2(QA + 2. * A0 + atan2(-d.y, -d.x) * RX, length(d) / RX); }
+    return x < 0. ? float2(QA + (A0 - z), -x / RX) : float2(3. * QA + 2. * A0 + (z + A0), x / RX);
+}
+
+// The flow's color and how much of it (0 to 1) at a point on the glass.
+static float4 turnFlow(float2 p, constant T3DU& u) {
+    if (u.f.w < .001) return float4(0.);
+    float2 sk = rimSK(p);
+    float v = (sk.y - .975) / (1.09 - .975);
+    if (v <= 0. || v >= 1.) return float4(0.);
+    float s = sk.x, L = u.e.y;
+    float x = (s - u.e.x) * u.g.x; float rel = x - PERIM * floor(x / PERIM);   // past whoever is on, in the arc's direction
+    float inArc = ss(0., .3, rel) * (1. - ss(L - .45, L, rel));
+    float across = ss(0., .3, v) * (1. - ss(.7, 1., v));
+    float dn = abs(rel - L); dn = min(dn, PERIM - dn);                         // how far from whoever is next
+    float b;
+    if (u.b.w > .5) {
+        b = inArc * u.g.y * (.30 + .65 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .3) * .85 * u.g.y;
+    } else {
+        float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
+        float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
+        float comet = mix(back, fwd, vd * .5 + .5) * 1.6;                     // the bright head leads, its tail trails
+        float glow = exp(-dn * dn / .35) * (.75 + .2 * sin(u.a.x * 3.4));
+        b = .10 * comet + inArc * u.g.y * (.85 * comet + .20) + glow * u.g.y;   // faint all round, bright on the arc
+    }
+    float a = clamp(b * across * u.f.w, 0., .9);
+    return float4(mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.)), a);
+}
+
 // ---------- the glass: a frosted slab the element shows through, its rim lit on your turn ----------
 fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffer(2)]]) {
     float3 vW = in.world;
@@ -195,6 +234,8 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .5 + .5) * (ss(.90, .995, ed) * .30 + ss(.975, 1., ed) * .5);
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     col += float3(.5, .42, .9) * e.flash * .28;
+    float4 fl = turnFlow(vW.xz, u);
+    col = mix(col, fl.rgb, fl.a);
     return float4(lin(col), 1.);
 }
 
@@ -437,30 +478,4 @@ fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer
     float3 col = float3(1.) * core * 1.3 + float3(.62, .48, 1.) * glow * .75;
     float k = in.ua.y * u.c.y;
     return float4(lin(col * k), 1.);
-}
-
-// ---------- the turn flow: light running round the rim in turn order (#496, Nov 17) ----------
-// u.x is the distance round the rim, u.y across the ribbon. The whole rim flows softly in play's direction; the arc
-// from whoever is on to whoever is next is brighter, and whoever is next glows. Reduce Motion: a still arc that
-// brightens toward whoever is next.
-fragment float4 t3d_flow_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffer(2)]]) {
-    float s = in.uv.x, v = in.uv.y, P = u.g.z, sp = u.g.w, L = u.e.y;
-    float x = (s - u.e.x) * u.g.x; float rel = x - P * floor(x / P);   // past whoever is on, in the arc's direction
-    float inArc = ss(0., .3, rel) * (1. - ss(L - .45, L, rel));
-    float across = ss(0., .35, v) * (1. - ss(.65, 1., v));
-    float dn = abs(rel - L); dn = min(dn, P - dn);                     // how far from whoever is next
-    float b;
-    if (u.b.w > .5) {
-        b = inArc * u.g.y * (.30 + .65 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .3) * .85 * u.g.y;
-    } else {
-        float fr = fract((s - u.e.z) / sp), vd = clamp(u.e.w, -1., 1.);
-        float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
-        float comet = mix(back, fwd, vd * .5 + .5) * 1.6;               // the bright head leads, its tail trails
-        float glow = exp(-dn * dn / .35) * (.75 + .2 * sin(u.a.x * 3.4));
-        b = .10 * comet + inArc * u.g.y * (.85 * comet + .20) + glow * u.g.y;   // faint all round, bright on the arc
-    }
-    float a = clamp(b * across * u.f.w, 0., .9);
-    if (a < .004) discard_fragment();
-    float3 col = mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.));
-    return float4(lin(col), a);   // SceneKit's alpha blend multiplies by a itself (not premultiplied)
 }

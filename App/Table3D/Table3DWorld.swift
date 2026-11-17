@@ -67,7 +67,6 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     // the scene
     private let tableRoot = SCNNode(), pileNode = SCNNode(), deckNode = SCNNode(), handsNode = SCNNode()
     private var rimLine: SCNMaterial?
-    private var flowNode = SCNNode()
     private var boltNode = SCNNode()
     private var grassNode: SCNNode?
     private var addParts: SCNNode?, leafParts: SCNNode?
@@ -587,29 +586,10 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         var set = false
     }
 
-    /// A ribbon on the glass round the rim; its texture u is the distance round the rim (Table3D.rimPoint's s).
+    /// The flow is drawn by the glass's shader (Table3DShaders.metal, turnFlow): here only its constants.
     private func buildFlow() {
-        let N = 260, P = Table3D.perim, y: Float = 0.01
-        var pos: [Float] = [], tex: [Float] = [], idx: [UInt32] = []
-        for i in 0...N {
-            let sP = Double(i) / Double(N) * P
-            for (k, v) in [(0.975, 0.0), (1.09, 1.0)] {
-                let r = Table3D.rimPoint(sP, k)
-                pos += [Float(r.x), y, Float(r.z)]; tex += [Float(sP), Float(v)]
-            }
-            if i < N { let k = UInt32(i * 2); idx += [k, k + 1, k + 2, k + 1, k + 3, k + 2] }
-        }
-        let g = SCNGeometry(sources: [Self.source(pos, .vertex, 3), Self.source(tex, .texcoord, 2)],
-                            elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
-        g.firstMaterial = programMaterial("t3d_worlduv_vert", "t3d_flow_frag", opaque: false) { m in
-            m.isDoubleSided = true; m.blendMode = .alpha; m.writesToDepthBuffer = false
-        }
-        flowNode.geometry = g
-        flowNode.renderingOrder = 4
-        flowNode.isHidden = true
-        scene.rootNode.addChildNode(flowNode)
-        // comets evenly round the rim, about 1.1 apart, so the pattern meets itself where the rim closes
-        u.g.z = Float(P); u.g.w = Float(P / (P / 1.1).rounded())
+        let P = Table3D.perim
+        u.g.z = Float(P); u.g.w = Float(P / (P / 1.1).rounded())   // comets evenly round the rim, about 1.1 apart
     }
 
     /// Whoever is on, whoever is next (rim positions) and play's direction. A new turn slides the bright arc on; a
@@ -673,7 +653,6 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         u.e = SIMD4<Float>(Float(a), Float(L), Float(flow.phase), Float(flow.vel))
         u.g.x = Float(flow.ad); u.g.y = Float(flow.arc)
         u.f.w = Float(flow.show * (0.75 + 0.25 * flow.boost))
-        flowNode.isHidden = flow.show < 0.01
     }
 
     private lazy var boltMaterial: SCNMaterial = programMaterial("t3d_bolt_vert", "t3d_bolt_frag", opaque: false) { m in
