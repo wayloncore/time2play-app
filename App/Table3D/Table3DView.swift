@@ -52,7 +52,7 @@ struct Table3DView: View {
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .top) {
-                Table3DSceneHost(stage: stage).ignoresSafeArea()
+                Table3DSceneHost(stage: stage).ignoresSafeArea().accessibilityHidden(true)
                 scrims.ignoresSafeArea().allowsHitTesting(false)
                 overTable.ignoresSafeArea()
                 hud

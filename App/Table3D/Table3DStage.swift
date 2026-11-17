@@ -35,6 +35,8 @@ final class Table3DStage: ObservableObject {
         v.backgroundColor = .black
         v.isUserInteractionEnabled = false
         v.isAccessibilityElement = false
+        // the scene is decoration (faces, piles and the suit are SwiftUI over it): accessibility never walks into it
+        v.accessibilityElementsHidden = true
         scnView = v
         world.onFrozen = { [weak self] in self?.frozen = true }
         world.onStepDown = { [weak self] n in if n >= 2 { self?.scnView.antialiasingMode = .none } }
