@@ -1,0 +1,137 @@
+import XCTest
+
+/// The 3D dice arena (#521): stills of a Hot Dice roll mid-tumble, the dice settled, two kept and a Farkle, and Roll
+/// Call settled and with two held (a made-up turn stopped at an exact moment), then real offline games against a bot
+/// with the 3D dice on: tap a die and it goes to the keep row, tap it again and it comes back.
+final class Dice3DUITests: XCTestCase {
+    override func setUp() { continueAfterFailure = false }
+
+    private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad-" : "" }
+
+    @discardableResult
+    private func still(_ cfg: String, _ name: String, check: (XCUIApplication) -> Void = { _ in }) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-t2p-dice-still", cfg]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["dice3d-ready"].waitForExistence(timeout: 60), "\(name): the still never stopped")
+        usleep(300_000)
+        shot(app, "521-\(device)\(name)")
+        XCTAssertFalse(app.staticTexts["SCORES"].exists, "\(name): no SCORES labels on the dice")
+        check(app)
+        app.terminate()
+        return app
+    }
+
+    func testStills() {
+        still("game=hot moment=tumble", "hot-1-mid-tumble")
+        still("game=hot moment=settled", "hot-2-settled") { app in
+            XCTAssertEqual(app.buttons["die-0"].value as? String, "scores", "the 5 could score (said to VoiceOver, not drawn on the die)")
+            XCTAssertEqual(app.buttons["die-2"].value as? String, "doesn’t score")
+        }
+        still("game=hot moment=kept", "hot-3-two-kept") { app in
+            XCTAssertEqual(app.buttons["die-0"].value as? String, "kept")
+            XCTAssertEqual(app.buttons["die-1"].value as? String, "kept")
+            XCTAssertTrue(app.staticTexts["keep-line"].label.contains("150"), "what you're keeping: \(app.staticTexts["keep-line"].label)")
+        }
+        still("game=hot moment=farkle", "hot-4-farkle") { app in
+            let banner = app.descendants(matching: .any)["farkle-banner"]
+            XCTAssertTrue(banner.exists, "a Farkle shows why")
+            XCTAssertTrue(banner.label.contains("No 1s, no 5s"), banner.label)
+        }
+        still("game=rollcall moment=settled", "rc-1-settled")
+        still("game=rollcall moment=kept", "rc-2-two-held") { app in
+            XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held")
+            XCTAssertEqual(app.buttons["rc-die-1"].value as? String, "held")
+        }
+    }
+
+    /// Hot Dice offline against Rex with the 3D dice: roll, keep a scoring die (it goes to the keep row), put it back,
+    /// keep it again, roll on, until a Farkle shows why.
+    func testHotDicePlayed() {
+        let app = launch(["-t2p-dice3d", "-t2p-seed", "3"])
+        startOffline(app, "farkle", bot: "bold")
+        XCTAssertTrue(app.descendants(matching: .any)["dice-3d"].waitForExistence(timeout: 20), "the 3D dice are on")
+        let roll = app.buttons["roll"]
+        let banner = app.descendants(matching: .any)["farkle-banner"]
+        let status = app.descendants(matching: .any)["dice-status"].firstMatch
+        var shotAir = false, shotKept = false, putBack = false
+        for _ in 0..<16 {
+            XCTAssertTrue(waitEnabled(roll, 90), "your roll")
+            roll.tap()
+            if !shotAir { usleep(1_500_000); shot(app, "521-\(device)play-1-rolling"); shotAir = true }
+            let end = Date().addingTimeInterval(15)
+            var result = "", said = ""
+            while Date() < end && result.isEmpty {
+                said = status.exists ? status.label : "(no status)"
+                if banner.exists { result = "farkle" }
+                else if said.contains("Tap the dice") { result = "choose" }
+                else if said.contains("Hot dice") { result = "hot" }
+                else { usleep(150_000) }
+            }
+            XCTAssertFalse(result.isEmpty, "the roll lands; the status says: \(said)")
+            if result == "hot" { continue }
+            if result == "farkle" {
+                usleep(500_000)
+                shot(app, "521-\(device)play-4-farkle")
+                XCTAssertTrue(banner.label.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(banner.label)")
+                XCTAssertTrue(shotKept, "a die went to the keep row before the Farkle")
+                return
+            }
+            let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
+            guard let pick = dice.first(where: { ($0.value as? String) == "scores" }) else {
+                XCTFail("a roll you choose from has a die that scores: \(dice.map { "\($0.label) \(String(describing: $0.value))" })")
+                return
+            }
+            let id = pick.identifier
+            pick.tap()
+            XCTAssertTrue(waitValue(app.buttons[id], "kept", 4), "a tapped die goes to the keep row")
+            if !shotKept { usleep(500_000); shot(app, "521-\(device)play-2-kept"); shotKept = true }
+            if !putBack {
+                app.buttons[id].tap()
+                XCTAssertTrue(waitValue(app.buttons[id], "scores", 4), "tapped again, it comes back to the felt")
+                usleep(500_000)
+                shot(app, "521-\(device)play-3-put-back")
+                putBack = true
+                app.buttons[id].tap()
+                XCTAssertTrue(waitValue(app.buttons[id], "kept", 4))
+            }
+            usleep(300_000)
+        }
+        XCTFail("no Farkle came up in 16 rolls")
+    }
+
+    /// Roll Call offline against Pip with the 3D dice: roll, hold two (they go to the keep row), roll again, score.
+    func testRollCallPlayed() {
+        let app = launch(["-t2p-dice3d", "-t2p-seed", "3"])
+        startOffline(app, "rollcall", bot: "easy")
+        XCTAssertTrue(app.descendants(matching: .any)["dice-3d"].waitForExistence(timeout: 20), "the 3D dice are on")
+        let roll = app.buttons["rc-roll"]
+        XCTAssertTrue(waitEnabled(roll, 60), "your turn")
+        roll.tap()
+        let box = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'box-'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 12), "the boxes show once the dice land")
+        let faces = (0..<5).map { app.buttons["rc-die-\($0)"].label }
+        XCTAssertTrue(faces.allSatisfy { $0.hasPrefix("Die showing") }, "landed: \(faces)")
+        app.buttons["rc-die-0"].tap()
+        XCTAssertTrue(waitValue(app.buttons["rc-die-0"], "held", 4), "a held die goes to the keep row")
+        app.buttons["rc-die-1"].tap()
+        XCTAssertTrue(waitValue(app.buttons["rc-die-1"], "held", 4))
+        usleep(600_000)
+        shot(app, "521-\(device)rc-play-1-two-held")
+        XCTAssertTrue(waitEnabled(roll, 5))
+        roll.tap()
+        usleep(1_200_000)
+        shot(app, "521-\(device)rc-play-2-reroll")
+        XCTAssertTrue(box.waitForExistence(timeout: 12))
+        XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held", "held dice stay in the keep row through a roll")
+        box.tap()
+        sleep(3)
+        shot(app, "521-\(device)rc-play-3-bot-rolls")
+    }
+
+    private func waitValue(_ e: XCUIElement, _ v: String, _ timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end { if e.exists && (e.value as? String) == v { return true }; usleep(200_000) }
+        return false
+    }
+}

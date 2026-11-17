@@ -48,6 +48,9 @@ struct Time2PlayApp: App {
             if let still = Table3DStill.fromArgs() {
                 // #496's screenshots: the 3D table, made up and stopped at a moment
                 Table3DView(view: still.view, onLeave: {}, still: still)
+            } else if let dice = DiceStill.fromArgs() {
+                // #521's screenshots: the 3D dice, a made-up turn stopped at a moment
+                DiceStillView(still: dice)
             } else {
             RootView()
                 .environmentObject(app)
