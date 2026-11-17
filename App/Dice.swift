@@ -629,7 +629,8 @@ struct HotDiceView: View {
                 })
                 .frame(maxWidth: 760)
                 .frame(minHeight: 250, maxHeight: .infinity)
-                .overlay { if farkled { farkleBanner(t).padding(.horizontal, 24) } }
+                // the Farkle's words sit over the empty felt above the tray, clear of the dice they explain
+                .overlay(alignment: .top) { if farkled { farkleBanner(t).padding(.horizontal, 24).padding(.top, 2) } }
                 keepLine(t).frame(minHeight: 24)
             }
         } else {

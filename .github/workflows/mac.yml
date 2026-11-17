@@ -153,7 +153,12 @@ jobs:
       - name: Screenshots into the log
         if: always()
         run: |
-          for f in "$HOME"/t2p-shots/*.png; do [ -f "$f" ] || continue; echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"; done
+          # as JPEGs (a fifth the size of the PNGs): long logs lose characters, and a smaller shot comes through whole
+          for f in "$HOME"/t2p-shots/*.png; do
+            [ -f "$f" ] || continue
+            j="${f%.png}.jpg"; sips -s format jpeg -s formatOptions 82 "$f" --out "$j" >/dev/null 2>&1 || j="$f"
+            echo "BEGIN-SHOT $(basename "$j")"; base64 -i "$j" | fold -w 4000; echo "END-SHOT"
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
