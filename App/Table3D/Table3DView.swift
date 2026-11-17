@@ -27,10 +27,12 @@ struct Table3DView: View {
     @State private var headerBottom: CGFloat = 100
     @State private var bottomTop: CGFloat = 520
     @State private var tray: CGRect = .zero
+    @State private var fan: CGRect = .zero
     @State private var lastThrow: (x: Double, y: Double, roll: Double, w: Double)?
     @State private var arriving: Set<String> = []
     @State private var nameShown: String?
     @State private var started = false
+    @AppStorage(HandSize.key) private var handSize = HandSize.medium.rawValue
 
     struct Flash: Identifiable, Equatable { let id = UUID(); let icon: String; let word: String; let detail: String }
 
@@ -231,7 +233,6 @@ struct Table3DView: View {
         if view.yourTurn {
             if view.drawn != nil { return view.legal.isEmpty ? "No luck: keep it" : "Play it, or keep it" }
             if table.stack > 0 { return table.taking || view.legal.isEmpty ? "Taking +\(table.stack)…" : "Pass it on with a +2 or +4" }
-            if let h = hitNote { return h }
             let n = view.legal.count
             return n == 0 ? "Nothing can go: draw" : "\(n) can go"
         }
@@ -239,21 +240,27 @@ struct Table3DView: View {
         return "\(view.hand.count) card\(view.hand.count == 1 ? "" : "s")"
     }
 
+    private var handScale: Double { HandSize.current(handSize).scale }
+
     private var canDraw: Bool { view.yourTurn && view.drawn == nil && table.stack == 0 && !table.over }
 
     private var bottom: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Your hand").font(.system(size: 15, weight: .semibold)).foregroundStyle(T2P.text)
-                Spacer()
-                Text(handDetail).font(.footnote).foregroundStyle(view.yourTurn || !view.jump.isEmpty ? Color(hex: 0xF5DE95) : Color(hex: 0xC9BCCD))
-                    .lineLimit(1).minimumScaleFactor(0.7)
+            // "Your hand" sits inside the panel, so it never runs over the table's rim (#524)
+            VStack(spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Your hand").font(.system(size: 15, weight: .semibold)).foregroundStyle(T2P.text)
+                    Spacer()
+                    Text(handDetail).font(.footnote).foregroundStyle(view.yourTurn || !view.jump.isEmpty ? Color(hex: 0xF5DE95) : Color(hex: 0xC9BCCD))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .accessibilityIdentifier("od-hand-detail")
+                }
+                .padding(.horizontal, 18).padding(.top, 10)
+                HandFan3D(view: view, dealt: dealt, arriving: arriving, scale: handScale, onTap: tap)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fan = $0 }
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity)
             }
-            .shadow(color: .black, radius: 3)
-            .padding(.horizontal, 18)
-            HandFan3D(view: view, dealt: dealt, arriving: arriving, onTap: tap)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity)
                 .background(
                     LinearGradient(colors: [(T2P.suit[suit ?? "wave"] ?? .blue).opacity(0.14).blendedOver(Color(hex: 0x1A1422).opacity(0.85)), Color(hex: 0x120E19).opacity(0.9)],
                                    startPoint: .top, endPoint: .bottom),
@@ -381,12 +388,12 @@ struct Table3DView: View {
         guard dealt == nil, !old.isEmpty else { return }
         let had = Set(old.map(\.id))
         let added = new.filter { !had.contains($0.id) }
-        guard !added.isEmpty, tray != .zero else { return }
+        guard !added.isEmpty, fan != .zero else { return }
         if reduceMotion { Haptics.select(); return }
         arriving.formUnion(added.map(\.id))
         let ids = added.map(\.id), arts = added.map(\.artName)
-        let w = Double(HandFan3D.cardWidth(width: Double(tray.width), height: Double(UIScreen.main.bounds.height)))
-        let world = stage.world, x = Double(tray.midX), y = Double(tray.midY)
+        let w = Double(HandFan3D.cardWidth(width: Double(fan.width) + 24, height: Double(UIScreen.main.bounds.height), scale: handScale))
+        let world = stage.world, x = Double(fan.midX), y = Double(fan.midY)
         world.post {
             world.drawToScreen(x: x, y: y, cardPoints: w, arts: arts) { j in
                 if ids.indices.contains(j) { _ = withAnimation(.spring(duration: 0.28)) { arriving.remove(ids[j]) } }
@@ -479,7 +486,7 @@ struct Table3DView: View {
     private func tap(_ c: Overdraft.Card, _ center: CGPoint, _ roll: Double, _ width: Double) {
         let jump = !view.yourTurn && view.jump.contains(c.id)
         guard (view.yourTurn && view.legal.contains(c.id) && (view.drawn == nil || view.drawn == c.id)) || jump else { Haptics.nope(); return }
-        lastThrow = (Double(tray.minX + center.x), Double(tray.minY + center.y), roll, width)
+        lastThrow = (Double(fan.minX + center.x), Double(fan.minY + center.y), roll, width)
         if c.isWild { wild = c; wildJump = jump; return }
         send(c, suit: nil, jump: jump)
     }
@@ -659,14 +666,38 @@ struct TurnRing: View {
     }
 }
 
-/// Your hand as the prototype's fan: one row, or two overlapping rows past 7 cards. Playable cards are bright, lifted
-/// and edged in gold; the rest are dimmed, and on your turn see-through (Tyler, Nov 17: "the big hand hides the cards
-/// too much"), so the cards behind them show.
+/// How big your cards are at the 3D table (You → Card size; #524). Medium is the default since Nov 17 (Tyler: "make
+/// cards a little smaller or make a setting"); Large is the size before.
+enum HandSize: String, CaseIterable, Identifiable {
+    case small, medium, large
+    /// A new key (nothing renamed): the version before never reads it and keeps its own size.
+    static let key = "t2p.handCardSize"
+    var id: String { rawValue }
+    var name: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+    var scale: Double { switch self { case .small: return 0.72; case .medium: return 0.85; case .large: return 1 } }
+    /// UI tests and stills pick one: -t2p-card-size small|medium|large.
+    static var forced: HandSize? {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-t2p-card-size"), i + 1 < a.count else { return nil }
+        return HandSize(rawValue: a[i + 1])
+    }
+    static func current(_ stored: String) -> HandSize { forced ?? HandSize(rawValue: stored) ?? .medium }
+}
+
+/// Your hand as the prototype's fan: one row, or two overlapping rows past 7 cards. On your turn the cards you can
+/// play come in front of every other card and rise about a third of a card, so their whole face shows; the rest are
+/// dimmed and see-through (Tyler, Nov 17: "the big hand hides the cards too much"). Off your turn the hand looks as it
+/// always has (cards you can jump in with lifted a little).
+///
+/// One ForEach over the whole hand (not one per row), so a card that moves to the other row when the hand grows is
+/// the same view moving, never a copy left behind with its glow (#524: "the lit border is not matching up").
 struct HandFan3D: View {
-    struct FanItem: Identifiable { let i: Int; let card: Overdraft.Card; var id: String { card.id } }
+    struct Spot { let i: Int; let card: Overdraft.Card; let row: Int; let j: Int; let m: Int }
     let view: Overdraft.View
     var dealt: Int?
     var arriving: Set<String>
+    /// The card size (HandSize.scale).
+    var scale: Double = HandSize.medium.scale
     /// A card tapped, where its center is in the fan, how far it's turned (degrees), and its width.
     var onTap: (Overdraft.Card, CGPoint, Double, Double) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -674,75 +705,83 @@ struct HandFan3D: View {
     /// Tablets draw the hand, the panel and the suit chip bigger, in step with the bigger table.
     static var padScale: Double { UIDevice.current.userInterfaceIdiom == .pad ? 1.35 : 1 }
 
-    static func cardWidth(width: Double, height: Double) -> CGFloat {
+    static func cardWidth(width: Double, height: Double, scale: Double = HandSize.medium.scale) -> CGFloat {
         let s: Double = padScale
         let byWidth: Double = (min(width, 560 * s) - 40) / 3.35
         let fit: Double = min(byWidth, height * 0.135).rounded()
-        let w: Double = min(116 * s, max(72, fit))
-        return CGFloat(w)
+        let w: Double = min(116 * s, max(72, fit)) * scale
+        return CGFloat(w.rounded())
     }
+
+    /// Room over the top row for a playable card to rise into.
+    static func headroom(_ ch: CGFloat) -> CGFloat { max(0, ch / 3 - 12) }
+
+    /// Your turn, and the seat is yours (not a bot's): playable cards come forward and rise.
+    private var forward: Bool { view.yourTurn && !view.held }
 
     var body: some View {
         GeometryReader { g in
             let W = Double(g.size.width)
-            let hw = Self.cardWidth(width: W + 24, height: Double(UIScreen.main.bounds.height))
+            let hw = Self.cardWidth(width: W + 24, height: Double(UIScreen.main.bounds.height), scale: scale)
             let ch = hw * 489 / 320
             let n = view.hand.count
-            let items = view.hand.enumerated().map { FanItem(i: $0.offset, card: $0.element) }
-            let rows: [[FanItem]] = n > 7 ? [Array(items.prefix((n + 1) / 2)), Array(items.dropFirst((n + 1) / 2))] : [items]
-            let rowGap = ch * 0.42
+            let rows = n > 7 ? 2 : 1, firstRow = n > 7 ? (n + 1) / 2 : n
+            let spots: [Spot] = view.hand.enumerated().map { e in
+                let i = e.offset, row = i < firstRow ? 0 : 1
+                return Spot(i: i, card: e.element, row: row, j: row == 0 ? i : i - firstRow, m: row == 0 ? firstRow : n - firstRow)
+            }
+            let rowGap = ch * 0.42, top = Self.headroom(ch)
             ZStack(alignment: .topLeading) {
                 Color.clear
-                ForEach(Array(rows.enumerated()), id: \.offset) { ri, row in
-                    let m = row.count, boxW = W - 20
+                ForEach(spots, id: \.card.id) { sp in
+                    let c = sp.card, m = sp.m, j = sp.j, boxW = W - 20
                     let step = m > 1 ? min(Double(hw) * 0.42, (boxW - Double(hw)) / Double(m - 1)) : 0
                     let total = step * Double(max(0, m - 1)) + Double(hw)
                     let x0 = (W - total) / 2 + Double(hw) / 2
-                    let baseY = Double(ch) / 2 + 12 + (rows.count == 2 ? Double(ri) * Double(rowGap) : 0)
-                    ForEach(Array(row.enumerated()), id: \.element.id) { j, item in
-                        let i = item.i, c = item.card
-                        let mid = Double(m - 1) / 2
-                        let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
-                        let ok = playable(c)
-                        let fade = see(through: c, ok) ? Self.seeThrough : 1
-                        let lift = Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
-                        let shown = (dealt.map { i < $0 } ?? true) && !arriving.contains(c.id)
-                        let center = CGPoint(x: x0 + Double(j) * step, y: baseY + lift)
-                        Button { onTap(c, center, r, Double(hw)) } label: {
-                            CardImage(name: c.artName, width: hw)
-                                .saturation(ok ? 1 : 0.85)
-                                .colorMultiply(ok ? .white : Color(white: 0.7))
-                                .overlay(RoundedRectangle(cornerRadius: hw / 14).stroke(ok ? Color(hex: 0xF5DE95).opacity(0.85) : .black.opacity(0.4), lineWidth: ok ? 1.5 : 1))
-                                .shadow(color: ok ? Color(hex: 0xF5DE95).opacity(0.6) : .black.opacity(0.55), radius: ok ? 8 : 6, y: ok ? 0 : 6)
-                        }
-                        .buttonStyle(.plain)
-                        .compositingGroup()
-                        .rotationEffect(.degrees(r))
-                        .opacity(shown ? fade : 0)
-                        .offset(y: shown ? 0 : 40)
-                        .position(center)
-                        .zIndex(Double(ri * 100 + j))
-                        .accessibilityLabel(c.spoken)
-                        .accessibilityValue(ok ? (view.yourTurn ? "playable" : "jump in") : "can’t go now")
-                        .accessibilityIdentifier(ok ? "legal-\(c.id)" : "card-\(c.id)")
-                        .accessibilitySortPriority(Double(n - i))
+                    let baseY = Double(top) + Double(ch) / 2 + 12 + (rows == 2 ? Double(sp.row) * Double(rowGap) : 0)
+                    let mid = Double(m - 1) / 2
+                    let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
+                    let ok = playable(c)
+                    let up = forward && ok
+                    let fade = see(through: c, ok) ? Self.seeThrough : 1
+                    let lift = up ? -Double(ch) / 3 : Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
+                    let shown = (dealt.map { sp.i < $0 } ?? true) && !arriving.contains(c.id)
+                    let center = CGPoint(x: x0 + Double(j) * step, y: baseY + lift)
+                    Button { onTap(c, center, up ? 0 : r, Double(hw)) } label: {
+                        CardImage(name: c.artName, width: hw)
+                            .saturation(ok ? 1 : 0.85)
+                            .colorMultiply(ok ? .white : Color(white: 0.7))
+                            .overlay(RoundedRectangle(cornerRadius: hw / 14).stroke(ok ? Color(hex: 0xF5DE95).opacity(0.85) : .black.opacity(0.4), lineWidth: ok ? 1.5 : 1))
+                            .shadow(color: ok ? Color(hex: 0xF5DE95).opacity(0.6) : .black.opacity(0.55), radius: ok ? 8 : 6, y: ok ? 0 : 6)
                     }
+                    .buttonStyle(.plain)
+                    .compositingGroup()
+                    .rotationEffect(.degrees(up ? r * 0.4 : r))
+                    .opacity(shown ? fade : 0)
+                    .offset(y: shown ? 0 : 40)
+                    .position(center)
+                    // playable cards over every other card on your turn: never under a see-through one
+                    .zIndex(Double((up ? 1000 : 0) + sp.row * 100 + j))
+                    .accessibilityLabel(c.spoken)
+                    .accessibilityValue(ok ? (view.yourTurn ? "playable" : "jump in") : "can’t go now")
+                    .accessibilityIdentifier(ok ? "legal-\(c.id)" : "card-\(c.id)")
+                    .accessibilitySortPriority(Double(n - sp.i))
                 }
             }
             .frame(width: g.size.width, height: g.size.height)
         }
-        .frame(height: Self.height(view.hand.count))
+        .frame(height: Self.height(view.hand.count, scale: scale))
         .animation(reduceMotion ? nil : .spring(duration: 0.3), value: view.hand)
-        .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.25), value: fadeKey)
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.3), value: fadeKey)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Your hand, \(view.hand.count) cards")
     }
 
-    /// The fan's height: one row, or two overlapping ones.
-    static func height(_ n: Int) -> CGFloat {
-        let hw = cardWidth(width: Double(UIScreen.main.bounds.width), height: Double(UIScreen.main.bounds.height))
+    /// The fan's height: one row, or two overlapping ones, and room over the top for a card to rise.
+    static func height(_ n: Int, scale: Double = HandSize.medium.scale) -> CGFloat {
+        let hw = cardWidth(width: Double(UIScreen.main.bounds.width), height: Double(UIScreen.main.bounds.height), scale: scale)
         let ch = hw * 489 / 320
-        return ch + 24 + (n > 7 ? ch * 0.42 : 0)
+        return headroom(ch) + ch + 24 + (n > 7 ? ch * 0.42 : 0)
     }
 
     /// How opaque a card you can't play is on your turn.
@@ -751,7 +790,7 @@ struct HandFan3D: View {
     /// On your turn (not while a bot holds your seat), a card you can't play is see-through.
     private func see(through c: Overdraft.Card, _ ok: Bool) -> Bool { view.yourTurn && !view.held && !ok }
 
-    /// What decides which cards are see-through, so the fade animates when it changes.
+    /// What decides which cards are see-through and raised, so the change animates.
     private var fadeKey: String { view.yourTurn && !view.held ? "t" + view.legal.sorted().joined(separator: ",") + "|" + (view.drawn ?? "") : "" }
 
     private func playable(_ c: Overdraft.Card) -> Bool {
