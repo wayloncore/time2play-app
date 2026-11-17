@@ -134,7 +134,7 @@ struct Table3DView: View {
                         .accessibilityLabel("A train of \(table.stack) cards")
                 }
                 if let f = flash {
-                    flashCard(f).position(x: l.width / 2, y: bandY(l)).id(f.id)
+                    flashCard(f).frame(maxWidth: l.width - 32).position(x: l.width / 2, y: bandY(l)).id(f.id)
                 }
                 Text(stage.frozen ? "ready" : "").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier(stage.frozen ? "od3d-ready" : "od3d-wait")
@@ -145,22 +145,25 @@ struct Table3DView: View {
         }
     }
 
-    /// The band between the horizon and the far seats: where big moments show, clear of the table.
+    /// Where big moments show: in the sky and water between the header and the far seats, clear of the table and
+    /// every face and name (the scene is the only thing they cover). The pill is about 44 points tall.
     private func bandY(_ l: Table3DLayout) -> Double {
-        let tops = l.seats.map { l.screen($0) }.map { $0.y - 0.6 * $0.k }
-        let far = tops.min() ?? (l.horizonY + 80)
-        return max(l.horizonY + 44, min(far - 10, (l.horizonY + far) / 2 + 20))
+        let tops = l.seats.map { s -> Double in let p = l.screen(s); return p.y - s.h * s.scale * p.k / 2 }
+        let top = Double(headerBottom) + 4, far = tops.min() ?? (l.horizonY + 80)
+        return far - top >= 52 ? (top + far) / 2 : top + 24
     }
 
+    /// A big moment as one line (icon, word, who), so it fits the band over the far seats.
     private func flashCard(_ f: Flash) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: f.icon).font(.system(size: 30, weight: .bold)).foregroundStyle(T2P.gold)
-            Text(f.word).font(.title2.bold()).foregroundStyle(T2P.text)
+        HStack(spacing: 8) {
+            Image(systemName: f.icon).font(.system(size: 19, weight: .bold)).foregroundStyle(T2P.gold)
+            Text(f.word).font(.headline).foregroundStyle(T2P.text)
             Text(f.detail).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
         }
-        .padding(.horizontal, 22).padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(T2P.gold.opacity(0.5)))
+        .lineLimit(1).minimumScaleFactor(0.7)
+        .padding(.horizontal, 16).padding(.vertical, 9)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(T2P.gold.opacity(0.5)))
         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.scale(scale: 0.6).combined(with: .opacity))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("od-flash")
