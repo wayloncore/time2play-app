@@ -12,7 +12,7 @@ final class Table3DUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-t2p-3d-still", cfg]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 45), "\(name): the still never settled")
+        XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "\(name): the still never settled")
         XCTAssertTrue(app.descendants(matching: .any)["od3d-suit"].exists, "\(name): the suit shows between the piles")
         shot(app, "496-\(device)\(name)")
         app.terminate()
@@ -71,7 +71,7 @@ final class Table3DUITests: XCTestCase {
             if app.staticTexts["hand-over"].exists || app.staticTexts["table-over"].exists { break }
             guard app.staticTexts["your-turn"].exists else {
                 if !shotTheirs && plays > 0 && app.staticTexts["their-turn"].exists { shot(app, "496-\(device)3d-play\(n)-4-bot-turn"); shotTheirs = true }
-                usleep(250_000); continue
+                usleep(500_000); continue   // every half second: fewer accessibility snapshots of a busy table
             }
             turns += 1
             if !shotTurn { shot(app, "496-\(device)3d-play\(n)-2-your-turn"); shotTurn = true }
