@@ -577,10 +577,10 @@ struct SeatBillboard: View {
     var body: some View {
         let u = CGFloat(spec.scale * k)                 // points per unit for this seat
         let W = CGFloat(spec.w) * u, H = CGFloat(spec.h) * u
-        let fx = W / 2 + (spec.compact ? -0.06 * u : 0), fy = H / 2 - CGFloat(spec.faceY) * u, fr = CGFloat(spec.faceR) * u
+        let fx = W / 2 + (spec.compact ? -0.06 * u : 0), fy = H / 2 - CGFloat(spec.faceY) * u, fr = CGFloat(spec.faceR * spec.mark) * u
         let bot = seat.name.hasSuffix(" (bot)") && !seat.held
         let one = seat.cards == 1
-        let bw = (seat.cards > 9 ? 0.58 : 0.46) * u, bh = 0.44 * u
+        let mk = CGFloat(spec.mark), bw = (seat.cards > 9 ? 0.58 : 0.46) * u * mk, bh = 0.44 * u * mk
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: W, height: H)
             if turn { TurnRing(endsAt: endsAt).frame(width: fr * 2 * 1.36, height: fr * 2 * 1.36).position(x: fx, y: fy) }
@@ -592,17 +592,17 @@ struct SeatBillboard: View {
             Circle().stroke(turn ? Color(hex: 0xF5DE95) : Color(hex: 0xC9A05A), lineWidth: max(1.5, 0.02 * u))
                 .frame(width: fr * 2 - 0.02 * u, height: fr * 2 - 0.02 * u).position(x: fx, y: fy)
             Text("\(seat.cards)")
-                .font(.system(size: max(6, 0.32 * u), weight: .bold)).foregroundStyle(one ? Color(hex: 0xFFD9B8) : Color(hex: 0xEFE8DA))
+                .font(.system(size: max(6, 0.32 * u * mk), weight: .bold)).foregroundStyle(one ? Color(hex: 0xFFD9B8) : Color(hex: 0xEFE8DA))
                 .frame(width: bw, height: bh)
                 .background(one ? Color(hex: 0x4A2318) : Color(hex: 0x352639), in: RoundedRectangle(cornerRadius: 0.078 * u))
                 .overlay(RoundedRectangle(cornerRadius: 0.078 * u).stroke(one ? T2P.ember : Color(hex: 0x8A6F88), lineWidth: max(1, 0.016 * u)))
                 .contentTransition(.numericText())
-                .position(x: fx + fr * 0.52 + bw / 2, y: fy - fr - 0.02 * u + bh / 2)
+                .position(x: spec.countLeft ? fx - fr * 0.52 - bw / 2 : fx + fr * 0.52 + bw / 2, y: fy - fr - 0.02 * u + bh / 2)
             if let g = gained {
                 Text("+\(g)").font(.system(size: max(8, 0.3 * u), weight: .heavy)).foregroundStyle(.white)
                     .padding(.horizontal, 0.12 * u).padding(.vertical, 0.04 * u)
                     .background(T2P.ember, in: Capsule())
-                    .position(x: fx - fr * 0.7, y: fy - fr * 0.9)
+                    .position(x: spec.countLeft ? fx + fr * 0.7 : fx - fr * 0.7, y: fy - fr * 0.9)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
             if !spec.compact || showName {

@@ -27,6 +27,9 @@ struct T3DNode {
 constant float3 MOON = float3(-0.110, 0.066, -0.992);
 constant float2x2 ROT = float2x2(float2(.8, -.6), float2(.6, .8));
 
+// The prototype's colors are written as screen (sRGB) values; SceneKit's framebuffer encodes what it's given as
+// linear light, so every output goes through this first to look the same.
+static float3 lin(float3 c) { return pow(max(c, float3(0.)), float3(2.2)); }
 static float ss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
 static float hash2(float2 p) { float3 p3 = fract(float3(p.x, p.y, p.x) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 static float noise2(float2 p) {
@@ -147,7 +150,7 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
     float3 col = elementGround(vW.xz, V, dist, e);
     float fog = 1. - exp(-dist * .016);
     col = mix(col, horizonCol(e.W), fog * .97);
-    return float4(backdropTone(col), 1.);
+    return float4(lin(backdropTone(col)), 1.);
 }
 
 // ---------- the glass: a frosted slab the element shows through, its rim lit on your turn ----------
@@ -173,7 +176,7 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .5 + .5) * (ss(.90, .995, ed) * .30 + ss(.975, 1., ed) * .5);
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     col += float3(.5, .42, .9) * e.flash * .28;
-    return float4(col, 1.);
+    return float4(lin(col), 1.);
 }
 
 fragment float4 t3d_edge_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffer(2)]]) {
@@ -185,7 +188,7 @@ fragment float4 t3d_edge_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffe
     float3 col = tint * (.22 + lines) + zenithCol(e.W) * .5 + (horizonCol(e.W) * .8 + .2) * pulse * .9;
     col += float3(.5, .42, .9) * e.flash * .6;
     float a = .62 + .38 * lines;
-    return float4(col * a, a);
+    return float4(lin(col) * a, a);
 }
 
 // ---------- the sky: a dome that follows the camera ----------
@@ -282,7 +285,7 @@ fragment float4 t3d_sky_frag(SkyOut in [[stage_in]], constant T3DU& u [[buffer(2
         add2 += W.w * (f - base);
     }
     col += add * edge + add2;
-    return float4(backdropTone(col), 1.);
+    return float4(lin(backdropTone(col)), 1.);
 }
 
 // ---------- particles: embers, spray, storm motes, leaves and pollen (camera-facing quads) ----------
@@ -343,12 +346,12 @@ fragment float4 t3d_part_frag(PartOut in [[stage_in]]) {
     } else { float r = length(q) * 2.; a = exp(-r * r * 5.) + .6 * exp(-r * r * 40.); col = in.c; }
     float al = clamp(a * in.a * in.op, 0., 1.);
     if (al < .004) discard_fragment();
-    return float4(col * al, al);
+    return float4(lin(col) * al, al);
 }
 static float4 partColor(PartOut in) {
     float2 q = in.q; float r = length(q) * 2.;
     float a = exp(-r * r * 5.) + .6 * exp(-r * r * 40.);
-    return float4(in.c * clamp(a * in.a * in.op, 0., 1.), 1.);
+    return float4(lin(in.c * clamp(a * in.a * in.op, 0., 1.)), 1.);
 }
 // embers, spray and storm motes add light (additive blending)
 fragment float4 t3d_part_add_frag(PartOut in [[stage_in]]) {
@@ -383,7 +386,7 @@ fragment float4 t3d_grass_frag(GrassOut in [[stage_in]]) {
     float3 tip = mix(float3(.42, .55, .13), float3(.92, .74, .26), in.r);
     float3 c = mix(base, tip, in.h * in.h * (.55 + .45 * in.r));
     c = mix(c, float3(.90, .68, .36), in.fog * .97);
-    return float4(c, 1.);
+    return float4(lin(c), 1.);
 }
 
 // ---------- lightning: a branching bolt, rebuilt for each strike ----------
@@ -397,7 +400,7 @@ fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer
     float glow = pow(max(1. - d, 0.), 3.);
     float3 col = float3(1.) * core * 1.3 + float3(.62, .48, 1.) * glow * .75;
     float k = in.ua.y * u.c.y;
-    return float4(col * k, 1.);
+    return float4(lin(col * k), 1.);
 }
 
 // ---------- the turn arrow along the rim: a gold sweep (vertex colors) ----------
@@ -406,4 +409,4 @@ struct ColOut { float4 position [[position]]; float4 color; };
 vertex ColOut t3d_color_vert(ColIn in [[stage_in]], constant SCNSceneBuffer& scn_frame [[buffer(0)]], constant T3DNode& scn_node [[buffer(1)]]) {
     ColOut o; o.color = in.color; o.position = scn_frame.viewProjectionTransform * (scn_node.modelTransform * float4(in.position, 1.)); return o;
 }
-fragment float4 t3d_color_frag(ColOut in [[stage_in]]) { return float4(in.color.rgb * in.color.a, in.color.a); }
+fragment float4 t3d_color_frag(ColOut in [[stage_in]]) { return float4(lin(in.color.rgb) * in.color.a, in.color.a); }
