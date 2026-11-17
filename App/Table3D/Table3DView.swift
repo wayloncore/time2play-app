@@ -692,7 +692,29 @@ enum HandSize: String, CaseIterable, Identifiable {
 /// One ForEach over the whole hand (not one per row), so a card that moves to the other row when the hand grows is
 /// the same view moving, never a copy left behind with its glow (#524: "the lit border is not matching up").
 struct HandFan3D: View {
+    /// Where a card sits: its row (-1 is the raised row of playable cards on your turn), its place in that row, and
+    /// how many share the row.
     struct Spot { let i: Int; let card: Overdraft.Card; let row: Int; let j: Int; let m: Int }
+
+    /// On your turn the playable cards leave the fan for a raised row in front, spread so they don't cover each other
+    /// (#524: "it's hard to see the +4 card"); the rest keep their order in the fan behind, one row or two past 7.
+    /// Off your turn, every card in the fan in hand order.
+    func spots() -> [Spot] {
+        let all = Array(view.hand.enumerated())
+        let up = forward ? all.filter { playable($0.element) } : []
+        let rest = forward ? all.filter { !playable($0.element) } : all
+        let n = rest.count, firstRow = n > 7 ? (n + 1) / 2 : n
+        // the panel keeps its height (two rows past 7 cards); the fan left behind sits in the lower row if it fits in
+        // one, so the raised cards cover less of it
+        let low = all.count > 7 && n <= 7
+        var out: [Spot] = rest.enumerated().map { k, e in
+            let row = low || k >= firstRow ? 1 : 0
+            return low ? Spot(i: e.offset, card: e.element, row: 1, j: k, m: n)
+                : Spot(i: e.offset, card: e.element, row: row, j: row == 0 ? k : k - firstRow, m: row == 0 ? firstRow : n - firstRow)
+        }
+        out += up.enumerated().map { k, e in Spot(i: e.offset, card: e.element, row: -1, j: k, m: up.count) }
+        return out
+    }
     let view: Overdraft.View
     var dealt: Int?
     var arriving: Set<String>
@@ -725,25 +747,24 @@ struct HandFan3D: View {
             let hw = Self.cardWidth(width: W + 24, height: Double(UIScreen.main.bounds.height), scale: scale)
             let ch = hw * 489 / 320
             let n = view.hand.count
-            let rows = n > 7 ? 2 : 1, firstRow = n > 7 ? (n + 1) / 2 : n
-            let spots: [Spot] = view.hand.enumerated().map { e in
-                let i = e.offset, row = i < firstRow ? 0 : 1
-                return Spot(i: i, card: e.element, row: row, j: row == 0 ? i : i - firstRow, m: row == 0 ? firstRow : n - firstRow)
-            }
+            let spots = self.spots()
+            let rows = spots.contains { $0.row == 1 } ? 2 : 1
             let rowGap = ch * 0.42, top = Self.headroom(ch)
             ZStack(alignment: .topLeading) {
                 Color.clear
                 ForEach(spots, id: \.card.id) { sp in
-                    let c = sp.card, m = sp.m, j = sp.j, boxW = W - 20
-                    let step = m > 1 ? min(Double(hw) * 0.42, (boxW - Double(hw)) / Double(m - 1)) : 0
+                    let c = sp.card, m = sp.m, j = sp.j, boxW = W - 20, up = sp.row < 0
+                    // the raised row spreads its cards apart (a little gap); the fan overlaps them
+                    let spread = up ? Double(hw) * 1.06 : Double(hw) * 0.42
+                    let step = m > 1 ? min(spread, (boxW - Double(hw)) / Double(m - 1)) : 0
                     let total = step * Double(max(0, m - 1)) + Double(hw)
                     let x0 = (W - total) / 2 + Double(hw) / 2
-                    let baseY = Double(top) + Double(ch) / 2 + 12 + (rows == 2 ? Double(sp.row) * Double(rowGap) : 0)
+                    let baseY = Double(top) + Double(ch) / 2 + 12 + (rows == 2 && sp.row == 1 ? Double(rowGap) : 0)
                     let mid = Double(m - 1) / 2
                     let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
                     let ok = playable(c)
-                    let up = forward && ok
                     let fade = see(through: c, ok) ? Self.seeThrough : 1
+                    // raised about a third of a card over the fan's top row
                     let lift = up ? -Double(ch) / 3 : Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
                     let shown = (dealt.map { sp.i < $0 } ?? true) && !arriving.contains(c.id)
                     let center = CGPoint(x: x0 + Double(j) * step, y: baseY + lift)
@@ -761,7 +782,7 @@ struct HandFan3D: View {
                     .offset(y: shown ? 0 : 40)
                     .position(center)
                     // playable cards over every other card on your turn: never under a see-through one
-                    .zIndex(Double((up ? 1000 : 0) + sp.row * 100 + j))
+                    .zIndex(Double(up ? 1000 + j : sp.row * 100 + j))
                     .accessibilityLabel(c.spoken)
                     .accessibilityValue(ok ? (view.yourTurn ? "playable" : "jump in") : "can’t go now")
                     .accessibilityIdentifier(ok ? "legal-\(c.id)" : "card-\(c.id)")
