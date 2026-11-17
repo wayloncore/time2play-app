@@ -122,12 +122,14 @@ struct ScoreStrip: View {
     let turn: String?
     let owner: String?
     let me: String
+    /// #523: a short strip (face beside name and score) where the board needs the room.
+    var compact = false
     var detail: (ScorePlayer) -> String? = { _ in nil }
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: compact ? 8 : 10) {
                 ForEach(players.filter { !$0.left }) { p in
-                    VStack(spacing: 4) {
+                    if compact { small(p) } else { VStack(spacing: 4) {
                         FaceView(face: p.face, size: face, dimmed: !p.connected && p.bot == nil)
                             .overlay(Circle().stroke(turn == p.id ? T2P.gold : .clear, lineWidth: 3).padding(-3))
                         HStack(spacing: 3) {
@@ -141,11 +143,34 @@ struct ScoreStrip: View {
                     .frame(minWidth: 84)
                     .background(Color.primary.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 14))
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(p.id == me ? "You" : RoomPlayer.stripBot(p.name))\(p.bot != nil ? ", bot" : ""), \(p.score) points\(turn == p.id ? ", their turn" : "")\(detail(p).map { ", \($0)" } ?? "")")
+                    .accessibilityLabel(said(p)) }
                 }
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    private func said(_ p: ScorePlayer) -> String {
+        "\(p.id == me ? "You" : RoomPlayer.stripBot(p.name))\(p.bot != nil ? ", bot" : ""), \(p.score) points\(turn == p.id ? ", their turn" : "")\(detail(p).map { ", \($0)" } ?? "")"
+    }
+
+    private func small(_ p: ScorePlayer) -> some View {
+        HStack(spacing: 7) {
+            FaceView(face: p.face, size: 30, dimmed: !p.connected && p.bot == nil)
+                .overlay(Circle().stroke(turn == p.id ? T2P.gold : .clear, lineWidth: 2.5).padding(-2.5))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 3) {
+                    Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.caption2.weight(.semibold)).foregroundStyle(T2P.text).lineLimit(1)
+                    if p.id == owner { Image(systemName: "crown.fill").font(.system(size: 8)).foregroundStyle(T2P.gold) }
+                }
+                Text(p.score.formatted()).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(T2P.text)
+                if let d = detail(p) { Text(d).font(.system(size: 10)).foregroundStyle(T2P.muted).lineLimit(1) }
+            }
+        }
+        .padding(.leading, 6).padding(.trailing, 10).padding(.vertical, 5)
+        .background(Color.primary.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(said(p))
     }
 }
 
@@ -299,6 +324,9 @@ struct HotDiceView: View {
     @Environment(\.accessibilityReduceMotion) private var still
     let view: HotDice.View
     var onLeave: () -> Void
+    /// #521: the 3D dice arena (You → "3D dice (preview)"); off draws the flat dice as before.
+    var arena = false
+    @StateObject private var arenaStage = DiceArenaStage()
     @State private var celebrate: HotDice.Highlight?
     /// A Farkle stays up about as long as the room holds it (2.4 s), even if the next turn's view comes sooner; a tap
     /// clears it early.
@@ -311,6 +339,9 @@ struct HotDiceView: View {
     /// The turn the panel draws: the room's, or the Farkle still being shown while the next player gets ready.
     private var shown: HotDice.Turn? {
         if let f = farkle, let t, t.state == "start" || (t.n == f.n && t.state == "farkle") { return f }
+        // #521: the 3D dice show a Farkle for its full hold after they land, even if the next player has started
+        // rolling (the tray catches up a moment later); your own roll always takes over at once
+        if arena, let f = farkle, !(mine && t?.state != "start") { return f }
         return t
     }
     private var mine: Bool { view.common.yourTurn }
@@ -322,16 +353,21 @@ struct HotDiceView: View {
             if view.common.phase == "done" {
                 GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason)
             } else {
-                ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me) { p in
+                ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me, compact: arena) { p in
                     !view.board || p.on ? (p.strikes > 0 ? "\(p.strikes) Farkle\(p.strikes == 1 ? "" : "s")" : nil) : "not on the board"
                 }
                 .padding(.vertical, 8)
                 Text(targetLine).font(.footnote).foregroundStyle(view.finalBy != nil ? T2P.goldText : T2P.muted)
                     .multilineTextAlignment(.center).padding(.horizontal, 16).accessibilityIdentifier("hd-target")
-                MomentFeed(lines: feed, id: "hd-feed").padding(.top, 6)
-                Spacer(minLength: 6)
-                turnPanel
-                Spacer(minLength: 6)
+                // #523: with the 3D board, the newest line only, so the board gets the room
+                MomentFeed(lines: arena ? Array(feed.prefix(1)) : feed, id: "hd-feed").padding(.top, arena ? 2 : 6)
+                if arena {
+                    arenaPanel.padding(.top, 2)
+                } else {
+                    Spacer(minLength: 6)
+                    turnPanel
+                    Spacer(minLength: 6)
+                }
                 buttons
                 ReactionBar(room: room)
             }
@@ -340,25 +376,51 @@ struct HotDiceView: View {
         .overlay { if let b = big, celebrate == nil { BigMomentCard(m: b).transition(still ? AnyTransition.opacity : AnyTransition.scale.combined(with: .opacity)) } }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)   // a table, like Overdraft's: words to the largest standard size
         .onChange(of: view) { old, new in changed(from: old, to: new) }
-        .onChange(of: t?.hl?.seq) { _, s in
-            if mine, let h = t?.hl, s != nil, h.tier >= 2 {
-                celebrate = h; Haptics.yourTurn()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { if celebrate == h { celebrate = nil } }
+        .onChange(of: t?.hl?.seq) { _, s in if !arena, s != nil { celebrateRoll() } }
+        .onChange(of: arenaStage.landed) { _, key in
+            // #521: what a roll means waits for its dice to land
+            guard arena, let key, let t = shown, key == "\(t.n).\(t.seq)" else { return }
+            if t.state == "farkle" {
+                if t.id == me { Haptics.nope() }
+                // the hold starts when the Farkle can be seen
+                let k = "\(t.n):\(t.seq)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0)) {
+                    if let f = farkle, "\(f.n):\(f.seq)" == k { farkle = nil }
+                }
             }
+            celebrateRoll()
         }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
         .onChange(of: t?.state) { was, s in
-            // your dice land: a light tap, or the warning buzz for a Farkle
-            if mine && was == "rolling" && s != "rolling" { s == "farkle" ? Haptics.nope() : Haptics.play() }
+            // your dice land: a light tap, or the warning buzz for a Farkle (the 3D dice tap when they hit the felt)
+            if !arena && mine && was == "rolling" && s != "rolling" { s == "farkle" ? Haptics.nope() : Haptics.play() }
         }
         .onChange(of: t.map { $0.state == "farkle" ? "\($0.n):\($0.seq)" : "" }) { _, key in
             guard let key, !key.isEmpty, let t else { return }
             farkle = t
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0)) {
+            // the 3D dice hold it from when they land (above); this is their backstop if they never do
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0) + (arena ? 6 : 0)) {
                 if let f = farkle, "\(f.n):\(f.seq)" == key { farkle = nil }
             }
         }
-        .onChange(of: t?.state) { _, s in if s != "start" && s != "farkle" { farkle = nil } }   // the next roll is up
+        .onAppear { arenaStage.onFirstHit = { Haptics.play() } }
+        .onChange(of: t?.state) { _, s in   // the next roll is up (with the 3D dice, only yours cuts a Farkle short)
+            if s != "start" && s != "farkle" && (!arena || mine) { farkle = nil }
+        }
+    }
+
+    /// A big roll of yours (three of a kind and up) said big for a moment.
+    private func celebrateRoll() {
+        guard mine, let h = t?.hl, h.tier >= 2 else { return }
+        celebrate = h; Haptics.yourTurn()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { if celebrate == h { celebrate = nil } }
+    }
+
+    /// #521: the shown roll's dice are down (always, for the flat dice): until then the 3D arena keeps what it means
+    /// (the Farkle, the status) back.
+    private var settled: Bool {
+        guard arena, let t = shown, t.state == "choose" || t.state == "farkle" else { return true }
+        return arenaStage.landed == "\(t.n).\(t.seq)"
     }
 
     private var topLine: String {
@@ -445,6 +507,7 @@ struct HotDiceView: View {
     private var status: String {
         guard let t = shown else { return "" }
         let theirs = t.id != me
+        if !settled { return theirs ? "\(name(t.id)) is rolling…" : "Rolling…" }
         if t.state == "farkle" { return theirs ? "\(name(t.id))’s roll" : "Your roll" }
         if view.common.held { return "A bot is playing your seat until your next turn" }
         if t.auto { return "Out of time: the room is finishing this turn" }
@@ -575,6 +638,122 @@ struct HotDiceView: View {
         }
         .id("roll-\(t.n)-\(t.seq)")
         .padding(.horizontal, 24)
+    }
+
+    // MARK: the 3D arena (#521)
+
+    private var arenaState: ArenaState {
+        ArenaState.hotDice(shown, scoringFaces: shown.flatMap { scoring($0) }, mine: shown?.id == me)
+    }
+
+    @ViewBuilder private var arenaPanel: some View {
+        if let t = shown {
+            let farkled = t.state == "farkle" && settled
+            VStack(spacing: 2) {
+            // #523: the board takes the screen; the turn's points and what to do (or, in the same place, a Farkle and
+            // why) sit over the top of it, where the cup comes in
+            ZStack(alignment: .top) {
+                DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
+                    if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Haptics.select() }
+                }, top: 96, zoomable: true)
+                .frame(maxHeight: .infinity)
+                Group {
+                    if farkled {
+                        arenaFarkle(t)
+                    } else {
+                        VStack(spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text((t.pts + (t.state == "choose" ? t.selPts : 0)).formatted())
+                                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                                    .foregroundStyle(T2P.text).contentTransition(.numericText())
+                                Text("this turn").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
+                            }
+                            Text(status).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center).padding(.horizontal, 16)
+                                .lineLimit(2).minimumScaleFactor(0.8)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("dice-status")
+                    }
+                }
+                .frame(minHeight: 92, alignment: .top)
+                .padding(.top, 2)
+                .allowsHitTesting(farkled)   // pinches and drags over the words reach the board (a Farkle takes a tap)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if arenaStage.moved {
+                    Button { arenaStage.resetView(); Haptics.select() } label: {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: 15, weight: .bold)).foregroundStyle(T2P.text)
+                            .frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(10)
+                    .accessibilityLabel("Reset the view")
+                    .accessibilityIdentifier("dice-reset-view")
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: arenaStage.moved)
+            keepLine(t).frame(minHeight: 22)
+            }
+        } else {
+            Text("Waiting for the first roll").foregroundStyle(T2P.muted).frame(maxHeight: .infinity)
+        }
+    }
+
+    private func arenaTappable(_ t: HotDice.Turn) -> Bool {
+        mine && t.state == "choose" && !view.common.held && t.id == self.t?.id && self.t?.state == "choose" && settled
+    }
+
+    private func arenaButton(_ d: ArenaDie, _ t: HotDice.Turn) -> ArenaDieButton? {
+        if case .keep(_, true) = d.place {
+            return ArenaDieButton(id: "kept-\(d.id)", label: "Set aside, showing \(d.face ?? 0)", value: "", enabled: false, button: false)
+        }
+        guard t.live.contains(d.id) else { return nil }
+        let sel = t.sel.contains(d.id)
+        let air = t.state == "rolling" || d.face == nil || !settled
+        let canScore = scoring(t).map { s in d.face.map { s.contains($0) } ?? false }
+        return ArenaDieButton(id: "die-\(d.id)", label: air ? "Die, rolling" : "Die showing \(d.face!)",
+                              value: sel ? "kept" : canScore == true ? "scores" : canScore == false ? "doesn’t score" : "",
+                              enabled: arenaTappable(t))
+    }
+
+    /// Under the keep row: what's set aside and what you're keeping.
+    @ViewBuilder private func keepLine(_ t: HotDice.Turn) -> some View {
+        let parts: [String] = [
+            !t.kept.isEmpty && t.state != "farkle" ? "Set aside +\(t.pts.formatted())" : nil,
+            mine && t.state == "choose" && !t.sel.isEmpty
+                ? (t.selPts > 0 ? "\(t.selName.isEmpty ? "Keeping" : t.selName) +\(t.selPts.formatted())" : "Those don’t score together") : nil,
+        ].compactMap { $0 }
+        Text(parts.joined(separator: " · "))
+            .font(.footnote.weight(.semibold)).foregroundStyle(T2P.gold)
+            .opacity(parts.isEmpty ? 0 : 1)
+            .accessibilityIdentifier("keep-line")
+    }
+
+    /// The Farkle over the 3D tray: what was lost and why nothing scored, where the turn's points were.
+    private func arenaFarkle(_ t: HotDice.Turn) -> some View {
+        let w = farkleWords(t)
+        return VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(w.title).font(.title2.bold()).foregroundStyle(T2P.ember)
+                Text(w.line).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
+            }
+            Text(HotDice.farkleWhy(dice: t.live.count)).font(.subheadline).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
+                .lineLimit(2).minimumScaleFactor(0.8)
+            if canSkipFarkle {
+                Text("Tap to go on").font(.caption.weight(.bold)).foregroundStyle(T2P.goldText).padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 8)
+        .background(T2P.ember.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
+        .contentShape(Rectangle())
+        .modifier(AfterTheDice())
+        .id("farkle-\(t.n)-\(t.seq)")
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("farkle-banner")
+        .accessibilityHint(canSkipFarkle ? "Double-tap to go on" : "")
+        .accessibilityAction { skipFarkle() }
+        .onTapGesture { skipFarkle() }
     }
 
     @ViewBuilder private var buttons: some View {

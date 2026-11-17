@@ -7,6 +7,7 @@ struct RoomView: View {
     @EnvironmentObject var app: AppModel
     @State private var confirmLeave = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
+    @AppStorage(Dice3DSwitch.key) private var dice3D = false
 
     var body: some View {
         ZStack {
@@ -66,8 +67,9 @@ struct RoomView: View {
                     else { OverdraftTableView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
                 }
                 else { LobbyView(room: room, onLeave: { confirmLeave = true }) }
-            case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true })
-            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true })
+            // #521: the 3D dice, behind their switch (off by default until Tyler approves them)
+            case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true }, arena: dice3D || Dice3DSwitch.forced)
+            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true }, arena: dice3D || Dice3DSwitch.forced)
             case .closeEnough: CloseEnoughView(room: room, view: CloseEnough.View(v), onLeave: { confirmLeave = true })
             }
         }

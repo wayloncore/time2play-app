@@ -47,7 +47,9 @@ jobs:
           if grep -q "6WK983RXJT.live.time2play.app" aasa.json 2>/dev/null; then echo "AASA OK: names 6WK983RXJT.live.time2play.app"; else echo "::warning::time2play.live's apple-app-site-association doesn't name 6WK983RXJT.live.time2play.app"; fi
       - name: Core package tests (no UI)
         run: |
-          t=$(date +%s); cd Core && swift test > ../core.log 2>&1; tail -6 ../core.log; grep -E "error: " ../core.log | head -30
+          # bash -e stops at a failing command: print why before failing
+          t=$(date +%s); cd Core && swift test > ../core.log 2>&1 || { grep -E "error: |failed|XCTAssert" ../core.log | head -60; tail -15 ../core.log; exit 1; }
+          tail -6 ../core.log; grep -E "dice throws" ../core.log | head -3
           echo "core_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate
@@ -151,7 +153,12 @@ jobs:
       - name: Screenshots into the log
         if: always()
         run: |
-          for f in "$HOME"/t2p-shots/*.png; do [ -f "$f" ] || continue; echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"; done
+          # as JPEGs (a fifth the size of the PNGs): long logs lose characters, and a smaller shot comes through whole
+          for f in "$HOME"/t2p-shots/*.png; do
+            [ -f "$f" ] || continue
+            j="${f%.png}.jpg"; sips -s format jpeg -s formatOptions 82 "$f" --out "$j" >/dev/null 2>&1 || j="$f"
+            echo "BEGIN-SHOT $(basename "$j")"; base64 -i "$j" | fold -w 4000; echo "END-SHOT"
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
