@@ -54,12 +54,20 @@ public enum HotDice {
 
     public struct Die: Equatable, Sendable, Identifiable { public var id: Int; public var v: Int? }
     public struct Highlight: Equatable, Sendable { public var tier: Int; public var name: String; public var points: Int; public var seq: Int }
+    /// The dice a turn last set aside (#489): their name ("Three 4s", or "" for 1s and 5s), points and which roll.
+    public struct KeptSet: Equatable, Sendable { public var name: String; public var pts: Int; public var seq: Int }
+    /// How the last turn ended (#489): "bank", "farkle", "missed" (a game over days) or "gone" (they left).
+    public struct Last: Equatable, Sendable {
+        public var n: Int; public var kind: String; public var id: String; public var pts: Int; public var score: Int
+        public var three: Bool; public var penalty: Int
+    }
     public struct Turn: Equatable, Sendable {
         public var id: String; public var n: Int; public var state: String; public var seq: Int; public var pts: Int
         public var dice: [Die]; public var kept: [Int]; public var live: [Int]; public var sel: [Int]
         public var selPts: Int; public var selName: String; public var note: String
         public var hl: Highlight?; public var lost: Int; public var auto: Bool; public var three: Bool
         public var penalty: Int; public var need: Int; public var endsAt: Double?; public var bot: Bool
+        public var lastSet: KeptSet?; public var hot: Int
         init(_ j: JSON) {
             id = j["id"].string ?? ""; n = j["n"].int ?? 0; state = j["state"].string ?? "start"
             seq = j["seq"].int ?? 0; pts = j["pts"].int ?? 0
@@ -71,6 +79,9 @@ public enum HotDice {
                                                           points: j["hl"]["points"].int ?? 0, seq: j["hl"]["seq"].int ?? 0)
             lost = j["lost"].int ?? 0; auto = j["auto"].bool ?? false; three = j["three"].bool ?? false
             penalty = j["penalty"].int ?? 0; need = j["need"].int ?? 0; endsAt = j["endsAt"].double; bot = j["bot"].bool ?? false
+            let s = j["lastSet"]
+            lastSet = s.object == nil ? nil : KeptSet(name: s["name"].string ?? "", pts: s["pts"].int ?? 0, seq: s["seq"].int ?? 0)
+            hot = j["hot"].int ?? 0
         }
         public func value(_ die: Int) -> Int? { dice.first { $0.id == die }?.v }
     }
@@ -81,14 +92,20 @@ public enum HotDice {
         public var turn: Turn?
         public var finalBy: String?
         public var lastLine: String?
+        public var last: Last?
+        /// A tap may end a Farkle's hold early (#489): the room says so (rooms from before it don't).
+        public var farkleSkip: Bool
         public init(_ j: JSON) {
             common = CommonView(j); ones = j["ones"].int ?? 1000; target = j["target"].int ?? 10000
+            farkleSkip = j["farkleSkip"].bool ?? false
             board = j["rules"]["board"].bool ?? true; three = j["rules"]["three"].bool ?? true
             players = j["players"].array.map(ScorePlayer.init)
             turn = j["turn"].object == nil ? nil : Turn(j["turn"])
             finalBy = j["final"]["by"].string
             let l = j["last"]
             if let kind = l["kind"].string, let who = l["id"].string {
+                last = Last(n: l["n"].int ?? 0, kind: kind, id: who, pts: l["pts"].int ?? 0, score: l["score"].int ?? 0,
+                            three: l["three"].bool ?? false, penalty: l["penalty"].int ?? 0)
                 let name = j["players"].array.first { $0["id"].string == who }?["name"].string ?? "Someone"
                 switch kind {
                 case "bank": lastLine = "\(name) banked \(l["pts"].int ?? 0)"
@@ -125,6 +142,13 @@ public enum RollCall {
     public struct Options: Equatable, Sendable {
         public var allowed: [String]; public var scores: [String: Int]; public var instruction: String; public var bonus: Int
     }
+    /// The last box scored (#489): who, which box, its points, the 100 for another Roll Call, and the dice.
+    public struct Last: Equatable, Sendable {
+        public var n: Int; public var id: String; public var key: String; public var points: Int; public var extra: Int; public var dice: [Int]
+    }
+    public static let upperBonusAt = 63, upperBonus = 35, extraBonus = 100
+    /// A box's name, as the scorecard shows it.
+    public static func boxName(_ key: String) -> String { boxes.first { $0.key == key }?.name ?? key }
     public struct View: Equatable, Sendable {
         public var common: CommonView
         public var quick: Bool; public var rounds: Int
@@ -135,6 +159,7 @@ public enum RollCall {
         /// The dice the last box was scored with, and which score that was (#488: everyone sees what landed).
         public var lastDice: [Int]
         public var lastN: Int
+        public var last: Last?
         public init(_ j: JSON) {
             common = CommonView(j); quick = j["quick"].bool ?? false; rounds = j["rounds"].int ?? 13
             lastDice = j["last"]["dice"].array.compactMap(\.int); lastN = j["last"]["n"].int ?? 0
@@ -149,12 +174,16 @@ public enum RollCall {
                                                      instruction: o["instruction"].string ?? "", bonus: o["bonus"].int ?? 0)
             let l = j["last"]
             if let who = l["id"].string, let key = l["key"].string {
+                last = Last(n: l["n"].int ?? 0, id: who, key: key, points: l["points"].int ?? 0, extra: l["extra"].int ?? 0,
+                            dice: l["dice"].array.compactMap(\.int))
                 let name = j["players"].array.first { $0["id"].string == who }?["name"].string ?? "Someone"
                 let box = RollCall.boxes.first { $0.key == key }?.name ?? key
                 lastLine = "\(name) scored \(l["points"].int ?? 0) in \(box)"
             }
         }
         public var me: ScorePlayer? { players.first { $0.id == common.meId } }
+        /// A player's upper bonus (#489): their total less their boxes and their extra Roll Calls (35, or 0).
+        public func bonus(_ p: ScorePlayer) -> Int { max(0, p.score - p.scores.values.reduce(0, +) - p.extra) }
         /// The dice are stale until the turn's first roll (they're the last turn's), so the app hides them.
         public var diceShown: Bool { (turn?.rolls ?? 0) > 0 }
         /// One roll's name (#488): whose turn and which roll of it. A new one means fresh dice to land.

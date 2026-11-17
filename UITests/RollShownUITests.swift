@@ -19,10 +19,10 @@ final class RollShownUITests: XCTestCase {
             if !shotAir { shot(app, "488-hot-dice-in-the-air"); shotAir = true }
             // the result: a Farkle, your dice to choose from, or hot dice
             let end = Date().addingTimeInterval(15)
-            var result = "", said = ""
+            var result = "", said = "", landed = Date()
             while Date() < end && result.isEmpty {
                 said = status.exists ? status.label : "(no status)"
-                if banner.exists { result = "farkle" }
+                if banner.exists { result = "farkle"; landed = Date() }
                 else if said.contains("Tap the dice") { result = "choose" }
                 else if said.contains("Hot dice") { result = "hot" }
                 else { usleep(150_000) }
@@ -36,8 +36,16 @@ final class RollShownUITests: XCTestCase {
             if result == "farkle" {
                 XCTAssertTrue(banner.label.contains("Farkle"), banner.label)
                 XCTAssertTrue(banner.label.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(banner.label)")
-                sleep(1)   // the message comes a beat after the dice
-                shot(app, "488-hot-dice-farkle")
+                // #489: a tap ends the hold at once (the room and this phone hold a Farkle 2.4 s by themselves). The tap
+                // comes once the message has faded in; the Farkle shot is the bot's, in DiceGamesUITests.
+                XCTAssertTrue(banner.label.contains("Tap to go on"), "your Farkle says a tap goes on: \(banner.label)")
+                let wait = 0.7 - Date().timeIntervalSince(landed)
+                if wait > 0 { usleep(UInt32(wait * 1_000_000)) }
+                banner.tap()
+                while banner.exists && Date().timeIntervalSince(landed) < 4 { usleep(100_000) }
+                XCTAssertLessThan(Date().timeIntervalSince(landed), 2.15, "the turn passed on the tap, not after the 2.4 s hold")
+                XCTAssertTrue(status.label.contains("Rex"), "Rex is up: \(status.label)")
+                shot(app, "489-hd-farkle-tapped")
                 return
             }
             let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
@@ -72,7 +80,7 @@ final class RollShownUITests: XCTestCase {
         let end = Date().addingTimeInterval(30)
         var botScored = false
         while Date() < end && !botScored {
-            if last.exists && !last.label.hasPrefix("Sim") && last.label.contains("with") { botScored = true } else { usleep(300_000) }
+            if last.exists && last.label.hasPrefix("Pip") && last.label.contains("with") { botScored = true } else { usleep(300_000) }
         }
         XCTAssertTrue(botScored, "the bot's score shows the dice it scored with")
         shot(app, "488-rollcall-bot-scored")

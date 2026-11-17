@@ -3,6 +3,8 @@ import T2PCore
 
 /// Roll Call: five dice, three rolls, thirteen boxes; against Pip, Rosa and Viktor or friends. The room scores every box.
 /// #488: every roll (yours, a friend's or a bot's) tumbles and lands before the boxes it can go in show.
+/// #489: a line of what just happened (each box scored, with its dice, and a bonus earned), a Roll Call or a bonus
+/// said big for a moment, who's up next, How to play, and the end of the game saying why it ended.
 struct RollCallView: View {
     @ObservedObject var room: RoomModel
     @Environment(\.accessibilityReduceMotion) private var still
@@ -11,6 +13,8 @@ struct RollCallView: View {
     /// The roll in the air (its RollCall.View.rollKey), and the last roll seen, so a view arriving mid-turn doesn't tumble.
     @State private var tumbling: String?
     @State private var seen: String?
+    @State private var feed: [MomentLine] = []
+    @State private var big: BigMoment?
 
     private var me: String { view.common.meId }
     private var mine: Bool { view.common.yourTurn }
@@ -22,14 +26,17 @@ struct RollCallView: View {
         VStack(spacing: 0) {
             TableTopBar(game: room.game, code: room.code, line: topLine, onLeave: onLeave, owner: room.isOwner, room: room)
             if view.common.phase == "done" {
-                GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me)
+                GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason, detail: bonusLine)
             } else {
                 ScoreStrip(players: view.players, turn: view.turn?.id, owner: view.common.owner, me: me)
                     .padding(.vertical, 8)
                 ScrollView {
                     VStack(spacing: 16) {
-                        Text(turnLine).font(.headline).foregroundStyle(T2P.text).accessibilityIdentifier("rollcall-turn")
-                        if let l = view.lastLine { lastScored(l) }
+                        VStack(spacing: 2) {
+                            Text(turnLine).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center).accessibilityIdentifier("rollcall-turn")
+                            if let n = upNext { Text("Up next: \(n)").font(.footnote).foregroundStyle(T2P.muted) }
+                        }
+                        MomentFeed(lines: feed, id: "rollcall-last")
                         dice
                         if mine { rollButton }
                         if let o = view.options, mine, tumbling == nil, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
@@ -43,8 +50,14 @@ struct RollCallView: View {
                 ReactionBar(room: room)
             }
         }
+        .overlay { if let b = big { BigMomentCard(m: b).transition(still ? AnyTransition.opacity : AnyTransition.scale.combined(with: .opacity)) } }
+        .onChange(of: view) { old, new in changed(from: old, to: new) }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
-        .onAppear { seen = view.rollKey }
+        .onAppear {
+            seen = view.rollKey
+            // a table opened mid-game: the last box scored, so the screen doesn't start blank
+            if feed.isEmpty, let l = view.last { feed = [MomentLine(text: scoredWords(l.id, l.key, l.points, l.extra), dice: l.dice)] }
+        }
         .onChange(of: view.rollKey) { _, key in
             guard let key, key != seen else { return }
             seen = key
@@ -56,17 +69,58 @@ struct RollCallView: View {
         }
     }
 
-    /// Who scored what last, with the dice they scored it with (#488), so a bot's turn doesn't just vanish.
-    private func lastScored(_ line: String) -> some View {
-        HStack(spacing: 8) {
-            Text(line).font(.footnote).foregroundStyle(T2P.muted)
-            if !view.lastDice.isEmpty {
-                HStack(spacing: 3) { ForEach(Array(view.lastDice.enumerated()), id: \.offset) { _, v in DieView(value: v, size: 20) } }
+    // MARK: what just happened (#489)
+
+    private func changed(from old: RollCall.View, to new: RollCall.View) {
+        if old.common.phase != "playing" && new.common.phase == "playing" { feed = []; big = nil }   // a new game
+        let moments = RollCall.moments(from: old, to: new)
+        // a bonus first, then the box it came with, so the newest line is the box and its dice
+        for m in moments { if case let .upperBonus(who, points) = m { MomentFeed.add("\(name(who)) earned the upper bonus: +\(points)", to: &feed, still: still) } }
+        for m in moments {
+            guard case let .scored(who, box, points, extra, dice) = m else { continue }
+            MomentFeed.add(scoredWords(who, box, points, extra), dice: dice, to: &feed, still: still)
+        }
+        if let f = flash(moments) { BigMomentCard.show(f, in: $big, still: still) }
+    }
+
+    private func scoredWords(_ who: String, _ box: String, _ points: Int, _ extra: Int) -> String {
+        "\(name(who)) scored \(points) in \(RollCall.boxName(box))" + (extra > 0 ? ", +\(extra) for another Roll Call" : "")
+    }
+
+    /// A Roll Call (five of a kind) and the upper bonus, said big for a moment.
+    private func flash(_ moments: [RollCall.Moment]) -> BigMoment? {
+        for m in moments {
+            if case let .scored(who, box, points, extra, _) = m, extra > 0 || (box == "five" && points > 0) {
+                if who == me { Haptics.yourTurn() }
+                return BigMoment(icon: "star.circle.fill", word: extra > 0 ? "Roll Call again!" : "Roll Call!",
+                                 detail: "\(name(who)): five of a kind, +\(points + extra)")
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(view.lastDice.isEmpty ? line : "\(line), with \(view.lastDice.map(String.init).joined(separator: ", "))")
-        .accessibilityIdentifier("rollcall-last")
+        for m in moments {
+            if case let .upperBonus(who, points) = m {
+                return BigMoment(icon: "star.fill", word: "Upper bonus +\(points)", detail: "\(name(who)) reached \(RollCall.upperBonusAt) in Ones to Sixes")
+            }
+        }
+        return nil
+    }
+
+    private var upNext: String? {
+        guard let t = view.turn else { return nil }
+        let order = view.players.filter { $0.seated && !$0.left }
+        guard order.count > 1, let i = order.firstIndex(where: { $0.id == t.id }) else { return nil }
+        let id = order[(i + 1) % order.count].id
+        return id == me ? "you" : name(id)
+    }
+
+    private var endReason: String {
+        view.quick ? "All \(view.rounds) rounds of the quick game are played." : "All \(view.rounds) rounds are played: every box is filled."
+    }
+
+    /// Under a name on the winner screen: the bonuses in their total.
+    private func bonusLine(_ p: ScorePlayer) -> String? {
+        let b = view.bonus(p)
+        let parts = [b > 0 ? "upper bonus +\(b)" : nil, p.extra > 0 ? "Roll Call bonus +\(p.extra)" : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : "Includes " + parts.joined(separator: " and ")
     }
 
     private var topLine: String {
@@ -79,7 +133,7 @@ struct RollCallView: View {
         if view.common.held { return "A bot is playing your seat" }
         if tumbling != nil { return mine ? "Rolling…" : "\(name(t.id)) is rolling…" }
         if mine { return t.rolls == 0 ? "Your turn: roll the dice" : t.rolls < RollCall.maxRolls ? "Your turn · roll \(t.rolls) of 3: hold dice, roll again or pick a box" : "Your turn: pick a box" }
-        return "\(name(t.id))’s turn"
+        return t.rolls == 0 ? "\(name(t.id))’s turn" : "\(name(t.id))’s turn · roll \(t.rolls) of 3"
     }
 
     @ViewBuilder private var dice: some View {
