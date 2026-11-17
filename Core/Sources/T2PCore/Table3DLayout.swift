@@ -166,7 +166,49 @@ public struct Table3DLayout: Equatable, Sendable {
     ///   - free: the part of the screen the table may use (under the header, over your hand).
     ///   - labels: each other seat's name width in world units at the name's size (0.35), in turn order; nil guesses.
     public static func make(players: Int, width: Double, height: Double, free: T3Rect, labels: [Double]? = nil) -> Table3DLayout {
-        let n = min(10, max(2, players)), m = n - 1, compact = n >= 6
+        // Faces never meet: try the full layout (far seats a little bigger, the horizon brought down into the empty
+        // band), then less of each, and take the first whose faces keep 2 points apart.
+        let n = min(10, max(2, players))
+        let b0 = n >= 8 ? 1.0 : n >= 6 ? 1.15 : 1.35
+        var best: Table3DLayout?, bestGap = -Double.infinity
+        for band in [1.0, 0.5, 0] {
+            for boost in [b0, (b0 + 1) / 2, 1] {
+                let l = build(players: n, width: width, height: height, free: free, labels: labels, band: band, boost: boost)
+                let g = l.faceGap
+                if g >= 2 { return l }
+                if g > bestGap { best = l; bestGap = g }
+            }
+        }
+        // still touching (ten at a small screen): faces a little smaller, just enough to clear
+        guard var l = best else { return build(players: n, width: width, height: height, free: free, labels: labels, band: 0, boost: 1) }
+        let f = l.faceCircles
+        var k = 1.0
+        for i in f.indices { for j in f.indices where j > i {
+            let d = ((f[i].x - f[j].x) * (f[i].x - f[j].x) + (f[i].y - f[j].y) * (f[i].y - f[j].y)).squareRoot()
+            k = min(k, (d - 2) / max(1e-6, f[i].r + f[j].r))
+        } }
+        for i in l.seats.indices { l.seats[i].faceR *= max(0.75, k) }
+        return l
+    }
+
+    /// Each seat's face as a circle on the screen.
+    public var faceCircles: [(x: Double, y: Double, r: Double)] {
+        seats.map { s in let r = Self.faceRect(s, camera); return ((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, (r.x1 - r.x0) / 2) }
+    }
+
+    /// The closest two faces come (points between their edges; negative if they overlap).
+    public var faceGap: Double {
+        let f = faceCircles
+        var g = Double.infinity
+        for i in f.indices { for j in f.indices where j > i {
+            let d = ((f[i].x - f[j].x) * (f[i].x - f[j].x) + (f[i].y - f[j].y) * (f[i].y - f[j].y)).squareRoot()
+            g = min(g, d - f[i].r - f[j].r)
+        } }
+        return g
+    }
+
+    static func build(players n: Int, width: Double, height: Double, free: T3Rect, labels: [Double]?, band: Double, boost: Double) -> Table3DLayout {
+        let m = n - 1, compact = n >= 6
         let path = 4 * Table3D.a0 + 2 * Table3D.qa
         var seats: [Table3DSeat] = (0..<m).map { i in
             let s = Table3D.qa + (m == 2 ? [0.16, 0.84][i] : (Double(i) + 0.5) / Double(m)) * path
@@ -192,7 +234,7 @@ public struct Table3DLayout: Equatable, Sendable {
             var changed = false
             for i in seats.indices {
                 let k = cam.pointsPerUnit(at: seats[i].pos)
-                let sc = min(1.35, max(1, (near / max(1e-6, k)).squareRoot()))
+                let sc = min(boost, max(1, (near / max(1e-6, k)).squareRoot()))
                 if abs(sc - seats[i].scale) > 0.01 { seats[i].scale = sc; changed = true }
             }
             // a name goes over its face only where a nearer seat would cover it underneath
@@ -205,7 +247,7 @@ public struct Table3DLayout: Equatable, Sendable {
             let topY = seats.flatMap { corners($0, cam) }.map { $0.y }.min() ?? horizon
             let target = max(18, free.height * 0.05)
             let room = topY - horizon - target
-            if room > 4 && horizon < free.y0 + free.height * 0.34 { horizon += min(room * 0.8, free.y0 + free.height * 0.34 - horizon) } else { break }
+            if band > 0 && room > 4 && horizon < free.y0 + free.height * 0.34 { horizon += min(room * 0.8 * band, free.y0 + free.height * 0.34 - horizon) } else { break }
         }
         (cam, horizon) = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, horizon: horizon)
         return Table3DLayout(width: width, height: height, free: free, seats: seats, camera: cam, horizonY: horizon)
