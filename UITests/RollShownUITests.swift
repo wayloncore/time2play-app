@@ -91,7 +91,16 @@ extension XCTestCase {
     }
 
     /// What each of Hot Dice's live dice says to VoiceOver ("Die showing 5", "Die, rolling"), in one query.
+    /// The labels of the dice on screen, read from one snapshot of the screen. Asking each die for its label in turn
+    /// failed the test when the dice changed between the count and the read (a bot's roll replacing yours, Nov 17).
     func dieLabels(_ app: XCUIApplication) -> [String] {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex.map(\.label)
+        guard let screen = try? app.snapshot() else { return [] }
+        var labels: [String] = []
+        func walk(_ e: XCUIElementSnapshot) {
+            if e.elementType == .button && e.identifier.hasPrefix("die-") { labels.append(e.label) }
+            for c in e.children { walk(c) }
+        }
+        walk(screen)
+        return labels
     }
 }
