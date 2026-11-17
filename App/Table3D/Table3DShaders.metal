@@ -3,8 +3,8 @@
 // every program reads one shared block of uniforms (T3DU), written once a frame (Table3DScene.swift).
 // Element order in the weights: x = ember, y = wave, z = bolt, w = leaf.
 #include <metal_stdlib>
-#include <SceneKit/scn_metal>
 using namespace metal;
+#include <SceneKit/scn_metal>
 
 struct T3DU {
     float4 from;   // the scene a change of suit leaves
