@@ -110,7 +110,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         lock.lock(); let work = pending; pending = []; lock.unlock()
         work.forEach { $0() }
-        var dt = min(0.05, max(0, time - (lastTime ?? time)))
+        // a still (screenshots) keeps real time even when a slow simulator draws few frames, so it settles on time
+        var dt = min(freezeAt == nil ? 0.05 : 0.25, max(0, time - (lastTime ?? time)))
         if lastTime == nil { dt = 1.0 / 60 }
         lastTime = time
         watchFrames(time)

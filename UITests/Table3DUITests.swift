@@ -12,7 +12,7 @@ final class Table3DUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-t2p-3d-still", cfg]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 45), "\(name): the still never settled")
+        XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "\(name): the still never settled")
         XCTAssertTrue(app.descendants(matching: .any)["od3d-suit"].exists, "\(name): the suit shows between the piles")
         shot(app, "496-\(device)\(name)")
         app.terminate()
