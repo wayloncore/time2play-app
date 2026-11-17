@@ -26,7 +26,7 @@ final class Table3DUITests: XCTestCase {
     func testStillsMoments() {
         still("suit=leaf n=5 mine=1", "3d-your-turn")
         still("suit=wave n=4 mine=1 hand=11", "3d-two-rows")
-        still("suit=ember n=5 throw=0.3", "3d-mid-throw")
+        still("suit=ember n=5 throw=0.42", "3d-mid-throw")
         still("suit=wave n=5 change=bolt mix=0.5", "3d-mid-transition")
         still("suit=bolt n=6 change=leaf mix=0.55", "3d-mid-transition-2")
     }

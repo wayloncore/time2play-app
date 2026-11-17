@@ -145,6 +145,10 @@ public struct Table3DSeat: Equatable, Sendable {
     public var handPos: T3Vec
     public var handYaw: Double
     public var nx, nz: Double
+    /// Faces and counts drawn smaller than usual so they never meet (ten at a small screen); 1 is the usual size.
+    public var mark: Double = 1
+    /// The count sits on the face's outer side: up and left on the left of the table, up and right elsewhere.
+    public var countLeft: Bool { pos.x < -0.3 }
 
     /// The scaled sizes.
     public var sw: Double { w * scale }
@@ -179,30 +183,37 @@ public struct Table3DLayout: Equatable, Sendable {
                 if g > bestGap { best = l; bestGap = g }
             }
         }
-        // still touching (ten at a small screen): faces a little smaller, just enough to clear
+        // still touching (ten at a small screen): faces and counts a little smaller, just enough to clear
         guard var l = best else { return build(players: n, width: width, height: height, free: free, labels: labels, band: 0, boost: 1) }
-        let f = l.faceCircles
-        var k = 1.0
-        for i in f.indices { for j in f.indices where j > i {
-            let d = ((f[i].x - f[j].x) * (f[i].x - f[j].x) + (f[i].y - f[j].y) * (f[i].y - f[j].y)).squareRoot()
-            k = min(k, (d - 2) / max(1e-6, f[i].r + f[j].r))
-        } }
-        for i in l.seats.indices { l.seats[i].faceR *= max(0.75, k) }
+        for _ in 0..<12 where l.faceGap < 2 {
+            for i in l.seats.indices { l.seats[i].mark *= 0.95 }
+        }
         return l
     }
 
-    /// Each seat's face as a circle on the screen.
-    public var faceCircles: [(x: Double, y: Double, r: Double)] {
-        seats.map { s in let r = Self.faceRect(s, camera); return ((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, (r.x1 - r.x0) / 2) }
+    /// Each seat's face (a circle) and count (a rectangle) on the screen.
+    public var marks: [(x: Double, y: Double, r: Double, count: T3Rect)] {
+        seats.map { s in
+            let f = Self.faceRect(s, camera), k = camera.pointsPerUnit(at: s.pos) * s.scale
+            let r = (f.x1 - f.x0) / 2, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2
+            let bw = 0.46 * k * s.mark, bh = 0.44 * k * s.mark
+            let bx = s.countLeft ? cx - r * 0.52 - bw : cx + r * 0.52, by = cy - r - 0.02 * k
+            return (cx, cy, r, T3Rect(x0: bx, y0: by, x1: bx + bw, y1: by + bh))
+        }
     }
 
-    /// The closest two faces come (points between their edges; negative if they overlap).
+    /// The closest two seats' faces come (points between their edges; negative if they overlap). A count may touch a
+    /// neighbor's face by 2 points at most.
     public var faceGap: Double {
-        let f = faceCircles
+        let f = marks
+        func rectCircle(_ b: T3Rect, _ c: (x: Double, y: Double, r: Double, count: T3Rect)) -> Double {
+            let dx = max(b.x0 - c.x, 0, c.x - b.x1), dy = max(b.y0 - c.y, 0, c.y - b.y1)
+            return (dx * dx + dy * dy).squareRoot() - c.r
+        }
         var g = Double.infinity
         for i in f.indices { for j in f.indices where j > i {
             let d = ((f[i].x - f[j].x) * (f[i].x - f[j].x) + (f[i].y - f[j].y) * (f[i].y - f[j].y)).squareRoot()
-            g = min(g, d - f[i].r - f[j].r)
+            g = min(g, d - f[i].r - f[j].r, rectCircle(f[i].count, f[j]) + 2, rectCircle(f[j].count, f[i]) + 2)
         } }
         return g
     }
@@ -274,7 +285,7 @@ public struct Table3DLayout: Equatable, Sendable {
     /// A seat's face, as a screen rectangle.
     public static func faceRect(_ s: Table3DSeat, _ cam: Table3DCamera) -> T3Rect {
         let k = cam.pointsPerUnit(at: s.pos), c = cam.project(s.pos)
-        let fx = c.x + (s.compact ? -0.06 * s.scale * k : 0), fy = c.y - s.faceY * s.scale * k, r = s.faceR * s.scale * k
+        let fx = c.x + (s.compact ? -0.06 * s.scale * k : 0), fy = c.y - s.faceY * s.scale * k, r = s.faceR * s.mark * s.scale * k
         return T3Rect(x0: fx - r, y0: fy - r, x1: fx + r, y1: fy + r)
     }
 
