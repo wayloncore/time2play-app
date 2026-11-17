@@ -263,7 +263,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             _ = dieNode(d.id)
             dice[d.id] = DieRun(pose: Pose(p: Self.f(DiceArena.cupMouth), q: Self.q(.identity)))
         }
-        for d in s.dice { dice[d.id]?.face = d.face ?? dice[d.id]?.face }
+        for d in s.dice { if let f = d.face { dice[d.id]?.face = f } }
         if s.shaking { presimulate(count: s.dice.filter { $0.place == .cup }.count, key: "shake\(s.dice.count)") }
     }
 
