@@ -202,7 +202,8 @@ public enum DiceSim {
 
     struct Body {
         var p: T3Vec, q: DQuat, v: T3Vec, w: T3Vec
-        var launch: Double, out = false, calm = 0.0, asleep = false, hit: Double?, settledAt: Double?
+        var launch: Double, out = false, calm = 0.0, asleep = false
+        var hit: Double? = nil, settledAt: Double? = nil
         var settle: (t0: Double, dur: Double, p0: T3Vec, q0: DQuat, p1: T3Vec, q1: DQuat)?
         var free: Bool { out && !asleep && settle == nil }
     }
