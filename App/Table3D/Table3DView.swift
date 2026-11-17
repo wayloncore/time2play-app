@@ -504,17 +504,17 @@ private extension Color {
 struct DrawButtonStyle: ButtonStyle {
     let on: Bool
     let gold: Bool
+    private var colors: [Color] {
+        if gold && on { return [Color(hex: 0xF0D38A), Color(hex: 0xD4A853), Color(hex: 0xB8893A)] }
+        if gold { return [Color(hex: 0x7D6A4A), Color(hex: 0x5F4E36)] }
+        return [Color(hex: 0x2A2236), Color(hex: 0x1B1524)]
+    }
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 17, weight: .bold))
             .foregroundStyle(gold ? (on ? Color(hex: 0x2A1A05) : Color(hex: 0x3B2A14).opacity(0.67)) : T2P.text)
             .frame(minHeight: 48)
-            .background(
-                Group {
-                    if gold && on { LinearGradient(colors: [Color(hex: 0xF0D38A), Color(hex: 0xD4A853), Color(hex: 0xB8893A)], startPoint: .top, endPoint: .bottom) }
-                    else if gold { LinearGradient(colors: [Color(hex: 0x7D6A4A), Color(hex: 0x5F4E36)], startPoint: .top, endPoint: .bottom) }
-                    else { LinearGradient(colors: [Color(hex: 0x2A2236), Color(hex: 0x1B1524)], startPoint: .top, endPoint: .bottom) }
-                }, in: Capsule())
+            .background(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom), in: Capsule())
             .overlay(Capsule().stroke(gold ? .clear : .white.opacity(0.2)))
             .shadow(color: gold && on ? Color(hex: 0xD4A853).opacity(0.6) : .clear, radius: 12, y: 6)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
