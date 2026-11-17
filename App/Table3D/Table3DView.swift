@@ -110,7 +110,7 @@ struct Table3DView: View {
                         let p = l.screen(l.seats[i])
                         SeatBillboard(seat: s, spec: l.seats[i], k: p.k, turn: table.turn == s.id && !table.over,
                                       endsAt: table.turnEndsAt, gained: gained[s.id], owner: view.owner == s.id,
-                                      showName: nameShown == s.id)
+                                      showName: nameShown == s.id, countLeft: l.countLeft(l.seats[i]))
                             .position(x: p.x, y: p.y)
                             .onTapGesture { if l.seats[i].compact { showName(s.id) } }
                     }
@@ -573,6 +573,7 @@ struct SeatBillboard: View {
     let gained: Int?
     let owner: Bool
     let showName: Bool
+    var countLeft = false
 
     var body: some View {
         let u = CGFloat(spec.scale * k)                 // points per unit for this seat
@@ -597,12 +598,12 @@ struct SeatBillboard: View {
                 .background(one ? Color(hex: 0x4A2318) : Color(hex: 0x352639), in: RoundedRectangle(cornerRadius: 0.078 * u))
                 .overlay(RoundedRectangle(cornerRadius: 0.078 * u).stroke(one ? T2P.ember : Color(hex: 0x8A6F88), lineWidth: max(1, 0.016 * u)))
                 .contentTransition(.numericText())
-                .position(x: spec.countLeft ? fx - fr * 0.52 - bw / 2 : fx + fr * 0.52 + bw / 2, y: fy - fr - 0.02 * u + bh / 2)
+                .position(x: countLeft ? fx - fr * 0.52 - bw / 2 : fx + fr * 0.52 + bw / 2, y: fy - fr - 0.02 * u + bh / 2)
             if let g = gained {
                 Text("+\(g)").font(.system(size: max(8, 0.3 * u), weight: .heavy)).foregroundStyle(.white)
                     .padding(.horizontal, 0.12 * u).padding(.vertical, 0.04 * u)
                     .background(T2P.ember, in: Capsule())
-                    .position(x: spec.countLeft ? fx + fr * 0.7 : fx - fr * 0.7, y: fy - fr * 0.9)
+                    .position(x: countLeft ? fx + fr * 0.7 : fx - fr * 0.7, y: fy - fr * 0.9)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
             if !spec.compact || showName {

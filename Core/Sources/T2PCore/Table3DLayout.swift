@@ -147,8 +147,6 @@ public struct Table3DSeat: Equatable, Sendable {
     public var nx, nz: Double
     /// Faces and counts drawn smaller than usual so they never meet (ten at a small screen); 1 is the usual size.
     public var mark: Double = 1
-    /// The count sits on the face's outer side: up and left on the left of the table, up and right elsewhere.
-    public var countLeft: Bool { pos.x < -0.3 }
 
     /// The scaled sizes.
     public var sw: Double { w * scale }
@@ -197,9 +195,18 @@ public struct Table3DLayout: Equatable, Sendable {
             let f = Self.faceRect(s, camera), k = camera.pointsPerUnit(at: s.pos) * s.scale
             let r = (f.x1 - f.x0) / 2, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2
             let bw = 0.46 * k * s.mark, bh = 0.44 * k * s.mark
-            let bx = s.countLeft ? cx - r * 0.52 - bw : cx + r * 0.52, by = cy - r - 0.02 * k
+            let bx = countLeft(s) ? cx - r * 0.52 - bw : cx + r * 0.52, by = cy - r - 0.02 * k
             return (cx, cy, r, T3Rect(x0: bx, y0: by, x1: bx + bw, y1: by + bh))
         }
+    }
+
+    /// A seat's count sits on the face's outer side (up and left on the left of the table, up and right elsewhere),
+    /// unless that would run off the screen.
+    public func countLeft(_ s: Table3DSeat) -> Bool {
+        let f = Self.faceRect(s, camera), k = camera.pointsPerUnit(at: s.pos) * s.scale, bw = 0.58 * k * s.mark
+        let r = (f.x1 - f.x0) / 2, cx = (f.x0 + f.x1) / 2
+        if s.pos.x < -0.3 { return cx - r * 0.52 - bw >= 2 }
+        return cx + r * 0.52 + bw > width - 2
     }
 
     /// The closest two seats' faces come (points between their edges; negative if they overlap). A count may touch a
