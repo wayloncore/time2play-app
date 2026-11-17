@@ -90,8 +90,16 @@ extension XCTestCase {
         tapWhenReady(app.buttons["start-game"])
     }
 
-    /// What each of Hot Dice's live dice says to VoiceOver ("Die showing 5", "Die, rolling"), in one query.
+    /// What each of Hot Dice's live dice says to VoiceOver ("Die showing 5", "Die, rolling"), read from one snapshot
+    /// of the screen. Asking each die in turn failed when the dice changed between the count and the read (Nov 17).
     func dieLabels(_ app: XCUIApplication) -> [String] {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex.map(\.label)
+        guard let screen = try? app.snapshot() else { return [] }
+        var labels: [String] = []
+        func walk(_ e: XCUIElementSnapshot) {
+            if e.elementType == .button && e.identifier.hasPrefix("die-") { labels.append(e.label) }
+            for c in e.children { walk(c) }
+        }
+        walk(screen)
+        return labels
     }
 }
