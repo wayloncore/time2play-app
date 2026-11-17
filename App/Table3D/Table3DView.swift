@@ -322,11 +322,11 @@ struct Table3DView: View {
         let pile = t.pile.map { (k: $0.k ?? 0, art: $0.artName) }
         let s = t.suit ?? t.top?.suit
         let mine = view.yourTurn && view.drawn == nil && !t.over
-        var arrow: (Double, Double, Int)?
+        var flow: (Double, Double, Int)?
         if !t.over, let turn = t.turn, let i = t.seats.firstIndex(where: { $0.id == turn }), t.seats.count > 1 {
             let d = t.direction >= 0 ? 1 : -1, n = t.seats.count
             let next = t.seats[((i + d) % n + n) % n].id
-            if let a = rimS(turn), let b = rimS(next) { arrow = (a, b, d) }
+            if let a = rimS(turn), let b = rimS(next) { flow = (a, b, d) }
         }
         world.post {
             world.setCounts(counts)
@@ -334,7 +334,7 @@ struct Table3DView: View {
             world.setPile(pile)
             if let s { world.setSuit(s) }
             world.setMyTurn(mine)
-            if let a = arrow { world.setArrow(from: a.0, to: a.1, dir: a.2) } else { world.hideArrow() }
+            if let f = flow { world.setFlow(from: f.0, to: f.1, dir: f.2) } else { world.hideFlow() }
         }
     }
 
@@ -660,7 +660,8 @@ struct TurnRing: View {
 }
 
 /// Your hand as the prototype's fan: one row, or two overlapping rows past 7 cards. Playable cards are bright, lifted
-/// and edged in gold; the rest are dimmed.
+/// and edged in gold; the rest are dimmed, and on your turn see-through (Tyler, Nov 17: "the big hand hides the cards
+/// too much"), so the cards behind them show.
 struct HandFan3D: View {
     struct FanItem: Identifiable { let i: Int; let card: Overdraft.Card; var id: String { card.id } }
     let view: Overdraft.View
@@ -703,6 +704,7 @@ struct HandFan3D: View {
                         let mid = Double(m - 1) / 2
                         let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
                         let ok = playable(c)
+                        let fade = see(through: c, ok) ? Self.seeThrough : 1
                         let lift = Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
                         let shown = (dealt.map { i < $0 } ?? true) && !arriving.contains(c.id)
                         let center = CGPoint(x: x0 + Double(j) * step, y: baseY + lift)
@@ -714,8 +716,9 @@ struct HandFan3D: View {
                                 .shadow(color: ok ? Color(hex: 0xF5DE95).opacity(0.6) : .black.opacity(0.55), radius: ok ? 8 : 6, y: ok ? 0 : 6)
                         }
                         .buttonStyle(.plain)
+                        .compositingGroup()
                         .rotationEffect(.degrees(r))
-                        .opacity(shown ? 1 : 0)
+                        .opacity(shown ? fade : 0)
                         .offset(y: shown ? 0 : 40)
                         .position(center)
                         .zIndex(Double(ri * 100 + j))
@@ -730,6 +733,7 @@ struct HandFan3D: View {
         }
         .frame(height: Self.height(view.hand.count))
         .animation(reduceMotion ? nil : .spring(duration: 0.3), value: view.hand)
+        .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.25), value: fadeKey)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Your hand, \(view.hand.count) cards")
     }
@@ -740,6 +744,15 @@ struct HandFan3D: View {
         let ch = hw * 489 / 320
         return ch + 24 + (n > 7 ? ch * 0.42 : 0)
     }
+
+    /// How opaque a card you can't play is on your turn.
+    static let seeThrough = 0.4
+
+    /// On your turn (not while a bot holds your seat), a card you can't play is see-through.
+    private func see(through c: Overdraft.Card, _ ok: Bool) -> Bool { view.yourTurn && !view.held && !ok }
+
+    /// What decides which cards are see-through, so the fade animates when it changes.
+    private var fadeKey: String { view.yourTurn && !view.held ? "t" + view.legal.sorted().joined(separator: ",") + "|" + (view.drawn ?? "") : "" }
 
     private func playable(_ c: Overdraft.Card) -> Bool {
         if view.held { return false }

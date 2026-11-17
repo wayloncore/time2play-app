@@ -15,6 +15,9 @@ struct T3DU {
     float4 b;      // seed, turn, ground, reduced
     float4 c;      // grow (grass), bolt intensity, focal (points per unit at depth 1), max particle size (points)
     float4 d;      // particle opacity: ember, wave, bolt, leaf
+    float4 e;      // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
+    float4 f;      // turn flow: color, strength
+    float4 g;      // turn flow: the arc's direction, its brightness, rim length, comet spacing
 };
 
 struct T3DNode {
@@ -89,15 +92,31 @@ static float3 emberG(float2 p, float near, float t) {
     return c;
 }
 static float3 leafG(float2 p, float near, float t) {
-    // a meadow at golden hour, seen as turf: gusts roll across it and catch the low sun
-    float gust = fbm3(p * .16 - float2(t * .14, t * .045));
-    float fine = noise2(ROT * p * float2(9., 3.5) + gust * 2.) * .6 + noise2(p * 23.) * .4;
-    float pv = fbm3(p * .5 + 7.);
-    float3 c = mix(float3(.03, .075, .018), float3(.13, .24, .05), ss(.2, .8, pv * .6 + fine * .5 * near + .1));
-    float lit = ss(.40, .70, gust);
-    c = mix(c, float3(.62, .52, .16), lit * .40 * (.5 + .5 * fine));
-    float fl = step(.93, hash2(floor(p * 6.))) * ss(.3, .1, length(fract(p * 6.) - .5)) * near;
-    c = mix(c, float3(.95, .88, .62), fl * .55);
+    // a meadow in late-afternoon sun, seen from above (#496, Nov 17): turf combed by the wind, golden dry patches
+    // among the green, wind waves rolling through it, slow cloud shadows, and small flowers near the table
+    float2 wind = float2(.92, .38);
+    float2 q = float2(dot(p, wind), dot(p, float2(-wind.y, wind.x)));
+    float macro = fbm3(p * .07 + 3.1);
+    float pv = fbm3(p * .45 + 7.);
+    float streak = noise2(q * float2(2.2, 11.)) * .55 + noise2(q * float2(5., 26.) + 4.) * .45;
+    float fine = noise2(p * 23.);
+    float3 lush = mix(float3(.04, .095, .022), float3(.17, .29, .065), ss(.25, .85, pv * .55 + streak * .45 + fine * .12 * near));
+    float3 dry = mix(float3(.22, .17, .055), float3(.56, .44, .15), ss(.2, .9, pv * .5 + streak * .55));
+    float3 c = mix(lush, dry, ss(.42, .70, macro) * .85);
+    // wind waves: bands of sheen moving downwind, where bent blades show their lighter sides to the low sun
+    float wave = fbm3(q * float2(.20, .55) - float2(t * .55, 0.));
+    float sheen = ss(.50, .80, wave);
+    c = mix(c, c * 1.45 + float3(.15, .11, .03), sheen * .5 * (.55 + .45 * streak));
+    // the low sun, and the shadows of clouds drifting over
+    float cloud = ss(.44, .72, fbm3(p * .032 + float2(t * .011, t * .004)));
+    c *= mix(1.10, .64, cloud);
+    c += float3(.09, .055, .0) * (1. - cloud) * .55;
+    // small flowers, near the table only: mostly white, some yellow, a few violet
+    float2 cell = floor(p * 5.); float h = hash2(cell);
+    float2 jit = (float2(hash2(cell + 1.7), hash2(cell + 5.3)) - .5) * .5;
+    float fl = step(.955, h) * ss(.24, .07, length(fract(p * 5.) - .5 - jit)) * near;
+    float3 fc = h > .988 ? float3(.78, .62, .95) : (h > .972 ? float3(1., .86, .30) : float3(.97, .95, .86));
+    c = mix(c, fc * (1.05 - .4 * cloud), fl * .8);
     return c;
 }
 static float3 boltG(float2 p, float3 V, float near, thread const Env& e) {
@@ -238,7 +257,7 @@ fragment float4 t3d_sky_frag(SkyOut in [[stage_in]], constant T3DU& u [[buffer(2
             float2 c0 = float2((hash2(float2(tc, fk * 7.)) - .5) * .9, .05 + .16 * hash2(float2(tc, 3. + fk)));
             float env = exp(-pow((uu - .30) / .07, 2.)) + .6 * exp(-pow((uu - .46) / .06, 2.));
             float gl = exp(-(pow(az - c0.x, 2.) / .020 + pow(h - c0.y, 2.) / .006));
-            cl += float3(.62, .56, .95) * gl * env * (.35 + .9 * body) * .42;
+            cl += float3(.62, .56, .95) * gl * env * (.35 + .9 * body) * .42 * (1. - u.b.w);   // none with Reduce Motion
         }
         cl += float3(.92, .86, 1.) * e.flash * (.10 + 1.1 * (1. - body) * (.35 + .65 * wisps) + .55 * edgeL);
         cl = mix(cl, float3(.20, .20, .27), (1. - ss(.0, .035, h)) * .6);
@@ -299,7 +318,9 @@ struct PartOut { float4 position [[position]]; float2 q; float a; float r; float
 vertex PartOut t3d_part_vert(PartIn in [[stage_in]], constant SCNSceneBuffer& scn_frame [[buffer(0)]], constant T3DU& u [[buffer(2)]]) {
     float4 S = float4(in.s0, in.s1); float kind = in.position.z;
     float t = u.a.x, G = u.b.z; float3 p; float life; float size; float vA; float vR = 0.; float vT = 1.; float3 vC;
-    float2 b = float2((S.x - .5) * 44., -8.5 - S.y * 26.);
+    // round the table where the aerial camera sees the scene: beside it near you, and out past the far end (never over it)
+    float zz = 7. - S.y * 50., ux = (S.x - .5) * 2.;
+    float2 b = float2(zz > -9. ? sign(ux) * (3.4 + abs(ux) * 11.) : ux * 24., zz);
     float H = 7.5;
     if (kind < .5) {
         life = fract(S.z + t * (.05 + .06 * S.w));
@@ -319,7 +340,12 @@ vertex PartOut t3d_part_vert(PartIn in [[stage_in]], constant SCNSceneBuffer& sc
         vA = ss(0., .08, life) * ss(1., .9, life); size = .26 + .16 * S.w; vR = t * (.5 + S.z) + S.w * 6.;
         vT = .35 + .65 * abs(cos(t * (.8 + S.x) + S.z * 9.));
         vC = mix(mix(float3(.25, .55, .14), float3(.55, .70, .18), S.x), float3(.85, .62, .16), step(.72, S.w));
-        if (S.x > .45) { p = float3(b.x + sin(t * .3 + S.w * 20.) * 1.2, G + .4 + S.w * 5. + sin(t * .4 + S.z * 20.) * .4, b.y); vA = (.5 + .5 * sin(t * 1.3 + S.z * 40.)) * .9; size = .05 + .05 * S.z; vT = -1.; vC = float3(1., .9, .6); }
+        if (S.x > .45) {   // pollen drifting downwind, glinting as it turns in the low sun
+            float dr = fract(S.w + t * .012);
+            p = float3(b.x + (dr - .5) * 6. + sin(t * .3 + S.w * 20.) * 1.2, G + .4 + S.w * 4. + sin(t * .4 + S.z * 20.) * .4, b.y + (dr - .5) * 2.4);
+            vA = (.45 + .55 * pow(.5 + .5 * sin(t * 2.1 + S.z * 40.), 4.)) * ss(0., .1, dr) * ss(1., .9, dr);
+            size = .05 + .05 * S.z; vT = -1.; vC = float3(1., .9, .62);
+        }
     }
     float4 mv = scn_frame.viewTransform * float4(p, 1.);
     float depth = max(-mv.z, .1);
@@ -367,24 +393,34 @@ struct GrassIn {
     float2 r0 [[attribute(SCNVertexSemanticTexcoord1)]];
     float3 r1 [[attribute(SCNVertexSemanticNormal)]];
 };
-struct GrassOut { float4 position [[position]]; float h; float fog; float r; };
+struct GrassOut { float4 position [[position]]; float h; float fog; float r; float gust; float lit; };
 vertex GrassOut t3d_grass_vert(GrassIn in [[stage_in]], constant SCNSceneBuffer& scn_frame [[buffer(0)]], constant T3DU& u [[buffer(2)]]) {
-    float4 R = float4(in.r0, in.r1.xy); float t = in.position.y; float hgt = (.5 + .8 * R.x) * u.c.x; float time = u.a.x;
+    float4 R = float4(in.r0, in.r1.xy); float t = in.position.y; float time = u.a.x;
+    float clump = noise2(in.off * .35);
+    float hgt = (.45 + .75 * R.x) * (.75 + .6 * clump) * in.r1.z * u.c.x;   // r1.z: near grass grows taller
     float ang = R.y * 6.283; float2 dv = float2(cos(ang), sin(ang));
     float3 p = float3(in.off.x, u.b.z, in.off.y);
-    p.xz += dv * in.position.x * .085 * (1. - t * .8);
-    float gust = sin(in.off.x * .35 + time * 1.3) + sin(in.off.y * .27 + in.off.x * .11 + time * .9);
-    p.xz += float2(.9, .3) * (.13 + .10 * gust) * t * t * hgt + dv * .18 * t * t * (R.z - .5);
-    p.y += t * hgt * (1. - .06 * t * (1. + gust * .5));
-    GrassOut o; o.h = t; o.r = R.w;
+    p.xz += dv * in.position.x * .08 * (1. - t * .8);
+    // gusts roll downwind across the field: each blade bends with the wave passing over it
+    float2 wind = float2(.92, .38);
+    float w = dot(in.off, wind);
+    float gust = .5 + .5 * sin(w * .55 - time * 1.6) * (.6 + .4 * sin(w * .17 + time * .5)) ;
+    float flutter = sin(time * 3.1 + R.w * 20. + in.off.y) * .05;
+    float bend = (.10 + .28 * gust + flutter) * t * t * hgt;
+    p.xz += wind * bend + dv * .16 * t * t * (R.z - .5);
+    p.y += t * hgt * (1. - .10 * t * gust);
+    GrassOut o; o.h = t; o.r = R.w; o.gust = gust;
+    o.lit = .5 + .5 * dot(normalize(dv), normalize(float2(.16, -1.)));   // facing the low sun: brighter tips
     float4 mv = scn_frame.viewTransform * float4(p, 1.); o.fog = 1. - exp(mv.z * .016);
     o.position = scn_frame.projectionTransform * mv;
     return o;
 }
 fragment float4 t3d_grass_frag(GrassOut in [[stage_in]]) {
-    float3 base = mix(float3(.025, .07, .018), float3(.15, .29, .06), in.h);
-    float3 tip = mix(float3(.42, .55, .13), float3(.92, .74, .26), in.r);
+    float3 base = mix(float3(.022, .06, .016), float3(.14, .27, .055), in.h);
+    float3 tip = mix(float3(.40, .54, .13), float3(.95, .76, .28), in.r);
     float3 c = mix(base, tip, in.h * in.h * (.55 + .45 * in.r));
+    // backlit by the late sun: tips glow warm, more where the gust bends them toward the light
+    c += float3(.36, .24, .06) * pow(in.h, 3.) * (.35 + .65 * in.lit) * (.5 + .7 * in.gust);
     c = mix(c, float3(.90, .68, .36), in.fog * .97);
     return float4(lin(c), 1.);
 }
@@ -403,10 +439,28 @@ fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer
     return float4(lin(col * k), 1.);
 }
 
-// ---------- the turn arrow along the rim: a gold sweep (vertex colors) ----------
-struct ColIn { float3 position [[attribute(SCNVertexSemanticPosition)]]; float4 color [[attribute(SCNVertexSemanticColor)]]; };
-struct ColOut { float4 position [[position]]; float4 color; };
-vertex ColOut t3d_color_vert(ColIn in [[stage_in]], constant SCNSceneBuffer& scn_frame [[buffer(0)]], constant T3DNode& scn_node [[buffer(1)]]) {
-    ColOut o; o.color = in.color; o.position = scn_frame.viewProjectionTransform * (scn_node.modelTransform * float4(in.position, 1.)); return o;
+// ---------- the turn flow: light running round the rim in turn order (#496, Nov 17) ----------
+// u.x is the distance round the rim, u.y across the ribbon. The whole rim flows softly in play's direction; the arc
+// from whoever is on to whoever is next is brighter, and whoever is next glows. Reduce Motion: a still arc that
+// brightens toward whoever is next.
+fragment float4 t3d_flow_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffer(2)]]) {
+    float s = in.uv.x, v = in.uv.y, P = u.g.z, sp = u.g.w, L = u.e.y;
+    float x = (s - u.e.x) * u.g.x; float rel = x - P * floor(x / P);   // past whoever is on, in the arc's direction
+    float inArc = ss(0., .3, rel) * (1. - ss(L - .45, L, rel));
+    float across = ss(0., .35, v) * (1. - ss(.65, 1., v));
+    float dn = abs(rel - L); dn = min(dn, P - dn);                     // how far from whoever is next
+    float b;
+    if (u.b.w > .5) {
+        b = inArc * u.g.y * (.18 + .62 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .25) * .55 * u.g.y;
+    } else {
+        float fr = fract((s - u.e.z) / sp), vd = clamp(u.e.w, -1., 1.);
+        float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
+        float comet = mix(back, fwd, vd * .5 + .5) * 1.6;               // the bright head leads, its tail trails
+        float glow = exp(-dn * dn / .3) * (.45 + .2 * sin(u.a.x * 3.4));
+        b = .20 * comet + inArc * u.g.y * (.75 * comet + .16) + glow * u.g.y;
+    }
+    float a = clamp(b * across * u.f.w, 0., 1.);
+    if (a < .004) discard_fragment();
+    float3 col = mix(u.f.rgb, float3(1.), .35 * clamp(b - .5, 0., 1.));
+    return float4(lin(col) * a, a);
 }
-fragment float4 t3d_color_frag(ColOut in [[stage_in]]) { return float4(lin(in.color.rgb) * in.color.a, in.color.a); }

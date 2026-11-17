@@ -31,6 +31,16 @@ final class Table3DUITests: XCTestCase {
         still("suit=bolt n=6 change=leaf mix=0.55", "3d-mid-transition-2")
     }
 
+    /// Tyler's Nov 17 changes: the cards you can't play see-through on your turn, the turn flow mid-Reverse (slowing,
+    /// then running the other way), a double flash in the storm, and the meadow.
+    func testStillsNov17() {
+        still("suit=bolt n=4 mine=1 hand=9", "3d-see-through")
+        still("suit=wave n=5 reverse=0.55", "3d-reverse-slowing")
+        still("suit=ember n=5 reverse=1.5", "3d-reverse-back")
+        still("suit=bolt n=3 strike=0.2", "3d-bolt-flash-3")
+        still("suit=leaf n=7 mine=1 hand=5", "3d-leaf-your-turn")
+    }
+
     func testStillsSeats() {
         for n in [2, 3, 8, 10] { still("suit=wave n=\(n)", "3d-seats-\(n)") }
     }
