@@ -30,7 +30,7 @@ jobs:
   simulator:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mac]')
     runs-on: macos-15
-    timeout-minutes: 45   # the full suite with #488's tests runs past 30 (Nov 16)
+    timeout-minutes: 75   # the full suite with #488's tests runs past 30, and the 3D table's games add about 12 (Nov 16)
     steps:
       - uses: actions/checkout@v7
       - name: Versions
