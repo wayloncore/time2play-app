@@ -6,7 +6,7 @@ struct RoomView: View {
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
     @State private var confirmLeave = false
-    @AppStorage(Table3DSwitch.key) private var table3D = false
+    @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
 
     var body: some View {
         ZStack {
@@ -61,8 +61,8 @@ struct RoomView: View {
             case .overdraft:
                 // a late joiner waiting for the next hand has no table yet: the lobby says so
                 if v["table"].object != nil {
-                    // #496: the 3D table, behind its switch (off by default until Tyler approves it)
-                    if table3D || Table3DSwitch.forced { Table3DView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
+                    // #496: the 3D table for everyone (Nov 17); You → "Classic table" plays the flat one
+                    if Table3DSwitch.use3D(classic: classicTable) { Table3DView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
                     else { OverdraftTableView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
                 }
                 else { LobbyView(room: room, onLeave: { confirmLeave = true }) }

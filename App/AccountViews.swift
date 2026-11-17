@@ -123,6 +123,7 @@ struct YouView: View {
     @State private var review = false
     @State private var name = ""
     @AppStorage(Table3DSwitch.key) private var table3D = false
+    @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
 
     var body: some View {
         NavigationStack {
@@ -161,11 +162,12 @@ struct YouView: View {
                 }
 
                 Section {
-                    Toggle("3D table (preview)", isOn: $table3D)
+                    Toggle("Classic table", isOn: $classicTable)
                         .tint(T2P.gold)
-                        .accessibilityIdentifier("toggle-3d")
+                        .onChange(of: classicTable) { _, c in table3D = !c }
+                        .accessibilityIdentifier("toggle-classic")
                 } footer: {
-                    Text("Plays Overdraft at the new 3D table. It's still being built; off plays the usual table.")
+                    Text("Plays Overdraft at the flat table instead of the 3D one.")
                         .foregroundStyle(T2P.muted)
                 }
                 .listRowBackground(T2P.panel)
