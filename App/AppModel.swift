@@ -50,7 +50,7 @@ final class AppModel: ObservableObject {
     init() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-uitest-reset") {
-            for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account"] { UserDefaults.standard.removeObject(forKey: k) }
+            for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account", Table3DSwitch.classicKey] { UserDefaults.standard.removeObject(forKey: k) }
             Keychain.delete()
         }
         // A test (or a check against staging) can point the app elsewhere: -t2p-base https://…

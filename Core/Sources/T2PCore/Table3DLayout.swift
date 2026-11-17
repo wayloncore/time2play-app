@@ -116,6 +116,12 @@ public struct Table3DCamera: Equatable, Sendable {
     }
     /// How many points one world unit spans at a point (facing the camera).
     public func pointsPerUnit(at p: T3Vec) -> Double { focal / max(1e-4, depth(p)) }
+    /// The point on the level plane `y = level` under a screen point, or nil where that point shows sky.
+    public func ground(x: Double, y: Double, level: Double) -> T3Vec? {
+        let dir = right * ((x - width / 2) / focal) + up * (-(y - height / 2) / focal) - back
+        guard dir.y < -1e-6 else { return nil }
+        return eye + dir * ((level - eye.y) / dir.y)
+    }
     /// The point under a screen point, at the depth where a card is `cardPoints` wide.
     public func fromScreen(x: Double, y: Double, cardPoints: Double) -> T3Vec {
         let depth = Table3D.cardW * focal / max(1, cardPoints)
@@ -154,39 +160,70 @@ public struct Table3DSeat: Equatable, Sendable {
     public var sHalfW: Double { halfW * scale }
 }
 
-/// The seats and the camera for one screen: the seated view down the table from your end.
+/// The seats and the camera for one screen: looking down the table from above your end.
 public struct Table3DLayout: Equatable, Sendable {
     public var width: Double, height: Double
     public var free: T3Rect
     public var seats: [Table3DSeat]
     public var camera: Table3DCamera
-    /// Where the horizon sits on the screen.
+    /// Where the horizon sits on the screen (above the top when the camera looks steeply down).
     public var horizonY: Double
+    /// The camera's tilt, degrees down from level.
+    public var pitch: Double
+    /// Where the strip of scene at the top ends (points): the far seats start under it.
+    public var stripBottom: Double
+
+    /// The camera's tilts tried, steepest first (degrees down from level). The steepest wins unless a lower one shows
+    /// the discard pile clearly bigger (#496, Tyler Nov 17: "a more aerial view so the cards are easier to see").
+    public static let pitches: [Double] = [38, 34, 30]
+
+    /// The scene kept between the header and the far seats, in points: a strip (big moments show in it), never the
+    /// top third of the screen.
+    public static func strip(_ free: T3Rect) -> Double { max(52, free.height * 0.07) }
 
     /// - Parameters:
     ///   - players: everyone at the table, you included (2 to 10).
     ///   - free: the part of the screen the table may use (under the header, over your hand).
     ///   - labels: each other seat's name width in world units at the name's size (0.35), in turn order; nil guesses.
     public static func make(players: Int, width: Double, height: Double, free: T3Rect, labels: [Double]? = nil) -> Table3DLayout {
-        // Faces never meet: try the full layout (far seats a little bigger, the horizon brought down into the empty
-        // band), then less of each, and take the first whose faces keep 2 points apart.
         let n = min(10, max(2, players))
-        let b0 = n >= 8 ? 1.0 : n >= 6 ? 1.15 : 1.35
-        var best: Table3DLayout?, bestGap = -Double.infinity
-        for band in [1.0, 0.5, 0] {
-            for boost in [b0, (b0 + 1) / 2, 1] {
-                let l = build(players: n, width: width, height: height, free: free, labels: labels, band: band, boost: boost)
-                let g = l.faceGap
-                if g >= 2 { return l }
-                if g > bestGap { best = l; bestGap = g }
+        var best: Table3DLayout?, bestArea = 0.0, bestClean = false
+        for p in pitches {
+            let l = make(players: n, width: width, height: height, free: free, labels: labels, pitch: p)
+            let a = l.pileArea, clean = l.seats.allSatisfy { $0.mark >= 1 }
+            if best == nil || (clean && !bestClean) || (clean == bestClean && a > bestArea * 1.04) {
+                best = l; bestArea = a; bestClean = clean
             }
         }
+        return best ?? make(players: n, width: width, height: height, free: free, labels: labels, pitch: pitches[0])
+    }
+
+    /// One tilt: faces never meet. Try far seats a little bigger, then less, and take the first whose faces keep 2
+    /// points apart; failing that, faces and counts a little smaller.
+    static func make(players n: Int, width: Double, height: Double, free: T3Rect, labels: [Double]?, pitch: Double) -> Table3DLayout {
+        let b0 = n >= 8 ? 1.0 : n >= 6 ? 1.15 : 1.35
+        var best: Table3DLayout?, bestGap = -Double.infinity
+        for boost in [b0, (b0 + 1) / 2, 1] {
+            let l = build(players: n, width: width, height: height, free: free, labels: labels, pitch: pitch, boost: boost)
+            let g = l.faceGap
+            if g >= 2 { return l }
+            if g > bestGap { best = l; bestGap = g }
+        }
         // still touching (ten at a small screen): faces and counts a little smaller, just enough to clear
-        guard var l = best else { return build(players: n, width: width, height: height, free: free, labels: labels, band: 0, boost: 1) }
+        guard var l = best else { return build(players: n, width: width, height: height, free: free, labels: labels, pitch: pitch, boost: 1) }
         for _ in 0..<12 where l.faceGap < 2 {
             for i in l.seats.indices { l.seats[i].mark *= 0.95 }
         }
         return l
+    }
+
+    /// The discard pile's top card on the screen: its bounding box's area (points squared).
+    public var pileArea: Double {
+        let ps = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map { c in
+            camera.project(T3Vec(c.0 * Table3D.cardW / 2, 0, Table3D.pileAt.z + c.1 * Table3D.cardH / 2))
+        }
+        let xs = ps.map { $0.x }, ys = ps.map { $0.y }
+        return ((xs.max() ?? 0) - (xs.min() ?? 0)) * ((ys.max() ?? 0) - (ys.min() ?? 0))
     }
 
     /// Each seat's face (a circle) and count (a rectangle) on the screen.
@@ -225,7 +262,7 @@ public struct Table3DLayout: Equatable, Sendable {
         return g
     }
 
-    static func build(players n: Int, width: Double, height: Double, free: T3Rect, labels: [Double]?, band: Double, boost: Double) -> Table3DLayout {
+    static func build(players n: Int, width: Double, height: Double, free: T3Rect, labels: [Double]?, pitch: Double, boost: Double) -> Table3DLayout {
         let m = n - 1, compact = n >= 6
         let path = 4 * Table3D.a0 + 2 * Table3D.qa
         var seats: [Table3DSeat] = (0..<m).map { i in
@@ -242,11 +279,10 @@ public struct Table3DLayout: Equatable, Sendable {
                                halfW: halfW, nameTop: false, scale: 1, pos: T3Vec(0, 0, 0), handPos: T3Vec(0, 0, 0), handYaw: 0, nx: 0, nz: 0)
         }
         place(&seats)
-        let fovY = Table3D.fov(width: width, height: height)
-        var horizon = free.y0 + min(60, max(28, free.height * 0.09))   // a band of sky under the header: the storm shows
-        var cam = Table3DCamera.lookAt(eye: T3Vec(0, 3, Table3D.rz + 6), target: T3Vec(0, 3, 0), fovY: fovY, width: width, height: height)
-        for _ in 0..<5 {
-            (cam, horizon) = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, horizon: horizon)
+        let fovY = Table3D.fov(width: width, height: height), tilt = pitch * Double.pi / 180
+        var cam = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, pitch: tilt)
+        for _ in 0..<6 {
+            cam = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, pitch: tilt)
             // far seats a little bigger, so faces stay readable (players come second, after the table)
             let near = seats.map { cam.pointsPerUnit(at: $0.pos) }.max() ?? 1
             var changed = false
@@ -261,14 +297,11 @@ public struct Table3DLayout: Equatable, Sendable {
                 if top != seats[i].nameTop { seats[i].nameTop = top; seats[i].faceY = top ? -0.26 : 0.28; changed = true }
             }
             if changed { place(&seats); continue }
-            // the empty band between the horizon and the far seats: bring the horizon down into it
-            let topY = seats.flatMap { corners($0, cam) }.map { $0.y }.min() ?? horizon
-            let target = max(18, free.height * 0.05)
-            let room = topY - horizon - target
-            if band > 0 && room > 4 && horizon < free.y0 + free.height * 0.34 { horizon += min(room * 0.8 * band, free.y0 + free.height * 0.34 - horizon) } else { break }
+            break
         }
-        (cam, horizon) = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, horizon: horizon)
-        return Table3DLayout(width: width, height: height, free: free, seats: seats, camera: cam, horizonY: horizon)
+        cam = solve(seats: seats, width: width, height: height, free: free, fovY: fovY, pitch: tilt)
+        return Table3DLayout(width: width, height: height, free: free, seats: seats, camera: cam,
+                             horizonY: height / 2 - cam.focal * tan(tilt), pitch: pitch, stripBottom: free.y0 + strip(free))
     }
 
     static func place(_ seats: inout [Table3DSeat]) {
@@ -309,34 +342,38 @@ public struct Table3DLayout: Equatable, Sendable {
         }
     }
 
-    /// The seated camera (the prototype's solveSeated): the horizon a little under the header, the seats along the
-    /// sides filling the width, the discard pile's near edge just over your hand. Returns the camera and where the
-    /// horizon ended up (it moves down if the far seats would reach under the header).
-    static func solve(seats: [Table3DSeat], width W: Double, height H: Double, free: T3Rect, fovY: Double, horizon: Double) -> (Table3DCamera, Double) {
-        let f = (H / 2) / tan(fovY * Double.pi / 360), fh = free.height, fw = min(W - 10, fh * 1.25)
-        let nearEdge = T3Vec(0, 0, Table3D.pileAt.z + Table3D.cardH / 2 + 0.1), tableEnd = Table3D.a0 + Table3D.rx * Table3D.rim
-        var yH = horizon, h = 3.0, zc = Table3D.rz + 6, pitch = 0.0
-        func pose() -> Table3DCamera {
-            Table3DCamera.lookAt(eye: T3Vec(0, h, zc), target: T3Vec(0, h - tan(pitch) * 10, zc - 10), fovY: fovY, width: W, height: H)
+    /// The aerial camera (#496, Nov 17): tilted `pitch` radians down at the table's center line, the discard pile's
+    /// near edge just over your hand, and as close as it can come while the seats stay inside the screen's width and
+    /// the far seats and the far end of the glass stay under the strip of scene at the top.
+    static func solve(seats: [Table3DSeat], width W: Double, height H: Double, free: T3Rect, fovY: Double, pitch: Double) -> Table3DCamera {
+        let fw = min(W - 10, free.height * 1.25), top = free.y0 + strip(free)
+        let nearEdge = T3Vec(0, 0, Table3D.pileAt.z + Table3D.cardH / 2 + 0.1)
+        let farEnd = T3Vec(0, 0, -(Table3D.a0 + Table3D.rx * Table3D.rim))
+        let sp = sin(pitch), cp = cos(pitch)
+        func pose(_ d: Double, _ zt: Double) -> Table3DCamera {
+            Table3DCamera.lookAt(eye: T3Vec(0, d * sp, zt + d * cp), target: T3Vec(0, 0, zt), fovY: fovY, width: W, height: H)
         }
-        func halfWidth(_ c: Table3DCamera) -> Double {
-            seats.flatMap { corners($0, c) }.map { abs($0.x - W / 2) }.max() ?? 0
-        }
-        var cam = pose()
-        for _ in 0..<4 {
-            pitch = atan((H / 2 - yH) / f)
-            for _ in 0..<4 {
-                var lo = tableEnd + 4.3, hi = 80.0
-                for _ in 0..<20 { zc = (lo + hi) / 2; if halfWidth(pose()) > fw / 2 { lo = zc } else { hi = zc } }
-                zc = hi; lo = 0.5; hi = 20
-                for _ in 0..<20 { h = (lo + hi) / 2; if pose().project(nearEdge).y < free.y1 - 6 { lo = h } else { hi = h } }
-                h = hi
+        // where the camera looks along the center line, so the pile's near edge sits just over your hand
+        func fitZ(_ d: Double) -> Double {
+            var lo = -30.0, hi = 30.0
+            for _ in 0..<28 {
+                let zt = (lo + hi) / 2
+                if pose(d, zt).project(nearEdge).y > free.y1 - 6 { lo = zt } else { hi = zt }
             }
-            cam = pose()
-            let minY = seats.flatMap { corners($0, cam) }.map { $0.y }.min() ?? free.y0
-            if minY < free.y0 + 4 { yH += free.y0 + 4 - minY } else { break }
+            return hi
         }
-        return (pose(), yH)
+        func fits(_ c: Table3DCamera) -> Bool {
+            let pts = seats.flatMap { corners($0, c) }
+            if let y = pts.map({ $0.y }).min(), y < top { return false }
+            if let x = pts.map({ abs($0.x - W / 2) }).max(), x > fw / 2 { return false }
+            return c.project(farEnd).y >= top
+        }
+        var lo = 4.0, hi = 120.0
+        for _ in 0..<30 {
+            let d = (lo + hi) / 2
+            if fits(pose(d, fitZ(d))) { hi = d } else { lo = d }
+        }
+        return pose(hi, fitZ(hi))
     }
 
     /// Where a seat's billboard sits on the screen: its center and points per world unit there.

@@ -3,11 +3,18 @@ import SceneKit
 import UIKit
 import T2PCore
 
-/// The switch for Overdraft's 3D table (#496): off by default until Tyler approves it on TestFlight. You → "3D table
-/// (preview)" turns it on; UI tests pass the launch argument -t2p-3d.
+/// Which table Overdraft plays at (#496). Since Nov 17 (Tyler: "Everyone.") the 3D table is the default; You →
+/// "Classic table" goes back to the flat one. UI tests force either with -t2p-3d or -t2p-classic.
 enum Table3DSwitch {
+    /// The old "3D table (preview)" switch: kept under its name (the version before reads it), and written to match
+    /// "Classic table" so a step back to that version keeps the same table.
     static let key = "t2p.table3d"
+    /// "Classic table": on plays the flat table. Never touched (false) plays the 3D table.
+    static let classicKey = "t2p.classicTable"
     static var forced: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-3d") }
+    static var forcedClassic: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-classic") }
+    /// The 3D table unless "Classic table" is on (or a test asks for the classic one).
+    static func use3D(classic: Bool) -> Bool { forced || (!forcedClassic && !classic) }
 }
 
 /// The 3D table's bridge between SwiftUI and SceneKit: it owns the scene and its view, fits the camera to the screen,

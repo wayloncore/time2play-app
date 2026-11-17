@@ -36,8 +36,16 @@ final class Table3DLayoutTests: XCTestCase {
                 // the discard pile's near edge clear of your hand
                 let near = cam.project(T3Vec(0, 0, Table3D.pileAt.z + Table3D.cardH / 2))
                 XCTAssertLessThan(near.y, bottom, "\(name) n=\(n): the pile reaches your hand")
-                // the horizon shows a band of sky under the header
-                XCTAssertGreaterThan(l.horizonY, top + 20, "\(name) n=\(n)")
+                // aerial (#496, Nov 17): a strip of scene between the header and the far seats, no more than a strip,
+                // and the camera looks down on the pile, so its card reads (not a sliver seen edge-on)
+                let tops = l.seats.flatMap { Table3DLayout.corners($0, cam) }.map { $0.y }.min() ?? top
+                XCTAssertGreaterThanOrEqual(tops, l.stripBottom - 0.5, "\(name) n=\(n): a seat reaches into the strip")
+                XCTAssertGreaterThanOrEqual(l.stripBottom - top, 50, "\(name) n=\(n)")
+                XCTAssertGreaterThanOrEqual(l.pitch, 30, "\(name) n=\(n)")
+                let pile = [-1.0, 1.0].map { cam.project(T3Vec(0, 0, Table3D.pileAt.z + $0 * Table3D.cardH / 2)).y }
+                let pw = cam.project(T3Vec(Table3D.cardW / 2, 0, Table3D.pileAt.z)).x - cam.project(T3Vec(-Table3D.cardW / 2, 0, Table3D.pileAt.z)).x
+                XCTAssertGreaterThan((pile[1] - pile[0]) / pw, 0.6, "\(name) n=\(n): the pile is seen too edge-on")
+                XCTAssertGreaterThan(pw, 55, "\(name) n=\(n): the pile's card is too small to read")
             }
         }
     }
@@ -48,6 +56,15 @@ final class Table3DLayoutTests: XCTestCase {
         let s = l.camera.project(p)
         XCTAssertEqual(s.x, 120, accuracy: 0.01); XCTAssertEqual(s.y, 700, accuracy: 0.01)
         XCTAssertEqual(l.camera.pointsPerUnit(at: p) * Table3D.cardW, 90, accuracy: 0.01)
+    }
+
+    func testGroundIsUnderTheScreenPoint() {
+        let l = Table3DLayout.make(players: 5, width: 390, height: 844, free: T3Rect(x0: 6, y0: 110, x1: 384, y1: 526))
+        guard let g = l.camera.ground(x: 60, y: 150, level: -2.6) else { return XCTFail("the top of the table's screen shows ground") }
+        XCTAssertEqual(g.y, -2.6, accuracy: 1e-9)
+        let s = l.camera.project(g)
+        XCTAssertEqual(s.x, 60, accuracy: 0.01); XCTAssertEqual(s.y, 150, accuracy: 0.01)
+        XCTAssertLessThan(g.z, -Table3D.rz, "the strip at the top shows the scene past the far end")
     }
 
     func testPileLieIsStable() {

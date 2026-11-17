@@ -31,19 +31,30 @@ final class Table3DUITests: XCTestCase {
         still("suit=bolt n=6 change=leaf mix=0.55", "3d-mid-transition-2")
     }
 
+    /// Tyler's Nov 17 changes: the cards you can't play see-through on your turn, the turn flow mid-Reverse (slowing,
+    /// then running the other way), a double flash in the storm, and the meadow.
+    func testStillsNov17() {
+        still("suit=bolt n=4 mine=1 hand=9", "3d-see-through")
+        still("suit=wave n=5 reverse=0.55", "3d-reverse-slowing")
+        still("suit=ember n=5 reverse=1.5", "3d-reverse-back")
+        still("suit=bolt n=3 strike=0.2", "3d-bolt-flash-3")
+        still("suit=leaf n=7 mine=1 hand=5", "3d-leaf-your-turn")
+    }
+
     func testStillsSeats() {
         for n in [2, 3, 8, 10] { still("suit=wave n=\(n)", "3d-seats-\(n)") }
     }
 
-    func testPlayThree() { play(bots: 2, seconds: 150) }
+    /// Three players with nothing set: a new player gets the 3D table (#496, Nov 17: the default for everyone).
+    func testPlayThree() { play(bots: 2, seconds: 150, args: ["-t2p-default"]) }
     func testPlayFive() { play(bots: 4, seconds: 150) }
     func testPlayTen() { play(bots: 9, seconds: 180) }
 
     /// An offline game against bots at the 3D table: you play your cards as your turns come, until the hand ends or
     /// time is up. Shots: the deal, your turn, a card in the air, a bot's turn, the end.
-    private func play(bots: Int, seconds: TimeInterval) {
+    private func play(bots: Int, seconds: TimeInterval, args: [String] = ["-t2p-3d"]) {
         let n = bots + 1
-        let app = launch(["-t2p-3d"])
+        let app = launch(args)
         app.swipeUp()
         tapWhenReady(app.buttons["offline-overdraft"])
         let name = app.textFields["name"]

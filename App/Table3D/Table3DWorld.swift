@@ -14,6 +14,9 @@ struct T3DUniforms {
     var b = SIMD4<Float>(1.7, 0, -2.6, 0)   // seed, turn, ground, reduced
     var c = SIMD4<Float>(0, 0, 600, 70)     // grow, bolt, focal, max particle size
     var d = SIMD4<Float>(0, 0, 0, 0)        // particle opacity per element
+    var e = SIMD4<Float>(0, 1, 0, 1)        // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
+    var f = SIMD4<Float>(0.8, 0.8, 0.8, 0)  // turn flow: color, strength
+    var g = SIMD4<Float>(1, 1, Float(Table3D.perim), 1.1)   // turn flow: the arc's direction, its brightness, rim length, comet spacing
 }
 
 /// How much the scene draws: the effects step down on older phones (and again if frames run long).
@@ -38,7 +41,7 @@ enum T3DTier: Int, Comparable {
     }
 }
 
-/// The Overdraft table in SceneKit (#496): the glass table, the piles, the seats' hands, the turn arrow, the element
+/// The Overdraft table in SceneKit (#496): the glass table, the piles, the seats' hands, the turn flow, the element
 /// scene round it (sky, ground, particles, grass, lightning, an optional painted backdrop per suit), and cards in the
 /// air. Everything in the scene is changed on SceneKit's render thread: other threads `post` changes.
 final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
@@ -64,7 +67,6 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     // the scene
     private let tableRoot = SCNNode(), pileNode = SCNNode(), deckNode = SCNNode(), handsNode = SCNNode()
     private var rimLine: SCNMaterial?
-    private var arrowNode = SCNNode()
     private var boltNode = SCNNode()
     private var grassNode: SCNNode?
     private var addParts: SCNNode?, leafParts: SCNNode?
@@ -84,7 +86,11 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     private var suit = "wave"
     private var sceneSuit: String?
     private var turnTarget: Float = 0
-    private var storm = (t: 99.0, next: 1.2, x: 0.0)
+    /// The storm: time since the last strike, time to the next, where it hit, how bright, and when (if) it flashes twice.
+    private var storm = (t: 99.0, next: 1.2, x: 0.0, k: 1.0, twice: -1.0)
+    private var flow = Flow()
+    /// Still mode: the still's Reverse holds, so the table's own sync doesn't undo it.
+    var flowPinned = false
     private var frameTimes: [Double] = []
     private var stepDowns = 0
     var autoStepDown = true
@@ -208,8 +214,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
             deckNode.addChildNode(c)
         }
         scene.rootNode.addChildNode(handsNode)
-        arrowNode.renderingOrder = 2
-        scene.rootNode.addChildNode(arrowNode)
+        buildFlow()
         applyElement(0)
     }
 
@@ -289,9 +294,9 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     private func buildParticles() {
         let counts: [Int]
         switch tier {
-        case .high: counts = [150, 70, 90, 80]
-        case .mid: counts = [90, 40, 54, 48]
-        case .low: counts = [40, 20, 24, 24]
+        case .high: counts = [210, 100, 120, 130]
+        case .mid: counts = [120, 56, 70, 76]
+        case .low: counts = [56, 28, 32, 36]
         }
         func mesh(_ kinds: [(Float, Int)]) -> SCNGeometry {
             var pos: [Float] = [], t0: [Float] = [], t1: [Float] = [], idx: [UInt32] = []
@@ -327,15 +332,23 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
 
     private func buildGrass() {
         grassNode?.removeFromParentNode(); grassNode = nil
-        let n = tier == .high ? 9000 : tier == .mid ? 4000 : 0
+        // one mesh for the whole meadow (one draw): most blades beside the table, where the aerial camera looks past
+        // its sides (near grass, a little taller), the rest in the field out past the far end
+        let n = tier == .high ? 14000 : tier == .mid ? 6000 : 0
         guard n > 0 else { return }
         var pos: [Float] = [], off: [Float] = [], r0: [Float] = [], r1: [Float] = [], idx: [UInt32] = []
         let shape: [(Float, Float)] = [(-0.5, 0), (0.5, 0), (-0.5, 0.5), (0.5, 0.5), (0, 1)]
         for i in 0..<n {
-            var x: Float, z: Float
-            repeat { x = .random(in: -26...26); z = 8 - 50 * pow(Float.random(in: 0..<1), 1.5) } while abs(x) < 4.2 && z > -8.5
+            var x: Float, z: Float, tall: Float = 1
+            if Float.random(in: 0..<1) < 0.68 {
+                let side: Float = Bool.random() ? 1 : -1
+                x = side * (3.0 + 11 * pow(Float.random(in: 0..<1), 1.4)); z = .random(in: -12...9)
+                tall = 1.15 + 0.25 * Float.random(in: 0..<1)
+            } else {
+                x = .random(in: -30...30); z = -9.5 - 40 * pow(Float.random(in: 0..<1), 1.3)
+            }
             let r = (Float.random(in: 0..<1), Float.random(in: 0..<1), Float.random(in: 0..<1), Float.random(in: 0..<1))
-            for (sx, sy) in shape { pos += [sx, sy, 0]; off += [x, z]; r0 += [r.0, r.1]; r1 += [r.2, r.3, 0] }
+            for (sx, sy) in shape { pos += [sx, sy, 0]; off += [x, z]; r0 += [r.0, r.1]; r1 += [r.2, r.3, tall] }
             let b = UInt32(i * 5)
             idx += [b, b + 1, b + 2, b + 1, b + 3, b + 2, b + 2, b + 3, b + 4]
         }
@@ -442,7 +455,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
 
     // MARK: the game, as the scene shows it (render thread: call through post)
 
-    /// Seats, hands and the turn arrow for a new layout; the camera fitted to the screen.
+    /// Seats and hands for a new layout; the camera fitted to the screen.
     func setLayout(_ l: Table3DLayout, counts: [Int]) {
         layout = l
         let c = l.camera
@@ -560,36 +573,88 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     /// Your turn: the rim lights up in the element's color.
     func setMyTurn(_ on: Bool) { turnTarget = on ? 1 : 0 }
 
-    /// The gold sweep along the rim from whoever is on toward whoever is next (rim positions, play's direction).
-    func setArrow(from: Double, to: Double, dir: Int) {
-        let P = Table3D.perim, d0 = Double(dir >= 0 ? 1 : -1)
-        var d = (((to - from) * d0).truncatingRemainder(dividingBy: P) + P).truncatingRemainder(dividingBy: P)
-        if d < 0.01 { d = P }
-        let t0 = min(1.0, d * 0.2), t1 = d - min(1.0, d * 0.2), K0 = 0.905, K1 = 0.935, N = 48, y: Float = 0.012
-        var pos: [Float] = [], col: [Float] = [], idx: [UInt32] = []
-        for i in 0...N {
-            let uu = Double(i) / Double(N), sP = from + d0 * (t0 + (t1 - t0 - 0.3) * uu)
-            let a = Table3D.rimPoint(sP, K0), b = Table3D.rimPoint(sP, K1), al = Float(0.05 + 0.8 * uu)
-            pos += [Float(a.x), y, Float(a.z), Float(b.x), y, Float(b.z)]
-            col += [0.96, 0.87, 0.58, al, 0.96, 0.87, 0.58, al]
-            if i < N { let k = UInt32(i * 2); idx += [k, k + 1, k + 2, k + 1, k + 3, k + 2] }
+    // MARK: the turn flow (#496, Tyler Nov 17: "make the directional animation better")
+
+    /// Light running round the rim in turn order: the bright arc from whoever is on to whoever is next, which way
+    /// play goes, and the comets' phase and speed (a Reverse slows them, stops them and sends them the other way).
+    private struct Flow {
+        var a = 0.0, b = 0.0, ta = 0.0, tb = 0.0   // the arc now, and where it's going (rim s)
+        var d = 1.0, ad = 1.0                      // play's direction, and the arc's (it turns while the flow is stopped)
+        var phase = 0.0, vel = 1.0, fromVel = 1.0  // the comets: offset along the rim, speed (-1 to 1)
+        var show = 0.0, target = 0.0, arc = 1.0, boost = 0.0
+        var rev = -1.0                             // seconds into a Reverse (negative: none)
+        var set = false
+    }
+
+    /// The flow is drawn by the glass's shader (Table3DShaders.metal, turnFlow): here only its constants.
+    private func buildFlow() {
+        let P = Table3D.perim
+        u.g.z = Float(P); u.g.w = Float(P / (P / 1.1).rounded())   // comets evenly round the rim, about 1.1 apart
+    }
+
+    /// Whoever is on, whoever is next (rim positions) and play's direction. A new turn slides the bright arc on; a
+    /// change of direction is a Reverse: the flow slows, stops and runs the other way. `pin` (still mode) holds it.
+    func setFlow(from: Double, to: Double, dir: Int, pin: Bool = false) {
+        if flowPinned && !pin { return }
+        if pin { flowPinned = true }
+        let d = dir >= 0 ? 1.0 : -1.0
+        flow.target = 1
+        if !flow.set || flow.show < 0.05 {   // the first turn, or a new hand after the flow faded: no animation
+            flow = Flow(a: from, b: to, ta: from, tb: to, d: d, ad: d, vel: d, fromVel: d, show: reduced ? 1 : flow.show, target: 1, set: true)
+            return
         }
-        let hb = from + d0 * (t1 - 0.3), a = Table3D.rimPoint(hb, K0 - 0.035), b = Table3D.rimPoint(hb, K1 + 0.035)
-        let tip = Table3D.rimPoint(from + d0 * t1, (K0 + K1) / 2), k = UInt32(pos.count / 3)
-        pos += [Float(a.x), y, Float(a.z), Float(b.x), y, Float(b.z), Float(tip.x), y, Float(tip.z)]
-        for _ in 0..<3 { col += [0.96, 0.87, 0.58, 0.9] }
-        idx += [k, k + 1, k + 2]
-        let g = SCNGeometry(sources: [Self.source(pos, .vertex, 3), Self.source(col, .color, 4)],
-                            elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
-        g.firstMaterial = arrowMaterial
-        arrowNode.geometry = g
+        if d != flow.d {
+            flow.d = d; flow.ta = from; flow.tb = to
+            if reduced { flow.a = from; flow.b = to; flow.ad = d; flow.vel = d; flow.rev = -1 } else { flow.rev = 0; flow.fromVel = flow.vel }
+        } else if from != flow.ta || to != flow.tb {
+            flow.ta = from; flow.tb = to
+            if reduced { flow.a = from; flow.b = to }
+        } else { return }
+        flow.boost = 1
     }
 
-    func hideArrow() { arrowNode.geometry = nil }
+    /// The hand's over: the flow fades away.
+    func hideFlow() { flow.target = 0 }
 
-    private lazy var arrowMaterial: SCNMaterial = programMaterial("t3d_color_vert", "t3d_color_frag", opaque: false) { m in
-        m.isDoubleSided = true; m.blendMode = .alpha; m.writesToDepthBuffer = false
+    private func stepFlow(_ dt: Double) {
+        let P = Table3D.perim
+        flow.show += max(-dt * 2.5, min(dt * 2.5, flow.target - flow.show))
+        flow.boost = max(0, flow.boost - dt / 1.6)
+        func ease(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
+        let ad = flow.ad, step = min(1, dt * 4.5)
+        // the arc slides on round the rim in play's direction (back the short way if it has to)
+        func slide(_ cur: Double, _ to: Double) -> Double {
+            var delta = ((to - cur) * ad).truncatingRemainder(dividingBy: P)
+            if delta < 0 { delta += P }
+            if delta > P / 2 { delta -= P }
+            return abs(delta) < 0.002 ? to : cur + ad * delta * step
+        }
+        if flow.rev >= 0 {
+            flow.rev += dt
+            let t = flow.rev
+            if t < 0.8 {
+                flow.vel = flow.fromVel * (1 - ease(t / 0.8)); flow.arc = 1 - ease(t / 0.6)
+            } else if t < 1.9 {
+                flow.a = flow.ta; flow.b = flow.tb; flow.ad = flow.d
+                flow.vel = t < 1.1 ? 0 : flow.d * ease((t - 1.1) / 0.8); flow.arc = ease((t - 0.9) / 0.5)
+            } else {
+                flow.vel = flow.d; flow.arc = 1; flow.rev = -1
+            }
+            flow.boost = 1
+        } else {
+            flow.a = slide(flow.a, flow.ta); flow.b = slide(flow.b, flow.tb)
+            flow.vel = flow.d; flow.arc = 1
+        }
+        if !reduced { flow.phase = (flow.phase + flow.vel * 0.9 * dt).truncatingRemainder(dividingBy: P) }
+        var L = ((flow.b - flow.a) * flow.ad).truncatingRemainder(dividingBy: P)
+        if L < 0 { L += P }
+        if L < 0.05 { L = P }
+        let a = (flow.a.truncatingRemainder(dividingBy: P) + P).truncatingRemainder(dividingBy: P)
+        u.e = SIMD4<Float>(Float(a), Float(L), Float(flow.phase), Float(flow.vel))
+        u.g.x = Float(flow.ad); u.g.y = Float(flow.arc)
+        u.f.w = Float(flow.show * (0.75 + 0.25 * flow.boost))
     }
+
     private lazy var boltMaterial: SCNMaterial = programMaterial("t3d_bolt_vert", "t3d_bolt_frag", opaque: false) { m in
         m.blendMode = .add; m.writesToDepthBuffer = false; m.isDoubleSided = true
     }
@@ -763,14 +828,32 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
 
     // MARK: lightning
 
-    func strike(x: Double? = nil) {
-        storm.x = x ?? .random(in: -9...9)
-        buildBolt(x0: Float(storm.x), z: .random(in: -34 ... -24))
-        storm.t = 0
+    /// A strike. `at` (0 to 1 across the screen) places it for a still; otherwise it lands somewhere in the strip of
+    /// scene over the far seats, a little dimmer or brighter each time, and now and then it flashes twice.
+    func strike(at: Double? = nil) {
+        let spot = strikeSpot(at)
+        buildBolt(x0: Float(spot.x), z: Float(spot.z), width: Float(spot.w))
+        storm.t = 0; storm.x = spot.x
+        let live = freezeAt == nil
+        storm.k = live ? .random(in: 0.6...1) : 1
+        storm.twice = live && Double.random(in: 0..<1) < 0.3 ? .random(in: 0.3...0.5) : -1
         u.b.x = .random(in: 0...50)
     }
 
-    private func buildBolt(x0: Float, z: Float) {
+    /// Where a strike reaches the ground: under a point in the strip of scene between the header and the far seats,
+    /// so it's seen but never crosses the table; and how wide its bolt is drawn, so it looks the same near or far.
+    private func strikeSpot(_ at: Double?) -> (x: Double, z: Double, w: Double) {
+        guard let l = layout else { return ((at.map { $0 - 0.5 } ?? .random(in: -0.4...0.4)) * 20, .random(in: -34 ... -24), 1) }
+        let c = l.camera, top = l.free.y0, bottom = max(l.free.y0 + 10, l.stripBottom)
+        let sx = (at ?? .random(in: 0.12...0.88)) * c.width
+        let sy = top + (bottom - top) * (at == nil ? .random(in: 0.25...0.65) : 0.45)
+        let g = c.ground(x: sx, y: sy, level: Double(u.b.z))
+        let z = min(-14, max(-80, g?.z ?? -40)), x = min(30, max(-30, g?.x ?? 0))
+        let w = min(2.4, max(0.6, c.depth(T3Vec(x, Double(u.b.z), z)) / 40))
+        return (x, z, w)
+    }
+
+    private func buildBolt(x0: Float, z: Float, width: Float = 1) {
         var pos: [Float] = [], ua: [Float] = []
         func seg(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ w: Float, _ br: Float) {
             let d = b - a, l = max(1e-4, simd_length(d)), n = SIMD2<Float>(-d.y / l * w, d.x / l * w)
@@ -796,7 +879,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
                 }
             }
         }
-        limb(SIMD2(x0 + .random(in: -4...4), 30), SIMD2(x0, u.b.z), 0.55, 1, 0)
+        limb(SIMD2(x0 + .random(in: -4...4) * width, 30), SIMD2(x0, u.b.z), 0.55 * width, 1, 0)
         let idx = (0..<UInt32(pos.count / 3)).map { $0 }
         let g = SCNGeometry(sources: [Self.source(pos, .vertex, 3), Self.source(ua, .texcoord, 2)],
                             elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
@@ -808,14 +891,18 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
 
     private static let light: [String: [UInt32]] = [   // ambient sky, ambient ground, fill, key
         "ember": [0xffb388, 0x7a1e06, 0xff5a1e, 0xffd2a0], "wave": [0xbfdcff, 0x0e3f7a, 0x3a8cff, 0xffe6c4],
-        "bolt": [0xa6a4bc, 0x16161f, 0x7a5cf0, 0xd8d4ec], "leaf": [0xffe6b8, 0x35521a, 0xffb050, 0xffdf9c],
+        "bolt": [0xa6a4bc, 0x16161f, 0x7a5cf0, 0xd8d4ec], "leaf": [0xffe2b0, 0x35521a, 0xffa848, 0xffd08a],   // late-afternoon sun
     ]
+
+    /// The turn flow's color per element: the suit's color, lifted so it reads on the glass.
+    private static let flowColor: [String: UInt32] = ["ember": 0xFF8A45, "wave": 0x5AAEFF, "bolt": 0xB08CFF, "leaf": 0x9BE07E]
 
     private func step(_ dt: Double) {
         let f = Float(dt)
         u.a.x += f * (reduced ? 0.12 : 1)
         u.b.w = reduced ? 1 : 0
         applyElement(dt)
+        stepFlow(dt)
         stepFlights(f)
         u.b.y += max(-f * 3, min(f * 3, turnTarget - u.b.y))
         rimLine?.transparency = CGFloat(0.55 + 0.45 * u.b.y)
@@ -842,25 +929,34 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         fill.color = Self.color(acc[2])
         key.color = Self.color(acc[3])
         rimLine?.diffuse.contents = Self.color(acc[0] + (SIMD3<Float>(1, 1, 1) - acc[0]) * 0.45)
+        var fc = SIMD3<Float>(0, 0, 0)
+        for (i, s) in Self.suits.enumerated() { if let h = Self.flowColor[s] { fc += Self.rgb(h) * u.w[i] } }
+        u.f.x = fc.x; u.f.y = fc.y; u.f.z = fc.z
         let po: Float = reduced ? 0.45 : 1
         u.d = u.w * po
         addParts?.isHidden = max(u.d.x, max(u.d.y, u.d.z)) < 0.01
         leafParts?.isHidden = u.d.w < 0.01
-        // the storm: a full strike now and then; the clouds flicker in between
+        // the storm (Tyler, Nov 17: "more frequent lightning"): a strike every 3 to 6 seconds, irregular, sometimes a
+        // double flash, each a little dimmer than before so the table stays the star; the clouds flicker in between.
+        // Reduce Motion: no strikes and no flashes.
         let wb = Double(u.w.z)
         storm.t += dt
-        if wb > 0.6 && freezeAt == nil {
+        if wb > 0.6 && freezeAt == nil && !reduced {
             storm.next -= dt
-            if storm.next <= 0 { strike(); storm.next = .random(in: 11...19) }
+            if storm.next <= 0 { strike(); storm.next = .random(in: 3...6) }
         }
         var fl = 0.0, bi = 0.0
-        if reduced { let uu = storm.t / 2.4; bi = uu < 1 ? sin(uu * .pi) * 0.8 : 0; fl = bi * 0.12 }   // a slow glow, no flash
-        else {
+        if !reduced {
             let t = storm.t
             fl = exp(-t * 7) + 0.75 * exp(-pow((t - 0.16) / 0.05, 2)) + 0.3 * exp(-pow((t - 0.3) / 0.07, 2))
-            bi = t < 0.55 ? min(1, fl * 1.6 + 0.25 * (1 - t / 0.55)) : 0
+            if storm.twice > 0 && t > storm.twice {
+                let t2 = t - storm.twice
+                fl += 0.7 * exp(-t2 * 8) + 0.45 * exp(-pow((t2 - 0.1) / 0.05, 2))
+            }
+            let end = 0.55 + max(0, storm.twice)
+            bi = t < end ? min(1, fl * 1.6 + 0.25 * (1 - t / end)) : 0
         }
-        u.a.w = Float(min(1.2, max(0, fl)) * wb * 0.7)
+        u.a.w = Float(min(1.2, max(0, fl)) * wb * 0.55 * storm.k)
         u.c.y = Float(bi * wb)
         boltNode.isHidden = u.c.y < 0.01 || boltNode.geometry == nil
         flashLight.intensity = CGFloat(u.a.w) * 1800 / .pi

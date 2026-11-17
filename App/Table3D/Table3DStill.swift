@@ -3,7 +3,7 @@ import T2PCore
 
 /// Still mode for the 3D table's screenshots (#496): a made-up table, stopped at an exact moment, so each suit, your
 /// turn, a card mid-throw and a scene mid-change can be shot the same way every run. UI tests launch the app with
-///   -t2p-3d-still "suit=bolt n=5 mine=1 hand=9 throw=0.3 change=ember mix=0.5 strike=0.15"
+///   -t2p-3d-still "suit=bolt n=5 mine=1 hand=9 throw=0.3 change=ember mix=0.5 strike=0.15 reverse=1.3"
 /// (every key optional). Nothing here talks to a room.
 struct Table3DStill {
     var suit = "wave"
@@ -14,6 +14,8 @@ struct Table3DStill {
     var change: String?
     var mix = 0.5
     var strikeAt: Double?
+    /// Seconds into a Reverse of the turn flow (play turns from forward to backward).
+    var reverseAt: Double?
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> Table3DStill? {
         guard let i = args.firstIndex(of: "-t2p-3d-still") else { return nil }
@@ -31,6 +33,7 @@ struct Table3DStill {
             case "change": s.change = kv[1]
             case "mix": s.mix = Double(kv[1]) ?? 0.5
             case "strike": s.strikeAt = Double(kv[1])
+            case "reverse": s.reverseAt = Double(kv[1])
             default: break
             }
         }
@@ -51,7 +54,18 @@ struct Table3DStill {
                 w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
                 w.freezeAt = c0 + start + 2.1 * st.mix
             } else if let t = st.strikeAt {
-                w.addTimer(c0 + start) { w.strike(x: -3) }
+                w.addTimer(c0 + start) { w.strike(at: 0.3) }
+                w.freezeAt = c0 + start + t
+            } else if let t = st.reverseAt {
+                // play was going forward from the seat that's on; a Reverse sends it back to the seat before
+                // (you are -1, the others 0 up in turn order; the still's turn is yours or the second other seat's)
+                let on = st.mine ? -1 : min(1, st.players - 2)
+                w.addTimer(c0 + start) {
+                    guard let l = w.layout, !l.seats.isEmpty else { return }
+                    func rim(_ i: Int) -> Double { i < 0 ? 0 : l.seats[min(i, l.seats.count - 1)].s }
+                    let back = on < 0 ? l.seats.count - 1 : on - 1
+                    w.setFlow(from: rim(on), to: rim(back), dir: -1, pin: true)
+                }
                 w.freezeAt = c0 + start + t
             } else {
                 w.freezeAt = c0 + 1.8

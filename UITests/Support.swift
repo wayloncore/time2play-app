@@ -2,9 +2,12 @@ import XCTest
 
 /// Shared by the UI tests: launching the app clean, and saving screenshots where the Mac workflow prints them from.
 extension XCTestCase {
+    /// Overdraft's 3D table is the default (#496, Nov 17); these tests check the classic table, which stays as the
+    /// fallback, unless they ask for the 3D one (-t2p-3d) or for whatever a new player gets (-t2p-default).
     func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uitest-reset"] + extra
+        let table = extra.contains("-t2p-3d") || extra.contains("-t2p-default") ? [] : ["-t2p-classic"]
+        app.launchArguments = ["-uitest-reset"] + table + extra
         app.launch()
         return app
     }
