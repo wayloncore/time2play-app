@@ -14,6 +14,10 @@ on:
         description: "Also run the screenshot tour (UITests/TourUITests) on an iPad simulator"
         required: false
         default: "false"
+      ipad_only:
+        description: "The UI tests the iPad run takes (xcodebuild -only-testing values, space-separated)"
+        required: false
+        default: "Time2PlayUITests/TourUITests"
   push:
     branches: [main]
 permissions:
@@ -26,7 +30,7 @@ jobs:
   simulator:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mac]')
     runs-on: macos-15
-    timeout-minutes: 45   # the full suite with #488's tests runs past 30 (Nov 16)
+    timeout-minutes: 110   # the full suite runs past 40, and the 3D table's games on an iPad add about 25 (Nov 17)
     steps:
       - uses: actions/checkout@v7
       - name: Versions
@@ -43,7 +47,7 @@ jobs:
           if grep -q "6WK983RXJT.live.time2play.app" aasa.json 2>/dev/null; then echo "AASA OK: names 6WK983RXJT.live.time2play.app"; else echo "::warning::time2play.live's apple-app-site-association doesn't name 6WK983RXJT.live.time2play.app"; fi
       - name: Core package tests (no UI)
         run: |
-          t=$(date +%s); cd Core && swift test 2>&1 | tail -6
+          t=$(date +%s); cd Core && swift test > ../core.log 2>&1; tail -6 ../core.log; grep -E "error: " ../core.log | head -30
           echo "core_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate
@@ -84,6 +88,8 @@ jobs:
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: The tour again on an iPad (#405)
         if: github.event.inputs.ipad == 'true'
+        env:
+          IPAD_ONLY: ${{ github.event.inputs.ipad_only }}
         run: |
           t=$(date +%s)
           IPAD=$(xcrun simctl list devices available -j | python3 -c '
@@ -101,21 +107,47 @@ jobs:
           xcrun simctl boot "$IPAD"; xcrun simctl bootstatus "$IPAD" -b
           xcrun simctl status_bar "$IPAD" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3
           set -o pipefail
+          isel=""; for o in ${IPAD_ONLY:-Time2PlayUITests/TourUITests}; do isel="$isel -only-testing:$o"; done
           xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
             -destination "id=$IPAD" -derivedDataPath build -resultBundlePath build/ipad.xcresult \
-            -parallel-testing-enabled NO -only-testing:Time2PlayUITests/TourUITests \
+            -parallel-testing-enabled NO $isel \
             CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           echo "ipad_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Why tests failed (the result bundle's failure messages)
         if: always()
         run: |
-          [ -d build/ui.xcresult ] || exit 0
-          xcrun xcresulttool get test-results summary --path build/ui.xcresult --format json > summary.json 2>/dev/null || exit 0
-          python3 -c '
+          for b in ui ipad; do
+            [ -d build/$b.xcresult ] || continue
+            xcrun xcresulttool get test-results summary --path build/$b.xcresult --format json > summary.json 2>/dev/null || continue
+            echo "== $b"
+            python3 -c '
           import json
           s=json.load(open("summary.json"))
           print("RESULT", s.get("result"), "passed", s.get("passedTests"), "failed", s.get("failedTests"), "skipped", s.get("skippedTests"))
           for f in s.get("testFailures", []): print("FAILURE", f.get("testIdentifierString") or f.get("testName"), "::", f.get("failureText"))'
+          done
+      - name: App crashes (the simulator's crash reports, the crashed thread)
+        if: always()
+        run: |
+          ls -t "$HOME"/Library/Logs/DiagnosticReports/Time2Play*.ips 2>/dev/null | head -5 | while read f; do
+            echo "== crash report: $(basename "$f")"
+            python3 - "$f" <<'PY'
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          head, _, body = raw.partition("\n")
+          b = json.loads(body)
+          print("exception:", json.dumps(b.get("exception")), "termination:", json.dumps(b.get("termination", {}).get("indicator")))
+          for k in ("asi", "lastExceptionBacktrace"):
+              if b.get(k): print(k, json.dumps(b[k])[:1500])
+          imgs = b.get("usedImages", [])
+          for t in b.get("threads", []):
+              if not t.get("triggered"): continue
+              print("crashed thread:", t.get("name") or t.get("queue") or "")
+              for fr in t.get("frames", [])[:40]:
+                  im = imgs[fr["imageIndex"]].get("name", "?") if fr.get("imageIndex") is not None and fr["imageIndex"] < len(imgs) else "?"
+                  print("  ", im, fr.get("symbol", hex(fr.get("imageOffset", 0))), "+", fr.get("symbolLocation", ""), fr.get("sourceFile", ""), fr.get("sourceLine", ""))
+          PY
+          done
       - name: Screenshots into the log
         if: always()
         run: |

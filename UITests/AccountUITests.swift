@@ -42,6 +42,8 @@ final class AccountUITests: XCTestCase {
         let app = launch()
         tapWhenReady(app.tabBars.buttons["You"])
         let version = app.staticTexts["version"]
+        // the version line is the form's last footer: scroll to it (the 3D table's switch sits above it, #496)
+        for _ in 0..<4 where !(version.exists && version.isHittable) { app.swipeUp() }
         XCTAssertTrue(version.waitForExistence(timeout: 5))
         for _ in 0..<5 { version.tap() }
         let field = app.secureTextFields["review-key"]
@@ -60,7 +62,9 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(app.buttons["friend-link"].waitForExistence(timeout: 15))
         shot(app, "403-friends")
         tapWhenReady(app.tabBars.buttons["You"])
-        tapWhenReady(app.buttons["delete-account"])
+        let delete = app.buttons["delete-account"]
+        for _ in 0..<4 where !(delete.exists && delete.isHittable) { app.swipeDown() }
+        tapWhenReady(delete)
         tapWhenReady(app.buttons.matching(NSPredicate(format: "label == 'Delete account' AND identifier != 'delete-account'")).firstMatch, 5)
         XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 20), "back to a guest")
     }
