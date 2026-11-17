@@ -126,6 +126,28 @@ jobs:
           print("RESULT", s.get("result"), "passed", s.get("passedTests"), "failed", s.get("failedTests"), "skipped", s.get("skippedTests"))
           for f in s.get("testFailures", []): print("FAILURE", f.get("testIdentifierString") or f.get("testName"), "::", f.get("failureText"))'
           done
+      - name: App crashes (the simulator's crash reports, the crashed thread)
+        if: always()
+        run: |
+          ls -t "$HOME"/Library/Logs/DiagnosticReports/Time2Play*.ips 2>/dev/null | head -5 | while read f; do
+            echo "== crash report: $(basename "$f")"
+            python3 - "$f" <<'PY'
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          head, _, body = raw.partition("\n")
+          b = json.loads(body)
+          print("exception:", json.dumps(b.get("exception")), "termination:", json.dumps(b.get("termination", {}).get("indicator")))
+          for k in ("asi", "lastExceptionBacktrace"):
+              if b.get(k): print(k, json.dumps(b[k])[:1500])
+          imgs = b.get("usedImages", [])
+          for t in b.get("threads", []):
+              if not t.get("triggered"): continue
+              print("crashed thread:", t.get("name") or t.get("queue") or "")
+              for fr in t.get("frames", [])[:40]:
+                  im = imgs[fr["imageIndex"]].get("name", "?") if fr.get("imageIndex") is not None and fr["imageIndex"] < len(imgs) else "?"
+                  print("  ", im, fr.get("symbol", hex(fr.get("imageOffset", 0))), "+", fr.get("symbolLocation", ""), fr.get("sourceFile", ""), fr.get("sourceLine", ""))
+          PY
+          done
       - name: Screenshots into the log
         if: always()
         run: |
