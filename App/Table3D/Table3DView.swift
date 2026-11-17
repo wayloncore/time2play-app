@@ -274,7 +274,7 @@ struct Table3DView: View {
                     .accessibilityIdentifier("draw")
             }
         }
-        .frame(maxWidth: 560)
+        .frame(maxWidth: 560 * HandFan3D.padScale)
         .padding(.bottom, 6)
     }
 
@@ -543,14 +543,15 @@ struct SuitChip: View {
     let suit: String
     var named = false
     static let icon = ["ember": "flame.fill", "wave": "water.waves", "bolt": "bolt.fill", "leaf": "leaf.fill"]
+    private var k: CGFloat { CGFloat(HandFan3D.padScale) }
     var body: some View {
         let c = T2P.suit[suit] ?? .gray
-        HStack(spacing: 6) {
-            Image(systemName: Self.icon[suit] ?? "circle.fill").font(.system(size: 14, weight: .bold))
-            Text((Overdraft.suitNames[suit] ?? suit).uppercased()).font(.system(size: 13, weight: .bold)).tracking(0.8)
+        HStack(spacing: 6 * k) {
+            Image(systemName: Self.icon[suit] ?? "circle.fill").font(.system(size: 14 * k, weight: .bold))
+            Text((Overdraft.suitNames[suit] ?? suit).uppercased()).font(.system(size: 13 * k, weight: .bold)).tracking(0.8 * k)
         }
         .foregroundStyle(.white)
-        .padding(.leading, 9).padding(.trailing, 12).padding(.vertical, 5)
+        .padding(.leading, 9 * k).padding(.trailing, 12 * k).padding(.vertical, 5 * k)
         .background(Color(hex: 0x120D18).opacity(0.85), in: Capsule())
         .background(c.opacity(0.34), in: Capsule())
         .overlay(Capsule().stroke(c, lineWidth: 1.5))
@@ -666,8 +667,12 @@ struct HandFan3D: View {
     var onTap: (Overdraft.Card, CGPoint, Double, Double) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Tablets draw the hand, the panel and the suit chip bigger, in step with the bigger table.
+    static var padScale: Double { UIDevice.current.userInterfaceIdiom == .pad ? 1.35 : 1 }
+
     static func cardWidth(width: Double, height: Double) -> CGFloat {
-        CGFloat(min(116, max(72, min((min(width, 560) - 40) / 3.35, height * 0.135).rounded())))
+        let s = padScale
+        return CGFloat(min(116 * s, max(72, min((min(width, 560 * s) - 40) / 3.35, height * 0.135).rounded())))
     }
 
     var body: some View {

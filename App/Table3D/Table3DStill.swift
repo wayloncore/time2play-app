@@ -47,7 +47,8 @@ struct Table3DStill {
                 w.addTimer(c0 + start) { w.throwFromSeat(seat, art: art, k: 9) }
                 w.freezeAt = c0 + start + t
             } else if let to = st.change {
-                w.addTimer(c0 + start) { w.setSuit(to) }
+                // the table already shows the card that changed the suit; the scene starts on the old suit and turns
+                w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
                 w.freezeAt = c0 + start + 2.1 * st.mix
             } else if let t = st.strikeAt {
                 w.addTimer(c0 + start) { w.strike(x: -3) }
@@ -68,7 +69,11 @@ struct Table3DStill {
         let seats: [[String: Any]] = (0..<players).map { i in
             ["id": "p\(i)", "seat": i, "name": names[i], "face": faces[i], "cards": counts[i], "connected": true, "held": false]
         }
-        let pileCards: [[String: Any]] = [("leaf", 6), ("ember", 6), ("ember", 2), (suit, 2), (suit, 7)].enumerated().map { k, c in
+        // mid-change, the card that changed the suit is already on top (as in a game): the chip and header show it
+        let shown = change ?? suit
+        let under: [(String, Int)] = change == nil ? [("leaf", 6), ("ember", 6), ("ember", 2), (suit, 2), (suit, 7)]
+            : [("leaf", 6), ("ember", 6), (suit, 2), (suit, 7), (shown, 7)]
+        let pileCards: [[String: Any]] = under.enumerated().map { k, c in
             ["kind": "number", "suit": c.0, "n": c.1, "k": k + 4]
         }
         var handCards: [[String: Any]] = [
@@ -82,11 +87,11 @@ struct Table3DStill {
         let legal: [String] = mine ? handCards.compactMap { c in
             let id = c["id"] as? String ?? ""
             if c["kind"] as? String == "wild" { return id }
-            return (c["suit"] as? String == suit || c["n"] as? Int == 7) ? id : nil
+            return (c["suit"] as? String == shown || c["n"] as? Int == 7) ? id : nil
         } : []
         let table: [String: Any] = [
-            "n": 1, "turnEndsAt": (Date().timeIntervalSince1970 + 29) * 1000, "suit": suit,
-            "top": ["kind": "number", "suit": suit, "n": 7], "pile": pileCards, "stack": 0, "jumpIn": false, "seq": 8,
+            "n": 1, "turnEndsAt": (Date().timeIntervalSince1970 + 29) * 1000, "suit": shown,
+            "top": ["kind": "number", "suit": shown, "n": 7], "pile": pileCards, "stack": 0, "jumpIn": false, "seq": 8,
             "taking": false, "direction": 1, "drawLeft": 60, "turn": mine ? "p0" : "p\(min(2, players - 1))",
             "over": false, "seats": seats,
         ]
