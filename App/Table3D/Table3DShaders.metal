@@ -457,9 +457,9 @@ fragment float4 t3d_flow_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffe
         float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
         float comet = mix(back, fwd, vd * .5 + .5) * 1.6;               // the bright head leads, its tail trails
         float glow = exp(-dn * dn / .35) * (.75 + .2 * sin(u.a.x * 3.4));
-        b = .30 * comet + inArc * u.g.y * (1.0 * comet + .30) + glow * u.g.y;
+        b = .10 * comet + inArc * u.g.y * (.85 * comet + .20) + glow * u.g.y;   // faint all round, bright on the arc
     }
-    float a = clamp(b * across * u.f.w, 0., .95);
+    float a = clamp(b * across * u.f.w, 0., .9);
     if (a < .004) discard_fragment();
     float3 col = mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.));
     return float4(lin(col), a);   // SceneKit's alpha blend multiplies by a itself (not premultiplied)

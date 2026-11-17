@@ -593,7 +593,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         var pos: [Float] = [], tex: [Float] = [], idx: [UInt32] = []
         for i in 0...N {
             let sP = Double(i) / Double(N) * P
-            for (k, v) in [(0.96, 0.0), (1.10, 1.0)] {
+            for (k, v) in [(0.975, 0.0), (1.09, 1.0)] {
                 let r = Table3D.rimPoint(sP, k)
                 pos += [Float(r.x), y, Float(r.z)]; tex += [Float(sP), Float(v)]
             }
