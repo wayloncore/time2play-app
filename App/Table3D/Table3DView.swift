@@ -671,8 +671,11 @@ struct HandFan3D: View {
     static var padScale: Double { UIDevice.current.userInterfaceIdiom == .pad ? 1.35 : 1 }
 
     static func cardWidth(width: Double, height: Double) -> CGFloat {
-        let s = padScale
-        return CGFloat(min(116 * s, max(72, min((min(width, 560 * s) - 40) / 3.35, height * 0.135).rounded())))
+        let s: Double = padScale
+        let byWidth: Double = (min(width, 560 * s) - 40) / 3.35
+        let fit: Double = min(byWidth, height * 0.135).rounded()
+        let w: Double = min(116 * s, max(72, fit))
+        return CGFloat(w)
     }
 
     var body: some View {
