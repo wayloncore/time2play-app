@@ -208,7 +208,9 @@ static float4 turnFlow(float2 p, constant T3DU& u) {
         b = .14 * comet + inArc * u.g.y * (1.1 * comet + .45) + glow * u.g.y;   // faint all round, bright on the arc
     }
     float a = clamp(b * across * u.f.w, 0., .92);
-    return float4(mix(u.f.rgb, float3(1.), .45 * clamp(b - .4, 0., 1.)), a);
+    // a light, not a stripe of paint: a pale core of the element's color, whiter where it's brightest, so it reads
+    // on glass of the same color (ember on lava, blue on the sea)
+    return float4(mix(u.f.rgb, float3(1.), .45 + .35 * clamp(b - .4, 0., 1.)), a);
 }
 
 // ---------- the glass: a frosted slab the element shows through, its rim lit on your turn ----------
@@ -235,7 +237,7 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     col += float3(.5, .42, .9) * e.flash * .28;
     float4 fl = turnFlow(vW.xz, u);
-    col = mix(col, fl.rgb, fl.a);
+    col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35;   // and its glow on the glass round it
     return float4(lin(col), 1.);
 }
 
