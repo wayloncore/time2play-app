@@ -93,22 +93,25 @@ public enum DiceArena {
 
     /// The camera for an arena drawn `width` × `height` points: it looks down at the tray from your side, steeper on
     /// a tall screen, and is as close as it can be with the tray, the shelf and the cup's mouth all in view.
-    public static func camera(width: Double, height: Double) -> Table3DCamera {
+    /// `top` keeps the tray below a band at the top of the view (words drawn over the scene); the cup may use it.
+    public static func camera(width: Double, height: Double, tray: DiceTray = .classic, top: Double = 0) -> Table3DCamera {
         let w = max(60, width), h = max(60, height)
-        let pitch = min(66, max(44, 44 + (h / w - 0.7) * 34)) * Double.pi / 180
-        let target = T3Vec(0, 0.2, 0.45)
+        let pitch = (tray.shelf ? min(66, max(44, 44 + (h / w - 0.7) * 34)) : min(74, max(56, 56 + (h / w - 0.4) * 30))) * Double.pi / 180
+        let target = tray.target
         let fov = 32.0
-        let ox = trayX + rimW, zb = zBack - rimW
-        let pts = [T3Vec(-ox, rimH, zb), T3Vec(ox, rimH, zb), T3Vec(-ox, rimH, shelfZ1), T3Vec(ox, rimH, shelfZ1),
-                   T3Vec(-ox, -0.15, shelfZ1), T3Vec(ox, -0.15, shelfZ1), T3Vec(0, cupMouth.y - 0.4, cupMouth.z)]
-        let mx = 6.0, my = 4.0
+        let ox = tray.x + tray.rimW, zb = tray.zBack - tray.rimW, z1 = tray.outerZ1
+        let pts = [T3Vec(-ox, tray.rimH, zb), T3Vec(ox, tray.rimH, zb), T3Vec(-ox, tray.rimH, z1), T3Vec(ox, tray.rimH, z1),
+                   T3Vec(-ox, -0.15, z1), T3Vec(ox, -0.15, z1)]
+        let cupPoint = tray.shelf ? [T3Vec(0, cupMouth.y - 0.4, cupMouth.z)] : []
+        let mx = tray.shelf ? 6.0 : 4.0, my = 4.0
         func fits(_ d: Double) -> Table3DCamera? {
             let eye = target + T3Vec(0, sin(pitch), cos(pitch)) * d
             let cam = Table3DCamera.lookAt(eye: eye, target: target, fovY: fov, width: w, height: h)
-            for p in pts {
+            for p in pts + cupPoint {
                 if cam.depth(p) < 0.5 { return nil }
                 let s = cam.project(p)
-                if s.x < mx || s.x > w - mx || s.y < my || s.y > h - my { return nil }
+                let y0 = cupPoint.contains(p) ? my : max(my, top + my)
+                if s.x < mx || s.x > w - mx || s.y < y0 || s.y > h - my { return nil }
             }
             return cam
         }
@@ -116,6 +119,32 @@ public enum DiceArena {
         for _ in 0..<40 { let mid = (lo + hi) / 2; if fits(mid) != nil { hi = mid } else { lo = mid } }
         return fits(hi) ?? Table3DCamera.lookAt(eye: target + T3Vec(0, sin(pitch), cos(pitch)) * hi, target: target, fovY: fov, width: w, height: h)
     }
+
+    /// Where the camera looks for a camera made by `camera(...)` (its eye minus the target is how far back it sits).
+    public static func target(_ tray: DiceTray) -> T3Vec { tray.target }
+}
+
+/// A tray's shape (#521, #523): Hot Dice's deep tray with the keep shelf in front and the cup behind, or Roll Call's
+/// shallow one, where five dice roll and then settle into a fixed row of slots.
+public struct DiceTray: Equatable, Sendable {
+    /// The rolling floor's inner walls (left/right at ±x), the rim, and whether there's a keep shelf in front.
+    public var x, zBack, zFront, rimW, rimH: Double
+    public var shelf: Bool
+    public init(x: Double, zBack: Double, zFront: Double, rimW: Double, rimH: Double, shelf: Bool) {
+        self.x = x; self.zBack = zBack; self.zFront = zFront; self.rimW = rimW; self.rimH = rimH; self.shelf = shelf
+    }
+    public static let classic = DiceTray(x: DiceArena.trayX, zBack: DiceArena.zBack, zFront: DiceArena.zFront,
+                                         rimW: DiceArena.rimW, rimH: DiceArena.rimH, shelf: true)
+    public static let row = DiceTray(x: 3.4, zBack: -1.7, zFront: 1.7, rimW: 0.4, rimH: 0.75, shelf: false)
+    /// The front edge of the whole tray (the shelf's, or the front rim's).
+    public var outerZ1: Double { shelf ? DiceArena.shelfZ1 : zFront + rimW }
+    public var target: T3Vec { shelf ? T3Vec(0, 0.2, 0.45) : T3Vec(0, 0, 0.15) }
+    /// Roll Call's fixed slots: die `i` of `n`, left to right across the middle of the tray.
+    public func slot(_ i: Int, of n: Int) -> T3Vec {
+        T3Vec((Double(i) - Double(n - 1) / 2) * 1.34, DiceArena.half, 0.1)
+    }
+    /// Where a kept or held die sits.
+    public func keep(_ i: Int, of n: Int) -> T3Vec { shelf ? DiceArena.keepSpot(i, of: n) : slot(i, of: n) }
 }
 
 /// A rotation (a unit quaternion).
@@ -213,13 +242,13 @@ public enum DiceSim {
         var target = 0.0, kn = 0.0, ln = 0.0, lt = T3Vec(0, 0, 0)
     }
 
-    static let planes = [
-        Plane(n: T3Vec(0, 1, 0), d: 0, e: 0.32, mu: 0.5),
-        Plane(n: T3Vec(1, 0, 0), d: -DiceArena.trayX, e: 0.45, mu: 0.25),
-        Plane(n: T3Vec(-1, 0, 0), d: -DiceArena.trayX, e: 0.45, mu: 0.25),
-        Plane(n: T3Vec(0, 0, 1), d: DiceArena.zBack, e: 0.45, mu: 0.25),
-        Plane(n: T3Vec(0, 0, -1), d: -DiceArena.zFront, e: 0.45, mu: 0.25),
-    ]
+    static func planes(_ t: DiceTray) -> [Plane] {
+        [Plane(n: T3Vec(0, 1, 0), d: 0, e: 0.32, mu: 0.5),
+         Plane(n: T3Vec(1, 0, 0), d: -t.x, e: 0.45, mu: 0.25),
+         Plane(n: T3Vec(-1, 0, 0), d: -t.x, e: 0.45, mu: 0.25),
+         Plane(n: T3Vec(0, 0, 1), d: t.zBack, e: 0.45, mu: 0.25),
+         Plane(n: T3Vec(0, 0, -1), d: -t.zFront, e: 0.45, mu: 0.25)]
+    }
     static let corners: [T3Vec] = {
         let r = DiceArena.corner
         var c: [T3Vec] = []
@@ -237,38 +266,54 @@ public enum DiceSim {
         }
     }
 
-    /// A throw of `count` dice (1 to 6).
-    public static func run(count: Int, seed: UInt32, maxT: Double = 2.4) -> DiceThrow {
+    /// A throw of `count` dice (1 to 6) into `tray`. `still` are dice already lying flat in the tray (Roll Call's held
+    /// dice in their slots): the throw bounces off them and never comes to rest on them.
+    public static func run(count: Int, seed: UInt32, maxT: Double = 2.4, tray: DiceTray = .classic, still: [T3Vec] = []) -> DiceThrow {
         let n = max(1, min(6, count))
         var r = Rand(seed)
         var dice: [Body] = []
+        let spread = min(2.4, tray.x * 0.62)
         for i in 0..<n {
             let lane = n == 1 ? 0 : Double(i) / Double(n - 1) - 0.5
-            let p = T3Vec(lane * 2.4 + (r.next() - 0.5) * 0.3, 2.3 + r.next() * 0.6, -2.2 + (r.next() - 0.5) * 0.4)
+            let p: T3Vec, v: T3Vec
+            if tray.shelf {
+                p = T3Vec(lane * spread + (r.next() - 0.5) * 0.3, 2.3 + r.next() * 0.6, -2.2 + (r.next() - 0.5) * 0.4)
+                v = T3Vec(lane * 2.6 + (r.next() - 0.5) * 1.6, -1 - r.next() * 1.5, 3.8 + r.next() * 1.8)
+            } else {
+                // a toss from just behind the back rim, across the shallow tray
+                p = T3Vec(lane * spread + (r.next() - 0.5) * 0.3, 1.9 + r.next() * 0.5, tray.zBack + 0.75 + (r.next() - 0.5) * 0.2)
+                v = T3Vec(lane * 1.8 + (r.next() - 0.5) * 1.4, -0.6 - r.next() * 1.0, 1.8 + r.next() * 1.4)
+            }
             let q = DQuat(r.next() - 0.5, r.next() - 0.5, r.next() - 0.5, r.next() - 0.5).normalized
-            let v = T3Vec(lane * 2.6 + (r.next() - 0.5) * 1.6, -1 - r.next() * 1.5, 3.8 + r.next() * 1.8)
             let w = T3Vec((r.next() - 0.5) * 30, (r.next() - 0.5) * 16, (r.next() - 0.5) * 30)
             dice.append(Body(p: p, q: q, v: v, w: w, launch: Double(i) * 0.05))
         }
-        var frames: [[DicePose]] = [dice.map { DicePose(p: $0.p, q: $0.q, out: false) }]
+        for s in still {   // fixed, as if asleep from the start
+            var b = Body(p: T3Vec(s.x, DiceArena.half, s.z), q: .identity, v: T3Vec(0, 0, 0), w: T3Vec(0, 0, 0), launch: 0)
+            b.out = true; b.asleep = true
+            dice.append(b)
+        }
+        let walls = planes(tray)
+        var frames: [[DicePose]] = [dice.prefix(n).map { DicePose(p: $0.p, q: $0.q, out: false) }]
         var t = 0.0, step = 0
         while true {
             for i in dice.indices where !dice[i].out && t >= dice[i].launch { dice[i].out = true }
             for i in dice.indices where dice[i].free { dice[i].v.y += g * dt }
-            var cs = contacts(dice)
+            var cs = contacts(dice, walls)
             solve(&dice, &cs, t: t)
-            for i in dice.indices { integrate(&dice, i, t: t, maxT: maxT) }
+            for i in dice.indices { integrate(&dice, i, t: t, maxT: maxT, tray: tray) }
             t += dt; step += 1
-            if step % keepEvery == 0 { frames.append(dice.map { DicePose(p: $0.p, q: $0.q, out: $0.out) }) }
+            if step % keepEvery == 0 { frames.append(dice.prefix(n).map { DicePose(p: $0.p, q: $0.q, out: $0.out) }) }
             if dice.allSatisfy(\.asleep) { break }
             if t > maxT + 3 { break }   // never: everything settles by maxT + 0.6 at the latest
         }
         // the last frame is exactly at rest
-        frames.append(dice.map { DicePose(p: $0.settle?.p1 ?? $0.p, q: $0.settle?.q1 ?? $0.q, out: true) })
-        return DiceThrow(frames: frames, firstHit: dice.map { $0.hit ?? $0.settledAt ?? t }, settledAt: dice.map { $0.settledAt ?? t })
+        let thrown = Array(dice.prefix(n))
+        frames.append(thrown.map { DicePose(p: $0.settle?.p1 ?? $0.p, q: $0.settle?.q1 ?? $0.q, out: true) })
+        return DiceThrow(frames: frames, firstHit: thrown.map { $0.hit ?? $0.settledAt ?? t }, settledAt: thrown.map { $0.settledAt ?? t })
     }
 
-    static func contacts(_ dice: [Body]) -> [Contact] {
+    static func contacts(_ dice: [Body], _ planes: [Plane]) -> [Contact] {
         var cs: [Contact] = []
         let h = DiceArena.half
         for (i, d) in dice.enumerated() where d.free {
@@ -359,7 +404,7 @@ public enum DiceSim {
         }
     }
 
-    static func integrate(_ dice: inout [Body], _ i: Int, t: Double, maxT: Double) {
+    static func integrate(_ dice: inout [Body], _ i: Int, t: Double, maxT: Double, tray: DiceTray) {
         guard dice[i].out, !dice[i].asleep else { return }
         if let s = dice[i].settle {
             let k = min(1, (t - s.t0) / s.dur), e = k * k * (3 - 2 * k)
@@ -381,7 +426,7 @@ public enum DiceSim {
         let calm = d.v.length < 0.45 && d.w.length < 1.3
         d.calm = calm ? d.calm + dt : 0
         dice[i] = d
-        if d.calm > (grounded ? 0.06 : 0.2) || (t > maxT && d.hit != nil) || t > maxT + 0.6 { beginSettle(&dice, i, t: t) }
+        if d.calm > (grounded ? 0.06 : 0.2) || (t > maxT && d.hit != nil) || t > maxT + 0.6 { beginSettle(&dice, i, t: t, tray: tray) }
     }
 
     /// Two flat dice's footprints overlap (or come within a hair): how far, and which way to push the first clear.
@@ -406,7 +451,7 @@ public enum DiceSim {
         return (best, ax)
     }
 
-    static func beginSettle(_ dice: inout [Body], _ i: Int, t: Double) {
+    static func beginSettle(_ dice: inout [Body], _ i: Int, t: Double, tray: DiceTray) {
         let q1 = DiceArena.flatten(dice[i].q), h = DiceArena.half, m = 0.72
         var p1 = T3Vec(dice[i].p.x, h, dice[i].p.z)
         let others: [(T3Vec, DQuat)] = dice.indices.compactMap { j in
@@ -415,7 +460,7 @@ public enum DiceSim {
             return dice[j].asleep ? (dice[j].p, dice[j].q) : nil
         }
         func inside(_ p: T3Vec) -> T3Vec {
-            T3Vec(min(DiceArena.trayX - m, max(-DiceArena.trayX + m, p.x)), h, min(DiceArena.zFront - m, max(DiceArena.zBack + m, p.z)))
+            T3Vec(min(tray.x - m, max(-tray.x + m, p.x)), h, min(tray.zFront - m, max(tray.zBack + m, p.z)))
         }
         // never settle into another die: slide clear of the ones already down, staying inside the walls
         for _ in 0..<6 {
@@ -434,7 +479,7 @@ public enum DiceSim {
                 for k in 0..<24 {
                     let a = Double(k) / 24 * 2 * .pi
                     let p = T3Vec(c0.x + cos(a) * rad, h, c0.z + sin(a) * rad)
-                    if p.x < -DiceArena.trayX + m || p.x > DiceArena.trayX - m || p.z < DiceArena.zBack + m || p.z > DiceArena.zFront - m { continue }
+                    if p.x < -tray.x + m || p.x > tray.x - m || p.z < tray.zBack + m || p.z > tray.zFront - m { continue }
                     if clear(p) { p1 = p; break search }
                 }
             }
@@ -471,6 +516,8 @@ public struct ArenaState: Equatable, Sendable {
     public var farkle: Bool
     /// Your roll: a tap as the dice land.
     public var mine: Bool
+    /// #523: Roll Call's row: every die has its own slot; a thrown die settles back into it, a held one stays in it.
+    public var row = false
     public init(dice: [ArenaDie], slots: Int, roll: String? = nil, shaking: Bool = false, scoring: Set<Int> = [], farkle: Bool = false, mine: Bool = false) {
         self.dice = dice; self.slots = slots; self.roll = roll; self.shaking = shaking; self.scoring = scoring; self.farkle = farkle; self.mine = mine
     }
@@ -504,12 +551,18 @@ public struct ArenaState: Equatable, Sendable {
 
     /// Roll Call: five dice, held ones in the keep row in their own places.
     public static func rollCall(_ v: RollCall.View) -> ArenaState {
-        guard let t = v.turn, v.diceShown else { return ArenaState(dice: (0..<5).map { ArenaDie(id: $0, face: nil, place: .cup) }, slots: 5) }
+        guard let t = v.turn, v.diceShown else {
+            var s = ArenaState(dice: (0..<5).map { ArenaDie(id: $0, face: nil, place: .cup) }, slots: 5)
+            s.row = true
+            return s
+        }
         let dice: [ArenaDie] = (0..<5).map { i in
             let face = i < t.dice.count ? t.dice[i] : nil
             let held = i < t.held.count && t.held[i]
             return ArenaDie(id: i, face: face, place: held ? .keep(slot: i, locked: false) : .tray)
         }
-        return ArenaState(dice: dice, slots: 5, roll: v.rollKey, mine: v.common.yourTurn)
+        var s = ArenaState(dice: dice, slots: 5, roll: v.rollKey, mine: v.common.yourTurn)
+        s.row = true
+        return s
     }
 }

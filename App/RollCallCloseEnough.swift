@@ -12,7 +12,7 @@ struct RollCallView: View {
     var onLeave: () -> Void
     /// #521: the 3D dice arena (You → "3D dice (preview)"); off draws the flat dice as before.
     var arena = false
-    @StateObject private var arenaStage = DiceArenaStage()
+    @StateObject private var arenaStage = DiceArenaStage(tray: .row)
     @Environment(\.horizontalSizeClass) private var hsize
     /// The roll in the air (its RollCall.View.rollKey), and the last roll seen, so a view arriving mid-turn doesn't tumble.
     @State private var tumbling: String?
@@ -32,25 +32,24 @@ struct RollCallView: View {
             if view.common.phase == "done" {
                 GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason, detail: bonusLine)
             } else {
-                ScoreStrip(players: view.players, turn: view.turn?.id, owner: view.common.owner, me: me)
-                    .padding(.vertical, 8)
-                ScrollView {
-                    VStack(spacing: 16) {
-                        VStack(spacing: 2) {
-                            Text(turnLine).font(.headline).foregroundStyle(T2P.text).multilineTextAlignment(.center).accessibilityIdentifier("rollcall-turn")
-                            if let n = upNext { Text("Up next: \(n)").font(.footnote).foregroundStyle(T2P.muted) }
-                        }
-                        MomentFeed(lines: feed, id: "rollcall-last")
-                        dice
-                        if mine { rollButton }
-                        if let o = view.options, mine, !rolling, !o.instruction.isEmpty, o.instruction != "Choose one open box" {
-                            Text(o.instruction).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.gold)
-                        }
-                        scorecard
-                    }
-                    .padding(.horizontal, 20).padding(.bottom, 12)
-                    .frame(maxWidth: 640).frame(maxWidth: .infinity)
+                // #523: laid out like the website's Roll Call: the scorecard fills the screen, the dice wait at the bottom
+                // in five places that never move, the Roll button under them
+                ScoreStrip(players: view.players, turn: view.turn?.id, owner: view.common.owner, me: me, compact: true)
+                    .padding(.vertical, 4)
+                VStack(spacing: 1) {
+                    Text(turnLine).font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text).multilineTextAlignment(.center)
+                        .lineLimit(2).minimumScaleFactor(0.85).accessibilityIdentifier("rollcall-turn")
+                    if let n = upNext { Text("Up next: \(n)").font(.caption).foregroundStyle(T2P.muted) }
                 }
+                .padding(.horizontal, 16)
+                MomentFeed(lines: Array(feed.prefix(1)), id: "rollcall-last").padding(.top, 2)
+                scorecard
+                    .padding(.horizontal, 10).padding(.top, 6)
+                    .frame(maxWidth: 760).frame(maxWidth: .infinity)
+                    .frame(maxHeight: .infinity)
+                tray
+                    .padding(.horizontal, 10).padding(.top, 8)
+                    .frame(maxWidth: 760).frame(maxWidth: .infinity)
                 ReactionBar(room: room)
             }
         }
@@ -150,34 +149,55 @@ struct RollCallView: View {
 
     private var canHold: Bool { mine && (view.turn?.rolls ?? 0) > 0 && (view.turn?.rolls ?? 0) < RollCall.maxRolls && !rolling }
 
+    /// The bottom of the screen (#523): the five dice in their places (3D or flat) and the Roll button.
+    @ViewBuilder private var tray: some View {
+        if arena {
+            VStack(spacing: 8) {
+                dice
+                if mine { rollButton }
+            }
+        } else {
+            VStack(spacing: 10) {
+                dice.padding(.top, 14)
+                if mine { rollButton.padding(.horizontal, 12) }
+            }
+            .padding(.bottom, mine ? 12 : 14)
+            .frame(maxWidth: .infinity)
+            .background(RCPaper.feltGradient, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(RCPaper.wood, lineWidth: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+        }
+    }
+
     @ViewBuilder private var dice: some View {
         if arena, let t = view.turn {
             DiceArenaView(stage: arenaStage, state: ArenaState.rollCall(view), button: { d in
                 let i = d.id, held = i < t.held.count && t.held[i]
                 return ArenaDieButton(id: "rc-die-\(i)",
                                       label: !view.diceShown ? "Die, not rolled yet" : rolling && !held ? "Die, rolling" : "Die showing \(i < t.dice.count ? t.dice[i] : 0)",
-                                      value: held ? "held" : "", enabled: canHold)
+                                      value: held ? "held" : "", enabled: canHold, tag: held && view.diceShown ? "HOLD" : nil)
             }, onTap: { i in
                 if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() }
             })
-            .frame(height: hsize == .regular ? 440 : 300)
-            .frame(maxWidth: 760)
+            .frame(height: hsize == .regular ? 250 : 170)
         } else if let t = view.turn {
-            HStack(spacing: 10) {
+            let size: CGFloat = hsize == .regular ? 84 : 54
+            HStack(spacing: hsize == .regular ? 24 : 12) {
                 ForEach(0..<5, id: \.self) { i in
                     let held = i < t.held.count && t.held[i]
                     let canHold = mine && t.rolls > 0 && t.rolls < RollCall.maxRolls
                     let air = tumbling != nil && !held
                     Button { if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() } } label: {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 3) {
+                            Text(held ? "HOLD" : " ").font(.caption2.weight(.heavy)).tracking(1).foregroundStyle(T2P.gold)
                             if air {
-                                TumblingDie(size: 56, seed: i)
+                                TumblingDie(size: size, seed: i)
                             } else if held || !view.diceShown {
-                                DieView(value: view.diceShown && i < t.dice.count ? t.dice[i] : nil, size: 56, held: held)
+                                DieView(value: view.diceShown && i < t.dice.count ? t.dice[i] : nil, size: size, held: held, blank: !view.diceShown)
+                                    .opacity(view.diceShown ? 1 : 0.55)
                             } else {
-                                DieView(value: i < t.dice.count ? t.dice[i] : nil, size: 56).modifier(Landing())
+                                DieView(value: i < t.dice.count ? t.dice[i] : nil, size: size).modifier(Landing())
                             }
-                            Text(held ? "HELD" : " ").font(.caption2.weight(.bold)).foregroundStyle(T2P.gold)
                         }
                     }
                     .buttonStyle(DieButtonStyle()).disabled(!canHold || tumbling != nil)
@@ -201,40 +221,121 @@ struct RollCallView: View {
         .accessibilityIdentifier("rc-roll")
     }
 
+    /// Your scorecard (#523), the website's notepad: Upper and Lower side by side, the boxes this roll can go in as
+    /// "+points" chips, the upper bonus's progress, and the score at the foot.
     private var scorecard: some View {
         let mePlayer = view.me
         let allowed = Set(mine && !rolling ? view.options?.allowed ?? [] : [])
+        let upper = Array(RollCall.boxes.prefix(6)), lower = Array(RollCall.boxes.dropFirst(6))
+        let upperSum = upper.compactMap { mePlayer?.scores[$0.key] }.reduce(0, +)
+        let bonus = mePlayer.map { view.bonus($0) } ?? 0
+        let tip: String? = {
+            guard let o = view.options, mine, !rolling, !o.instruction.isEmpty, o.instruction != "Choose one open box" else { return nil }
+            return o.instruction
+        }()
         return VStack(spacing: 0) {
-            ForEach(Array(RollCall.boxes.enumerated()), id: \.offset) { i, b in
-                let filled = mePlayer?.scores[b.key]
-                HStack {
-                    Text(b.name).foregroundStyle(T2P.text)
-                    Spacer()
-                    if let f = filled {
-                        Text("\(f)").font(.body.monospacedDigit().weight(.semibold)).foregroundStyle(T2P.text)
-                    } else if allowed.contains(b.key) {
-                        Button("+\(view.options?.scores[b.key] ?? 0)") { room.move("score", ["key": .string(b.key)]); Haptics.play() }
-                            .font(.body.monospacedDigit().weight(.bold)).foregroundStyle(T2P.ink)
-                            .padding(.horizontal, 12).padding(.vertical, 4).background(T2P.gold, in: Capsule())
-                            .accessibilityLabel("Score \(view.options?.scores[b.key] ?? 0) in \(b.name)")
-                            .accessibilityIdentifier("box-\(b.key)")
-                    } else {
-                        Text("–").foregroundStyle(T2P.faint)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .accessibilityElement(children: filled == nil && allowed.contains(b.key) ? .contain : .combine)
-                if i == 5 { Divider().overlay(T2P.line) }
-            }
-            HStack {
-                Text("Total").font(.headline).foregroundStyle(T2P.text)
+            Rectangle().fill(RCPaper.band).frame(height: 10)
+            HStack(alignment: .firstTextBaseline) {
+                Text(mePlayer.map { RoomPlayer.stripBot($0.name) } ?? "You").font(.system(.title3, design: .serif).weight(.bold))
+                    .foregroundStyle(RCPaper.ink).lineLimit(1)
                 Spacer()
-                Text("\(mePlayer?.score ?? 0)").font(.headline.monospacedDigit()).foregroundStyle(T2P.text)
+                Text(tip ?? "Your scorecard").font(.caption.weight(.semibold)).foregroundStyle(tip == nil ? RCPaper.pencil : RCPaper.accent)
+                    .lineLimit(1).minimumScaleFactor(0.8)
             }
-            .padding(16)
+            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
+            Rectangle().fill(RCPaper.ink).frame(height: 2).padding(.horizontal, 10)
+            GeometryReader { g in
+                let rowH = max(34, (g.size.height - 26) / 7)
+                ScrollView(showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(spacing: 0) {
+                            RCPaper.colHead("UPPER")
+                            ForEach(upper, id: \.key) { b in box(b.key, b.name, mePlayer?.scores[b.key], allowed, rowH) }
+                            HStack {
+                                Text("Bonus (\(min(upperSum, RollCall.upperBonusAt))/\(RollCall.upperBonusAt))").font(.caption.weight(.semibold))
+                                    .foregroundStyle(RCPaper.pencil)
+                                Spacer()
+                                Text(bonus > 0 ? "\(bonus)" : "–").font(.callout.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(bonus > 0 ? RCPaper.pen : RCPaper.pencil)
+                            }
+                            .padding(.horizontal, 8).frame(height: rowH)
+                            .accessibilityElement(children: .combine)
+                        }
+                        VStack(spacing: 0) {
+                            RCPaper.colHead("LOWER")
+                            ForEach(lower, id: \.key) { b in box(b.key, b.name, mePlayer?.scores[b.key], allowed, rowH) }
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                }
+            }
+            Rectangle().fill(RCPaper.ink).frame(height: 1).padding(.horizontal, 10)
+            Rectangle().fill(RCPaper.ink).frame(height: 1).padding(.horizontal, 10).padding(.top, 2)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("SCORE").font(.caption.weight(.heavy)).tracking(2).foregroundStyle(RCPaper.pencil)
+                Text("\(mePlayer?.score ?? 0)").font(.system(.title, design: .serif).weight(.bold).monospacedDigit()).foregroundStyle(RCPaper.ink)
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
         }
-        .background(T2P.panel, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(T2P.line))
+        .background(RCPaper.paper, in: RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        .environment(\.colorScheme, .light)
+    }
+
+    /// One box on the scorecard: filled (in pen), a "+points" chip you can tap, or a dash.
+    @ViewBuilder private func box(_ key: String, _ name: String, _ filled: Int?, _ allowed: Set<String>, _ h: CGFloat) -> some View {
+        let open = filled == nil && allowed.contains(key)
+        let pts = view.options?.scores[key] ?? 0
+        Group {
+            if open {
+                Button { room.move("score", ["key": .string(key)]); Haptics.play() } label: {
+                    HStack {
+                        Text(name).font(.callout.weight(.semibold)).foregroundStyle(RCPaper.ink).lineLimit(1).minimumScaleFactor(0.75)
+                        Spacer(minLength: 4)
+                        Text("+\(pts)").font(.callout.monospacedDigit().weight(.bold)).foregroundStyle(RCPaper.ink)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(pts > 0 ? RCPaper.chip : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(RCPaper.ink.opacity(0.75), lineWidth: 1.5))
+                    }
+                    .padding(.horizontal, 8).frame(height: h).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Score \(pts) in \(name)")
+                .accessibilityIdentifier("box-\(key)")
+            } else {
+                HStack {
+                    Text(name).font(.callout.weight(.semibold)).foregroundStyle(filled == nil ? RCPaper.ink.opacity(0.8) : RCPaper.ink)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                    Spacer(minLength: 4)
+                    Text(filled.map { "\($0)" } ?? "–").font(.system(.title3, design: .serif).weight(.bold).monospacedDigit())
+                        .foregroundStyle(filled == nil ? RCPaper.pencil.opacity(0.7) : RCPaper.pen)
+                }
+                .padding(.horizontal, 8).frame(height: h)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(RCPaper.rule).frame(height: 1) }
+    }
+}
+
+/// The website's Roll Call notepad and tray colors (src/live/rollcall's game page: paper, pen, pencil, felt, wood).
+enum RCPaper {
+    static let paper = Color(hex: 0xF6F0DF)
+    static let ink = Color(hex: 0x14243A)
+    static let pen = Color(hex: 0x1D3A8A)
+    static let pencil = Color(hex: 0x5F676D)
+    static let rule = Color(hex: 0xB8C7D3)
+    static let band = Color(hex: 0xA83A32)
+    static let accent = Color(hex: 0x8A5A08)
+    static let chip = Color(hex: 0xF2C14E).opacity(0.35)
+    static let wood = Color(hex: 0x5A3A22)
+    static let feltGradient = LinearGradient(colors: [Color(hex: 0x2B7357), Color(hex: 0x15412E)], startPoint: .top, endPoint: .bottom)
+    static func colHead(_ t: String) -> some View {
+        Text(t).font(.caption2.weight(.heavy)).tracking(1.5).foregroundStyle(pencil)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).frame(height: 24)
+            .accessibilityHidden(true)
     }
 }
 

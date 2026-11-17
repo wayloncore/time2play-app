@@ -122,12 +122,14 @@ struct ScoreStrip: View {
     let turn: String?
     let owner: String?
     let me: String
+    /// #523: a short strip (face beside name and score) where the board needs the room.
+    var compact = false
     var detail: (ScorePlayer) -> String? = { _ in nil }
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: compact ? 8 : 10) {
                 ForEach(players.filter { !$0.left }) { p in
-                    VStack(spacing: 4) {
+                    if compact { small(p) } else { VStack(spacing: 4) {
                         FaceView(face: p.face, size: face, dimmed: !p.connected && p.bot == nil)
                             .overlay(Circle().stroke(turn == p.id ? T2P.gold : .clear, lineWidth: 3).padding(-3))
                         HStack(spacing: 3) {
@@ -141,11 +143,34 @@ struct ScoreStrip: View {
                     .frame(minWidth: 84)
                     .background(Color.primary.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 14))
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(p.id == me ? "You" : RoomPlayer.stripBot(p.name))\(p.bot != nil ? ", bot" : ""), \(p.score) points\(turn == p.id ? ", their turn" : "")\(detail(p).map { ", \($0)" } ?? "")")
+                    .accessibilityLabel(said(p)) }
                 }
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    private func said(_ p: ScorePlayer) -> String {
+        "\(p.id == me ? "You" : RoomPlayer.stripBot(p.name))\(p.bot != nil ? ", bot" : ""), \(p.score) points\(turn == p.id ? ", their turn" : "")\(detail(p).map { ", \($0)" } ?? "")"
+    }
+
+    private func small(_ p: ScorePlayer) -> some View {
+        HStack(spacing: 7) {
+            FaceView(face: p.face, size: 30, dimmed: !p.connected && p.bot == nil)
+                .overlay(Circle().stroke(turn == p.id ? T2P.gold : .clear, lineWidth: 2.5).padding(-2.5))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 3) {
+                    Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.caption2.weight(.semibold)).foregroundStyle(T2P.text).lineLimit(1)
+                    if p.id == owner { Image(systemName: "crown.fill").font(.system(size: 8)).foregroundStyle(T2P.gold) }
+                }
+                Text(p.score.formatted()).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(T2P.text)
+                if let d = detail(p) { Text(d).font(.system(size: 10)).foregroundStyle(T2P.muted).lineLimit(1) }
+            }
+        }
+        .padding(.leading, 6).padding(.trailing, 10).padding(.vertical, 5)
+        .background(Color.primary.opacity(turn == p.id ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(said(p))
     }
 }
 
@@ -328,15 +353,16 @@ struct HotDiceView: View {
             if view.common.phase == "done" {
                 GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason)
             } else {
-                ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me) { p in
+                ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me, compact: arena) { p in
                     !view.board || p.on ? (p.strikes > 0 ? "\(p.strikes) Farkle\(p.strikes == 1 ? "" : "s")" : nil) : "not on the board"
                 }
                 .padding(.vertical, 8)
                 Text(targetLine).font(.footnote).foregroundStyle(view.finalBy != nil ? T2P.goldText : T2P.muted)
                     .multilineTextAlignment(.center).padding(.horizontal, 16).accessibilityIdentifier("hd-target")
-                MomentFeed(lines: feed, id: "hd-feed").padding(.top, 6)
+                // #523: with the 3D board, the newest line only, so the board gets the room
+                MomentFeed(lines: arena ? Array(feed.prefix(1)) : feed, id: "hd-feed").padding(.top, arena ? 2 : 6)
                 if arena {
-                    arenaPanel.padding(.vertical, 4)
+                    arenaPanel.padding(.top, 2)
                 } else {
                     Spacer(minLength: 6)
                     turnPanel
@@ -623,8 +649,14 @@ struct HotDiceView: View {
     @ViewBuilder private var arenaPanel: some View {
         if let t = shown {
             let farkled = t.state == "farkle" && settled
-            VStack(spacing: 6) {
-                // the turn's points and what to do, or (in the same place, so the tray never moves) a Farkle and why
+            VStack(spacing: 2) {
+            // #523: the board takes the screen; the turn's points and what to do (or, in the same place, a Farkle and
+            // why) sit over the top of it, where the cup comes in
+            ZStack(alignment: .top) {
+                DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
+                    if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Haptics.select() }
+                }, top: 96, zoomable: true)
+                .frame(maxHeight: .infinity)
                 Group {
                     if farkled {
                         arenaFarkle(t)
@@ -643,13 +675,24 @@ struct HotDiceView: View {
                         .accessibilityIdentifier("dice-status")
                     }
                 }
-                .frame(minHeight: 104)
-                DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
-                    if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Haptics.select() }
-                })
-                .frame(maxWidth: 760)
-                .frame(minHeight: 250, maxHeight: .infinity)
-                keepLine(t).frame(minHeight: 24)
+                .frame(minHeight: 92, alignment: .top)
+                .padding(.top, 2)
+                .allowsHitTesting(farkled)   // pinches and drags over the words reach the board (a Farkle takes a tap)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if arenaStage.moved {
+                    Button { arenaStage.resetView(); Haptics.select() } label: {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: 15, weight: .bold)).foregroundStyle(T2P.text)
+                            .frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(10)
+                    .accessibilityLabel("Reset the view")
+                    .accessibilityIdentifier("dice-reset-view")
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: arenaStage.moved)
+            keepLine(t).frame(minHeight: 22)
             }
         } else {
             Text("Waiting for the first roll").foregroundStyle(T2P.muted).frame(maxHeight: .infinity)
