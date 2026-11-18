@@ -61,12 +61,16 @@ struct SignInPanel: View {
     @EnvironmentObject var app: AppModel
     /// On a painted screen (Friends, the invite screen): paper-and-gold words and a painted Sign in.
     var painted = false
+    /// "Save your progress" over it (the invite screen has its own line).
+    var heading = true
     @State private var asking = false
     @State private var over13: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Save your progress").font(painted ? Painted.display(19) : .headline).foregroundStyle(painted ? Painted.paper : T2P.text)
+            if heading {
+                Text("Save your progress").font(painted ? Painted.display(19) : .headline).foregroundStyle(painted ? Painted.paper : T2P.text)
+            }
             Text("Sign in to add friends, make groups and get invites. You can keep playing as a guest without it.")
                 .font(.subheadline).foregroundStyle(painted ? Painted.paperDim : T2P.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -287,6 +291,11 @@ struct FriendsView: View {
                 .frame(maxWidth: 700).frame(maxWidth: .infinity)
             }
             .background(PaintedBackdrop().ignoresSafeArea())
+            // a painted band under the status bar, so the list doesn't scroll under the clock
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(LinearGradient(colors: [Painted.faceTop, Painted.faceTop.opacity(0.85)], startPoint: .top, endPoint: .bottom).ignoresSafeArea(edges: .top))
+            }
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await app.refreshSocial() }
@@ -378,8 +387,7 @@ struct FriendsView: View {
             ForEach(app.groups) { g in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Text(g.name).font(Painted.display(19)).foregroundStyle(Painted.paper).lineLimit(1)
-                        if g.mine { PaintedTag(text: "Yours") }
+                        Text(g.name).font(Painted.display(19)).foregroundStyle(Painted.paper).lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 4)
                         Button("Invite") { invitingGroup = g }
                             .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
@@ -393,7 +401,10 @@ struct FriendsView: View {
                         }
                     }
                     .accessibilityHidden(true)
-                    Text(g.line(me: app.account?.account.id)).font(.caption).foregroundStyle(Painted.paperDim)
+                    HStack(spacing: 6) {
+                        if g.mine { PaintedTag(text: "Yours") }
+                        Text(g.line(me: app.account?.account.id)).font(.caption).foregroundStyle(Painted.paperDim)
+                    }
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
@@ -498,7 +509,7 @@ struct ChallengeRow: View {
     let c: Challenge
     var painted = false
     var body: some View {
-        let when = Date(timeIntervalSince1970: c.created / 1000).formatted(.relative(presentation: .named))
+        let when = Date(timeIntervalSince1970: c.created / 1000).formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
         Button { Task { await app.joinChallenge(c) } } label: {
             GameRowLabel(game: c.game, title: c.game?.title ?? "A game", line: "\(c.from.name) invited you",
                          small: "Room \(c.room) · \(when)", action: "Join", face: c.from.face, painted: painted)

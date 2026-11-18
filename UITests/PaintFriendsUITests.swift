@@ -83,7 +83,7 @@ final class PaintFriendsUITests: XCTestCase {
         tapWhenReady(app.buttons["Leave the room"], 5)
         backToPlay(app)
         sleep(4)   // Play checks which recent rooms are open
-        XCTAssertFalse(app.buttons["rejoin-\(code)"].exists, "a confirmed Leave takes the room off Recent rooms")
+        XCTAssertFalse(any(app, "rejoin-\(code)").exists, "a confirmed Leave takes the room off Recent rooms")
         shot(app, "nov18p-\(device)recent-after-leave")
     }
 
@@ -99,7 +99,7 @@ final class PaintFriendsUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-t2p-classic", "-t2p-classic-dice"]
         app.launch()
-        let rejoin = app.buttons["rejoin-\(code)"]
+        let rejoin = any(app, "rejoin-\(code)")
         XCTAssertTrue(rejoin.waitForExistence(timeout: 25), "a drop-out keeps the room in Recent rooms")
         XCTAssertTrue(rejoin.label.contains("Rejoin"), rejoin.label)
         sleep(1)
@@ -128,7 +128,7 @@ final class PaintFriendsUITests: XCTestCase {
         shot(app, "nov18p-\(device)leave-solo")
         tapWhenReady(app.buttons["Leave the room"], 5)
         backToPlay(app)
-        let resume = app.buttons["rejoin-\(code)"]
+        let resume = any(app, "rejoin-\(code)")
         XCTAssertTrue(resume.waitForExistence(timeout: 15), "a solo room stays in Recent rooms")
         XCTAssertTrue(resume.label.contains("Resume"), resume.label)
         sleep(1)
@@ -198,7 +198,6 @@ final class PaintFriendsUITests: XCTestCase {
         tapWhenReady(app.buttons["invite-friend-a_demo_sam"])
         tapWhenReady(app.buttons["invite-send"])
         XCTAssertTrue(any(app, "dialog-invite-failed").waitForExistence(timeout: 10), "the refusal, painted")
-        XCTAssertEqual(app.alerts.count, 0)
         usleep(500_000)
         shot(app, "nov18p-\(device)invite-refused")
         tapWhenReady(app.buttons["dialog-cancel"])

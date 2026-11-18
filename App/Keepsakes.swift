@@ -17,6 +17,11 @@ final class Keepsakes: ObservableObject {
     @Published var focus: String?
 
     init() {
+        // a UI test starts clean (AppModel's reset runs after this object is made, so it clears its own keys here)
+        if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
+            UserDefaults.standard.removeObject(forKey: Keepsakes.recentKey)
+            UserDefaults.standard.removeObject(forKey: Keepsakes.favoritesKey)
+        }
         recents = UserDefaults.standard.data(forKey: Keepsakes.recentKey).flatMap { try? JSONDecoder().decode([RecentRoom].self, from: $0) } ?? []
         favorites = UserDefaults.standard.stringArray(forKey: Keepsakes.favoritesKey) ?? []
     }
@@ -112,7 +117,9 @@ struct RecentRoomsPanel: View {
     @ObservedObject var keep: Keepsakes
 
     var body: some View {
-        Group {
+        // a VStack, not a Group: with nothing to show, a Group has no view to run .task on, so the check never ran
+        // after a fresh launch and a room you'd dropped out of never came back here (Nov 18)
+        VStack(alignment: .leading, spacing: 0) {
             if !keep.open.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Recent rooms").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
@@ -129,6 +136,8 @@ struct RecentRoomsPanel: View {
             }
         }
         .task { await keep.refreshOpen(app.api) }
+        // back from a room: check again (one that ended or that you left goes; one you dropped out of stays)
+        .onChange(of: app.room == nil) { _, closed in if closed { Task { await keep.refreshOpen(app.api) } } }
     }
 
     private func row(_ r: RecentRoom) -> some View {
@@ -153,7 +162,7 @@ struct RecentRoomRow: View {
             Task { await app.openRoom(code: r.code) }
         } label: {
             GameRowLabel(game: g, title: g?.title ?? "A game", tag: solo ? "Solo" : "Live", line: r.whoLine,
-                         small: "Room \(r.code) · \(r.at.formatted(.relative(presentation: .named)))", action: verb)
+                         small: "Room \(r.code) · \(r.at.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))", action: verb)
                 .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .buttonStyle(.plain)

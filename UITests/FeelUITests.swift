@@ -65,7 +65,7 @@ final class FeelUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-t2p-classic", "-t2p-classic-dice", "-t2p-name", "Sim"]
         app.launch()
-        let rejoin = app.buttons["rejoin-\(code)"]
+        let rejoin = app.descendants(matching: .any)["rejoin-\(code)"].firstMatch
         if !rejoin.waitForExistence(timeout: 15) {
             // the room closed with nobody in it: the list only shows open rooms, so nothing shows
             shot(app, "feel-recent-closed")

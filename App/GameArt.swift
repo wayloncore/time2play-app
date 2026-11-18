@@ -230,7 +230,7 @@ struct GameRowLabel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let s = small {
-                    Text(s).font(.caption).foregroundStyle(painted ? Painted.paperDim.opacity(0.8) : T2P.faint).lineLimit(1)
+                    Text(s).font(.caption).foregroundStyle(painted ? Painted.paperDim.opacity(0.8) : T2P.faint).lineLimit(1).minimumScaleFactor(0.85)
                 }
             }
             Spacer(minLength: 8)

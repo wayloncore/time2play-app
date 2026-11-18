@@ -233,7 +233,7 @@ struct InviteSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Invites need you to sign in.").font(Painted.display(20)).foregroundStyle(Painted.paper)
                 .accessibilityIdentifier("invite-needs-sign-in")
-            SignInPanel(painted: true)
+            SignInPanel(painted: true, heading: false)
             PaintedDivider().frame(maxWidth: .infinity)
             Text("Or send this room’s link: anyone with it can join, no account needed.").font(.subheadline).foregroundStyle(Painted.paperDim)
             roomLink
