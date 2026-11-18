@@ -7,6 +7,15 @@ import T2PCore
 final class StatsKeeper: ObservableObject {
     static let shared = StatsKeeper()
     static let key = "t2p.ledger"
+    /// The achievements already said on screen (build 48): each is announced once, ever. A new key; the version before
+    /// never reads it.
+    static let announcedKey = "t2p.announced"
+    /// The finished games already recorded, by room and game (build 48): a room reopened on its winner screen, or
+    /// rejoined, never counts the same game twice. A new key, kept short.
+    static let recordedKey = "t2p.recordedGames"
+    static let achievementPrefix = "Achievement: "
+    /// UI tests only (-t2p-earn-test): see init.
+    static var earnTest: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-earn-test") }
     @Published private(set) var ledger: [LedgerEntry]
     @Published private(set) var server: PlayerStats?
     /// Called with each achievement as it's earned (Game Center reports it, #541).
@@ -17,9 +26,30 @@ final class StatsKeeper: ObservableObject {
     private struct Track { var recorded = false; var bullseye = false }
     private var tracks: [UUID: Track] = [:]
 
+    private var announced: Set<String>
+    private var recordedGames: [String]
+
     init() {
-        if ProcessInfo.processInfo.arguments.contains("-uitest-reset") { UserDefaults.standard.removeObject(forKey: StatsKeeper.key) }
-        ledger = Ledger.decode(UserDefaults.standard.data(forKey: StatsKeeper.key))
+        let d = UserDefaults.standard
+        if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
+            for k in [StatsKeeper.key, StatsKeeper.announcedKey, StatsKeeper.recordedKey] { d.removeObject(forKey: k) }
+        }
+        let saved = Ledger.decode(d.data(forKey: StatsKeeper.key))
+        ledger = saved
+        recordedGames = d.stringArray(forKey: StatsKeeper.recordedKey) ?? []
+        if let a = d.stringArray(forKey: StatsKeeper.announcedKey) {
+            announced = Set(a)
+        } else {
+            // first run with this key: whatever was earned before has had its moment, so it's never said again
+            let before = Set(Achievement.all.filter { $0.earned(Ledger.stats(saved), saved) }.map(\.id))
+            announced = before
+            d.set(Array(before).sorted(), forKey: StatsKeeper.announcedKey)
+        }
+        // a UI test earns an achievement in one finished game: nine played already (one won), so the next earns Regular
+        // (10 games) and nothing else, won or lost; its practice game counts
+        if StatsKeeper.earnTest, ledger.isEmpty {
+            ledger = [LedgerEntry(game: .rollCall, won: true, score: 100)] + (0..<8).map { _ in LedgerEntry(game: .rollCall, won: false, score: 100) }
+        }
     }
 
     var local: PlayerStats { Ledger.stats(ledger) }
@@ -33,7 +63,7 @@ final class StatsKeeper: ObservableObject {
 
     /// Watches a room's views for a finished game, and records it once.
     func observe(_ room: RoomModel) {
-        guard !room.offline, let v = room.view, let me = room.meId else { return }
+        guard !room.offline || StatsKeeper.earnTest, let v = room.view, let me = room.meId else { return }
         var t = tracks[room.id] ?? Track()
         defer { tracks[room.id] = t }
         guard v["you"]["seated"].bool ?? true else { return }
@@ -71,22 +101,40 @@ final class StatsKeeper: ObservableObject {
         t.recorded = true
         return true
     }
+
+    /// One finished game's name: the room, the winners and every seat's score. The same game seen again (the room
+    /// reopened on its winner screen, a rejoin) has the same name; a game played again in the room has new scores.
+    private func gameKey(_ room: RoomModel, _ v: JSON) -> String {
+        let seats = v["players"].array.map { "\($0["id"].string ?? "")=\($0["score"].int ?? $0["total"].int ?? 0)" }.joined(separator: ",")
+        let won = v["winners"].array.compactMap(\.string).joined(separator: ",")
+        return "\(room.game.rawValue):\(room.code):\(v["table"]["winner"].string ?? won):\(seats)"
+    }
     private func myScore(_ v: JSON, _ me: String) -> Int? {
         let p = v["players"].array.first { $0["id"].string == me }
         return p?["score"].int ?? p?["total"].int
     }
 
     private func record(_ e: LedgerEntry, room: RoomModel) {
+        if let v = room.view {
+            let key = gameKey(room, v)
+            if recordedGames.contains(key) { return }
+            recordedGames = Array((recordedGames + [key]).suffix(50))
+            UserDefaults.standard.set(recordedGames, forKey: StatsKeeper.recordedKey)
+        }
         let before = Set(earned.map(\.id))
         ledger = Ledger.adding(e, to: ledger)
         UserDefaults.standard.set(Ledger.encode(ledger), forKey: StatsKeeper.key)
         onFinished?(e)
         let new = earned.filter { !before.contains($0.id) }
         for a in new { onEarned?(a) }
-        if let a = new.first {
-            room.toast = "Achievement: \(a.title)"
-            UIAccessibility.post(notification: .announcement, argument: "Achievement earned: \(a.title)")
-        }
+        // said on screen once, ever: never one announced before (a server's stats can make one look new again)
+        let fresh = new.filter { !announced.contains($0.id) }
+        guard !fresh.isEmpty else { return }
+        announced.formUnion(fresh.map(\.id))
+        UserDefaults.standard.set(Array(announced).sorted(), forKey: StatsKeeper.announcedKey)
+        let words = fresh.count == 1 ? fresh[0].title : "\(fresh[0].title) and \(fresh.count - 1) more"
+        room.toast = StatsKeeper.achievementPrefix + words   // goes on its own after about 3 seconds
+        UIAccessibility.post(notification: .announcement, argument: "Achievement earned: \(words)")
     }
 
     /// A test can fill the ledger (-t2p-ledger-demo) to show the stats and achievements screens.

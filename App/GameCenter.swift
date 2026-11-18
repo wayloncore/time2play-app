@@ -59,7 +59,9 @@ final class GameCenter: ObservableObject {
         let a = list.map { x -> GKAchievement in
             let g = GKAchievement(identifier: x.id)
             g.percentComplete = 100
-            g.showsCompletionBanner = true
+            // never Game Center's own banner: the app says each achievement once, itself (build 48), and a sign-in
+            // re-sends every earned one, which must not announce them all again
+            g.showsCompletionBanner = false
             return g
         }
         GKAchievement.report(a) { _ in }

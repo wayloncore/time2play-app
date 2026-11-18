@@ -6,8 +6,11 @@ import T2PCore
 /// The dice arena in SceneKit (#521): a felt-lined tray with a wooden rim and a keep shelf in front, a leather cup,
 /// and the dice. A throw plays a simulated tumble (DiceSim) turned so each die lands on the room's face; everything
 /// else is a short tween. Few nodes, no SceneKit physics: the tumble is worked out before it plays.
-/// Everything in the scene changes on SceneKit's render thread: other threads `post` changes.
-final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
+/// Build 48: the scene moves a frame at a time on a thread of its own, from the stage's display link (`tick`, see
+/// Ticker), never from SceneKit's render callback. SceneKit sometimes stopped calling back after the first frame, so a
+/// roll never landed, its dice couldn't be kept and Bank never came on. Other threads `post` changes, run at the start
+/// of the next frame.
+final class DiceArenaWorld: NSObject {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     var reduced = false
@@ -38,6 +41,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     /// Build 45: the camera has eased in on your roll (true) or is on the whole tray (false).
     var onEased: ((Bool) -> Void)?
     private var easedSaid = false
+    /// UI tests (-t2p-arena-debug): the scene's own state in one line, about twice a second.
+    var onDebug: ((String) -> Void)?
+    private var debugAt = 0.0, frames = 0
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
@@ -111,7 +117,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     func post(_ f: @escaping () -> Void) { lock.lock(); pending.append(f); lock.unlock() }
 
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+    /// One frame (the Ticker's thread): what was posted, then the dice, the cup and the camera.
+    func tick(_ time: TimeInterval) {
         lock.lock(); let work = pending; pending = []; lock.unlock()
         work.forEach { $0() }
         // a still keeps real time even when a slow simulator draws few frames, so it lands on time
@@ -128,6 +135,15 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         clock += dt
         if dt > 0 || first { step() }
         if dt > 0 || first || rigDirty { aimCamera(dt) }
+        frames += 1
+        if let cb = onDebug, clock - debugAt >= 0.5 { debugAt = clock; let line = debugLine(); DispatchQueue.main.async { cb(line) } }
+    }
+
+    private func debugLine() -> String {
+        func at(_ w: Where) -> String { switch w { case .cup: return "c"; case .felt: return "f"; case .air: return "a"; case let .keep(k): return "k\(k)" } }
+        let ds = (0..<6).compactMap { id in dice[id].map { "\(id)\(at($0.at))\($0.tween == nil ? "" : "~")" } }.joined(separator: " ")
+        let p = play.map { "\($0.key)\($0.done ? "done" : "live")\($0.awaitingTweens ? "+tw" : "")" } ?? "-"
+        return String(format: "render clk=%.1f frames=%d wall=%.1f ", clock, frames, Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) + "want=\(want?.roll ?? "-")\(want?.shaking == true ? "/shake" : "") thrown=\(thrown ?? "-") landed=\(landedKey ?? "-") play=\(p) cup=\(cupRun.phase)\(cupRun.tween == nil ? "" : "~") tip=\(cupRun.tipAt > 0 ? "y" : "n") dice=\(ds)"
     }
 
     private func moment(_ m: Moment) {
@@ -516,6 +532,32 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     /// A die in its own slot of Roll Call's row, its face up and square to the row.
     private func slotPose(_ id: Int, face: Int?) -> Pose {
         Pose(p: Self.f(tray.slot(id, of: want?.slots ?? 5)), q: Self.q(DiceArena.neat(face ?? 1)))
+    }
+
+    /// The room revealed roll `key` a while ago and the scene still hasn't landed it (build 48: Tyler couldn't keep dice,
+    /// so couldn't bank): its dice go straight to where they rest and it lands now. Returns the scene's state from just
+    /// before (for the UI tests), or "" when there was nothing to do (the scene moved on, or the roll has landed).
+    func settleNow(_ key: String) -> String {
+        guard let s = want, s.roll == key, landedKey != key else { return "" }
+        let before = debugLine()
+        let ids = s.dice.filter { $0.place == .tray }.map(\.id)
+        if !ids.isEmpty {
+            let th = DiceSim.run(count: ids.count, seed: seed(key))
+            let fixes = th.fixes(for: ids.map { s.die($0)?.face ?? 1 }).map(Self.q)
+            for (k, id) in ids.enumerated() {
+                let rest = row ? slotPose(id, face: s.die(id)?.face) : Pose(p: Self.f(th.rest[k].p), q: Self.q(th.rest[k].q) * fixes[k])
+                dice[id]?.rest = rest; dice[id]?.pose = rest; dice[id]?.at = .felt; dice[id]?.tween = nil
+                dieNodes[id]?.opacity = 1
+                apply(rest, to: dieNodes[id])
+            }
+        }
+        play = nil
+        thrown = key
+        cupRun.tipAt = 0
+        if tray.shelf && !reduced && cupRun.phase != .away { moveCup(to: .away, dur: 0.3, now: clock) }
+        landed(key, ids: ids, now: clock)
+        rigDirty = true
+        return before
     }
 
     /// Everything where it belongs with no animation: the screen opened mid-game.

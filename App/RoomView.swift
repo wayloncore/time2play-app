@@ -93,7 +93,16 @@ struct RoomView: View {
                     .accessibilityIdentifier("reconnecting")
             }
             if let b = room.back { Banner(text: b, icon: "arrow.uturn.backward.circle.fill").accessibilityIdentifier("back") }
-            if let t = room.toast { Banner(text: t, icon: "exclamationmark.circle.fill") }
+            // goes by itself after about 3 seconds; a tap or a swipe up clears it sooner (build 48)
+            if let t = room.toast {
+                Banner(text: t, icon: t.hasPrefix(StatsKeeper.achievementPrefix) ? "rosette" : "exclamationmark.circle.fill")
+                    .contentShape(Capsule())
+                    .onTapGesture { room.dismissToast() }
+                    .gesture(DragGesture(minimumDistance: 10).onEnded { v in if v.translation.height < -10 { room.dismissToast() } })
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("toast")
+                    .accessibilityAction(named: "Dismiss") { room.dismissToast() }
+            }
         }
         .padding(.top, 4)
         .animation(.easeInOut, value: room.toast)

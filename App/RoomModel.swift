@@ -19,7 +19,11 @@ final class RoomModel: ObservableObject, Identifiable {
     @Published private(set) var status: RoomSession.Status = .connecting
     @Published private(set) var view: JSON?
     @Published var taken: [Int]
-    @Published var toast: String?
+    /// A short line at the top of the room (a problem, a saved preset, an achievement). Every one goes away on its own
+    /// after about 3 seconds (Tyler, build 48: an achievement's never did), and a tap or a swipe up clears it sooner.
+    @Published var toast: String? { didSet { if toast != nil && toast != oldValue { toastEnds() } } }
+    private var toastTimer: DispatchWorkItem?
+    static let toastSeconds = 3.0
     @Published var reactions: [ShownReaction] = []
     @Published var back: String?
     /// #538: a preset to set this room up with, once its owner is in the lobby
@@ -64,6 +68,30 @@ final class RoomModel: ObservableObject, Identifiable {
     }
 
     func join(name: String, face: Int?) { session.join(name: name, face: face) }
+
+    private func toastEnds() {
+        toastTimer?.cancel()
+        let shown = toast
+        let w = DispatchWorkItem { [weak self] in if let self, self.toast == shown { self.toast = nil } }
+        toastTimer = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + RoomModel.toastSeconds, execute: w)
+    }
+    /// A tap or a swipe up on the line at the top.
+    func dismissToast() { toastTimer?.cancel(); toast = nil }
+
+    /// UI tests' debug line: what the room last refused, and an offline room's clock.
+    private(set) var lastProblem: (String, Date)?
+    var debugLine: String {
+        let ago = { (d: Date) in String(format: "%.1fs ago", Date().timeIntervalSince(d)) }
+        var parts = ["refused=\(lastProblem.map { "\($0.0) \(ago($0.1))" } ?? "-")"]
+        if let o = transport as? OfflineTransport {
+            let now = Date().timeIntervalSince1970 * 1000
+            parts.append(String(format: "clock runs=%d last=%.1fs ago next=%@ sends=%d last=%@", o.clockRuns, (now - o.lastRun) / 1000,
+                                o.nextAt > 0 ? String(format: "in %.1fs", (o.nextAt - now) / 1000) : "none", o.sends, o.lastSent))
+        }
+        parts.append(HangWatch.shared.line)
+        return parts.joined(separator: " ")
+    }
     func send(_ m: JSON) { session.send(m) }
     func move(_ t: String, _ fields: [String: JSON] = [:]) { session.move(t, fields) }
     /// The website's own Farkle scoring, for marking the dice that can score (#488).
@@ -103,8 +131,8 @@ final class RoomModel: ObservableObject, Identifiable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.reactions.removeAll { $0.id == shown.id } }
             UIAccessibility.post(notification: .announcement, argument: "\(who): \(r.words)")
         case let .problem(msg):
-            toast = msg; Haptics.nope()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in if self?.toast == msg { self?.toast = nil } }
+            lastProblem = (msg, Date())
+            toast = msg; Haptics.nope()   // it goes on its own (toastEnds)
         case let .back(msg):
             back = msg
             UIAccessibility.post(notification: .announcement, argument: msg)
@@ -125,4 +153,33 @@ final class RoomModel: ObservableObject, Identifiable {
     var isOwner: Bool { view?["hostless"].bool == true && view?["owner"].string == meId && meId != nil }
     var phase: String { view?["phase"].string ?? "lobby" }
     var inviteLink: URL { app?.endpoints.invite(code: code) ?? Endpoints.live.invite(code: code) }
+}
+
+/// UI tests only (-t2p-arena-debug): the longest the main thread went without answering, checked five times a second.
+final class HangWatch: @unchecked Sendable {
+    static let shared = HangWatch()
+    private let lock = NSLock()
+    private var worst = 0.0, worstAt = Date.distantPast, over = 0, started = false
+    func start() {
+        lock.lock(); defer { lock.unlock() }
+        guard !started else { return }
+        started = true
+        Thread.detachNewThread { [self] in
+            while true {
+                let sent = Date(), sem = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { sem.signal() }
+                sem.wait()
+                let lag = Date().timeIntervalSince(sent)
+                lock.lock()
+                if lag > 0.5 { over += 1 }
+                if lag > worst { worst = lag; worstAt = Date() }
+                lock.unlock()
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+        }
+    }
+    var line: String {
+        lock.lock(); defer { lock.unlock() }
+        return started ? String(format: "mainHang max=%.1fs (%.0fs ago) over0.5s=%d", worst, Date().timeIntervalSince(worstAt), over) : ""
+    }
 }

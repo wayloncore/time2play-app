@@ -84,7 +84,7 @@ final class Dice3DUITests: XCTestCase {
             var result = "", said = "", farkleSaid = ""
             while Date() < end && result.isEmpty {
                 said = status.exists ? status.label : "(no status)"
-                if banner.exists { result = "farkle"; farkleSaid = banner.label }
+                if banner.exists, let b = try? banner.snapshot() { result = "farkle"; farkleSaid = b.label }   // one look: it can go
                 else if said.contains("Tap the dice") { result = "choose" }
                 else if said.contains("Hot dice") { result = "hot" }
                 else { usleep(150_000) }
@@ -145,7 +145,12 @@ final class Dice3DUITests: XCTestCase {
             shot(app, "523-\(device)hd-pinched")
             XCTAssertTrue(app.buttons["dice-reset-view"].waitForExistence(timeout: 3), "a moved view offers its reset")
             let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
-            if let pick = dice.first(where: { ($0.value as? String) == "scores" && $0.isHittable }) {
+            // a die the zoom took off the screen isn't asked whether it's hittable (XCUITest fails the question itself)
+            let screen = app.frame
+            if let pick = dice.first(where: { d in
+                guard let s = try? d.snapshot(), s.value as? String == "scores", screen.contains(CGPoint(x: s.frame.midX, y: s.frame.midY)) else { return false }
+                return d.isHittable
+            }) {
                 let id = pick.identifier
                 pick.tap()
                 XCTAssertTrue(waitValue(app.buttons[id], "kept", 4), "a die picks where it is on the zoomed board")

@@ -53,6 +53,10 @@ public final class OfflineTransport: RoomTransport {
     public var schedule: (TimeInterval, @escaping () -> Void) -> Void = { d, f in DispatchQueue.main.asyncAfter(deadline: .now() + d, execute: f) }
     /// The room's clock, in ms. Tests move it by hand.
     public var now: () -> Double = { Date().timeIntervalSince1970 * 1000 }
+    /// For the UI tests' debug line: how many times the clock ran, when it last did, and the deadline it waits for.
+    public private(set) var clockRuns = 0, lastRun = 0.0, nextAt = -1.0
+    /// ...and how many messages the phone sent it, and the last one's type.
+    public private(set) var sends = 0, lastSent = ""
 
     public init(rules: OfflineRules, game: Game, seed: UInt32 = .random(in: 1...UInt32.max)) {
         self.rules = rules; self.game = game; self.seed = seed
@@ -66,6 +70,7 @@ public final class OfflineTransport: RoomTransport {
 
     public func send(_ text: String) {
         guard let r = room else { return }
+        sends += 1; lastSent = JSON.parse(text)?["t"].string ?? "?"
         deliver(rules.send(r, text, now: now()))
         arm()
     }
@@ -78,6 +83,7 @@ public final class OfflineTransport: RoomTransport {
     /// Runs the clock up to now (tests call this after moving `now`).
     public func runClock() {
         guard let r = room else { return }
+        clockRuns += 1; lastRun = now()
         deliver(rules.tick(r, now: now()))
         arm()
     }
@@ -85,6 +91,7 @@ public final class OfflineTransport: RoomTransport {
     private func arm() {
         guard let r = room else { return }
         let next = rules.next(r)
+        nextAt = next
         guard next > 0 else { return }
         let gen = generation
         schedule(max(0.05, (next - now()) / 1000)) { [weak self] in
