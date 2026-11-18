@@ -655,7 +655,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             let e = DiceArena.easeIn(camera: cam, tray: tray, dice: ps, slots: s.slots, top: baseTop)
             if e.k < 1 {
                 easeTo(1, dur: DiceArena.easeInSeconds, now: now)
-                easeLook = Self.f(e.look); easeK = Float(e.k); easedKey = key
+                easeLook = Self.f(e.look); easeK = Float(e.k); easedKey = key; easeDice = (ps, s.slots)
             }
         }
         let cb = onLanded
@@ -760,6 +760,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     private var ease = (from: 0.0, to: 0.0, t0: 0.0, dur: 0.5)
     private var easeLook = SIMD3<Float>(0, 0, 0), easeK: Float = 1
     private var easedKey: String?
+    /// The dice the ease-in was worked out for (and the keep row's size), to work it out again for a new view size.
+    private var easeDice: (dice: [T3Vec], slots: Int) = ([], 6)
     /// The band of words over the top of the view (the dice stay below it when the camera eases in).
     private var baseTop = 0.0
     private(set) var rigDirty = true
@@ -771,8 +773,11 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     func setBase(_ cam: Table3DCamera, top: Double = 0) {
         base = (Self.f(cam.eye), Self.f(tray.target), cam.fovY, cam.width, cam.height)
         baseTop = top
-        // a new size: the eased-in view was worked out for the old one, so go back to the whole tray
-        if ease.to > 0 { easeTo(0, dur: 0.01, now: clock); easedKey = nil }
+        // a new size (a line of words came or went): work the eased-in view out again for it, so it holds
+        if ease.to > 0 {
+            let e = DiceArena.easeIn(camera: cam, tray: tray, dice: easeDice.dice, slots: easeDice.slots, top: top)
+            if e.k < 1 { easeLook = Self.f(e.look); easeK = Float(e.k) } else { easeTo(0, dur: 0.01, now: clock); easedKey = nil }
+        }
         rigDirty = true
     }
 

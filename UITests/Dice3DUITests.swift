@@ -39,6 +39,7 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertEqual(app.buttons["die-0"].value as? String, "kept")
             XCTAssertEqual(app.buttons["die-1"].value as? String, "kept")
             XCTAssertTrue(app.staticTexts["keep-line"].label.contains("150"), "what you're keeping: \(app.staticTexts["keep-line"].label)")
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "picking dice leaves the camera eased in (build 45)")
         }
         still("game=hot moment=farkle", "hot-4-farkle") { app in
             XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "fitted", "a Farkle never eases in")
