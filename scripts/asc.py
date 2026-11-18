@@ -4,6 +4,7 @@
   asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and the App Store profile
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
   asc.py status              lists the app's builds (number, state) for the log
+  asc.py gamecenter          Game Center (#541): the capability, the leaderboards and the achievements
 
 Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
 
@@ -381,6 +382,131 @@ def store(meta_path, shots_dir):
     print("Not submitted. Submitting for review is Tyler's call.")
 
 
+# ---------- Game Center (#541): the capability, the leaderboards and the achievements; never submits ----------
+
+GC = {
+    "leaderboards": [
+        ("t2p.best.hotdice", "Hot Dice best score", "Hot Dice", "points", "point"),
+        ("t2p.best.rollcall", "Roll Call best score", "Roll Call", "points", "point"),
+        ("t2p.best.closeenough", "Close Enough best score", "Close Enough", "points", "point"),
+    ],
+    # (id, name, points, before, after): the app's own achievements (T2PCore Stats.swift Achievement.all)
+    "achievements": [
+        ("t2p.first_win", "First win", 10, "Win a game.", "You won a game."),
+        ("t2p.games_10", "Regular", 20, "Play 10 games.", "You played 10 games."),
+        ("t2p.games_50", "Part of the furniture", 50, "Play 50 games.", "You played 50 games."),
+        ("t2p.wins_5", "On a roll", 30, "Win 5 games.", "You won 5 games."),
+        ("t2p.all_four", "All-rounder", 30, "Play all four games.", "You played all four games."),
+        ("t2p.overdraft_win", "Empty-handed", 15, "Win a hand of Overdraft.", "You won a hand of Overdraft."),
+        ("t2p.hotdice_10k", "Ten thousand", 40, "Win a Hot Dice game played to 10,000.", "You won a Hot Dice game played to 10,000."),
+        ("t2p.rollcall_full", "Full card", 50, "Finish Roll Call with points in every box.", "You finished Roll Call with points in every box."),
+        ("t2p.rollcall_300", "Three hundred club", 40, "Score 300 or more in Roll Call.", "You scored 300 or more in Roll Call."),
+        ("t2p.closeenough_bullseye", "Bullseye", 25, "Score full points on a Close Enough question.", "You scored full points on a Close Enough question."),
+    ],
+}
+
+
+def badge_png(path, seed):
+    """A plain 512 x 512 badge (a gold ring on navy) for an achievement's image, made with the standard library."""
+    import struct, zlib, math
+    n = 512
+    rows = []
+    for y in range(n):
+        row = bytearray([0])
+        for x in range(n):
+            d = math.hypot(x - n / 2, y - n / 2)
+            if 150 < d < 190 or d < 40 + (seed % 5) * 12:
+                row += bytes((0xE9, 0xB4, 0x5A))
+            else:
+                row += bytes((0x0B, 0x11, 0x21))
+        rows.append(bytes(row))
+    raw = zlib.compress(b"".join(rows), 9)
+    def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 8, 2, 0, 0, 0)) + chunk(b"IDAT", raw) + chunk(b"IEND", b""))
+
+
+def upload_asset(kind, rel, parent_id, path):
+    data = open(path, "rb").read()
+    made = call("POST", f"/v1/{kind}", {"data": {"type": kind, "attributes": {"fileName": os.path.basename(path), "fileSize": len(data)},
+                "relationships": {rel: {"data": {"type": rel + "s", "id": parent_id}}}}})["data"]
+    for op in made["attributes"]["uploadOperations"]:
+        part = data[op["offset"]:op["offset"] + op["length"]]
+        req = urllib.request.Request(op["url"], data=part, method=op["method"],
+                                     headers={h["name"]: h["value"] for h in op.get("requestHeaders", [])})
+        urllib.request.urlopen(req, timeout=120).read()
+    call("PATCH", f"/v1/{kind}/{made['id']}", {"data": {"type": kind, "id": made["id"], "attributes": {"uploaded": True}}})
+
+
+def gamecenter():
+    app = the_app()
+    app_id = app["id"]
+    print(f"App: {app['attributes']['name']} ({app_id})")
+
+    # 1. the capability on the App ID (the next TestFlight run's profile then carries the entitlement)
+    ids = [b for b in call("GET", "/v1/bundleIds" + q({"filter[identifier]": BUNDLE_ID}))["data"] if b["attributes"]["identifier"] == BUNDLE_ID]
+    bundle = ids[0]["id"]
+    caps = [c["attributes"]["capabilityType"] for c in call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]]
+    if "GAME_CENTER" in caps:
+        print("Game Center capability: already on the App ID")
+    else:
+        try:
+            call("POST", "/v1/bundleIdCapabilities", {"data": {"type": "bundleIdCapabilities", "attributes": {"capabilityType": "GAME_CENTER"},
+                 "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle}}}}})
+            print("Game Center capability: turned on for the App ID")
+        except SystemExit:
+            print("::warning::Couldn't turn on Game Center for the App ID with this key (see Apple's answer above)")
+
+    # 2. Game Center for the app
+    detail = one(f"/v1/apps/{app_id}/gameCenterDetail")
+    if detail:
+        print(f"Game Center for the app: already on ({detail['id']})")
+    else:
+        detail = call("POST", "/v1/gameCenterDetails", {"data": {"type": "gameCenterDetails", "attributes": {},
+                      "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+        print(f"Game Center for the app: turned on ({detail['id']})")
+    did = detail["id"]
+
+    # 3. leaderboards (best score, higher is better), each with its English name
+    have = {l["attributes"]["vendorIdentifier"]: l for l in
+            call("GET", f"/v1/gameCenterDetails/{did}/gameCenterLeaderboards" + q({"limit": 200}))["data"]}
+    for vid, ref, name, suffix, single in GC["leaderboards"]:
+        if vid in have:
+            print(f"Leaderboard {vid}: there")
+            continue
+        lb = call("POST", "/v1/gameCenterLeaderboards", {"data": {"type": "gameCenterLeaderboards", "attributes": {
+            "referenceName": ref, "vendorIdentifier": vid, "defaultFormatter": "INTEGER", "submissionType": "BEST_SCORE",
+            "scoreSortType": "DESC", "scoreRangeStart": "0", "scoreRangeEnd": "1000000"},
+            "relationships": {"gameCenterDetail": {"data": {"type": "gameCenterDetails", "id": did}}}}})["data"]
+        call("POST", "/v1/gameCenterLeaderboardLocalizations", {"data": {"type": "gameCenterLeaderboardLocalizations", "attributes": {
+            "locale": "en-US", "name": name, "formatterSuffix": " " + suffix, "formatterSuffixSingular": " " + single},
+            "relationships": {"gameCenterLeaderboard": {"data": {"type": "gameCenterLeaderboards", "id": lb["id"]}}}}})
+        print(f"Leaderboard {vid}: made")
+
+    # 4. achievements, each with its English words and a badge
+    have = {a["attributes"]["vendorIdentifier"]: a for a in
+            call("GET", f"/v1/gameCenterDetails/{did}/gameCenterAchievements" + q({"limit": 200}))["data"]}
+    tmp = os.environ.get("RUNNER_TEMP", "/tmp")
+    for k, (vid, name, points, before, after) in enumerate(GC["achievements"]):
+        if vid in have:
+            print(f"Achievement {vid}: there")
+            continue
+        a = call("POST", "/v1/gameCenterAchievements", {"data": {"type": "gameCenterAchievements", "attributes": {
+            "referenceName": name, "vendorIdentifier": vid, "points": points, "showBeforeEarned": True, "repeatable": False},
+            "relationships": {"gameCenterDetail": {"data": {"type": "gameCenterDetails", "id": did}}}}})["data"]
+        loc = call("POST", "/v1/gameCenterAchievementLocalizations", {"data": {"type": "gameCenterAchievementLocalizations", "attributes": {
+            "locale": "en-US", "name": name, "beforeEarnedDescription": before, "afterEarnedDescription": after},
+            "relationships": {"gameCenterAchievement": {"data": {"type": "gameCenterAchievements", "id": a["id"]}}}}})["data"]
+        png = os.path.join(tmp, f"badge-{k}.png")
+        badge_png(png, k)
+        try:
+            upload_asset("gameCenterAchievementImages", "gameCenterAchievementLocalization", loc["id"], png)
+            print(f"Achievement {vid}: made, with its badge")
+        except SystemExit:
+            print(f"::warning::Achievement {vid}: made; its badge didn't upload (add one in App Store Connect before release)")
+    print("Not submitted. Game Center's leaderboards and achievements go live with an App Store version, which is Tyler's call.")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "signing":
@@ -389,6 +515,8 @@ if __name__ == "__main__":
         wait(sys.argv[2])
     elif cmd == "status":
         status()
+    elif cmd == "gamecenter":
+        gamecenter()
     elif cmd == "store":
         store(sys.argv[2], sys.argv[3])
     else:

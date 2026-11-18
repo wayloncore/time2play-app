@@ -164,6 +164,7 @@ struct YouView: View {
                 }
 
                 StatsSections()   // #540
+                GameCenterSection()   // #541
 
                 Section {
                     Toggle("Classic table", isOn: $classicTable)
