@@ -12,7 +12,8 @@ final class HotDiceBankUITests: XCTestCase {
     /// The 3D dice through a longer game (to 10,000, about seven minutes of it): every roll of yours lands and can be
     /// kept, however many there are.
     func testEveryRollLands3D() { playAGame(["-t2p-dice3d", "-t2p-seed", "11", "-t2p-arena-debug"], name: "3d-long", long: true) }
-    /// Also earns an achievement at the end (-t2p-earn-test: nine games played already, and this practice game counts):
+    /// Also earns an achievement at the end (-t2p-earn-test: nine games played already, one of them won, and this
+    /// practice game counts, so its end earns Regular and nothing else):
     /// its line at the top goes away on its own, stays clear of the game, and isn't said again.
     func testBankWithClassicDice() { playAGame(["-t2p-seed", "5", "-t2p-earn-test"], name: "classic", achievement: true) }
 
@@ -38,7 +39,7 @@ final class HotDiceBankUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(long ? 420 : 540)
         while Date() < deadline && !app.staticTexts["game-over"].exists {
             // wait for your turn (or the end)
-            guard roll.exists && roll.isEnabled && said(status).contains("Roll all six") else { peekToast(app); usleep(300_000); continue }
+            guard on(roll) && said(status).contains("Roll all six") else { peekToast(app); usleep(300_000); continue }
             let before = myScore(app)
             var keeps = 0, turnRolls = 0
             // the 3D scene has landed every roll so far by itself (the safety net settled none)
@@ -56,7 +57,7 @@ final class HotDiceBankUITests: XCTestCase {
                 while Date() < end && landed.isEmpty {
                     if banner.exists { landed = "farkle" }
                     else if said(status).contains("Tap the dice") { landed = "choose" }
-                    else if !retapped && Date().timeIntervalSince(tapped) > 3 && roll.exists && roll.isEnabled && said(status).contains("Roll all six") {
+                    else if !retapped && Date().timeIntervalSince(tapped) > 3 && on(roll) && said(status).contains("Roll all six") {
                         // the room never got the roll: say so, and tap again
                         dropped.append("Roll at turn start: \(debug(app))")
                         retapped = true
@@ -77,7 +78,7 @@ final class HotDiceBankUITests: XCTestCase {
                     else { XCTFail("\(name): a roll of yours never landed: \(stalls.joined(separator: " || "))"); return }
                 }
                 if landed == "farkle" {
-                    let words = banner.label
+                    let words = said(banner)
                     XCTAssertTrue(words.contains("Farkle"), "\(name): a Farkle says so: \(words)")
                     if !farkled { shot(app, "bank-\(device)\(name)-farkle"); farkled = true }
                     // a Farkle banks nothing: your score stays (or loses 1,000 on a third in a row)
@@ -89,23 +90,24 @@ final class HotDiceBankUITests: XCTestCase {
                 // keep every die that scores
                 keepAllScoring(app)
                 keeps += 1
-                let total = points(bank.label)
+                let total = points(said(bank))
                 let s = said(status)
+                let bankOn = on(bank)
                 // Bank is on exactly when the website's is: a scoring keep, and 500 in the turn until you're on the board
-                if !bank.isEnabled {
+                if !bankOn {
                     XCTAssertTrue(s.contains("You need 500 to get on the board"),
-                                  "\(name): Bank is off only while you need 500 to get on the board; status: \(s), bank: \(bank.label)")
+                                  "\(name): Bank is off only while you need 500 to get on the board; status: \(s), bank: \(said(bank)); \(debug(app))")
                     if !boardWait { shot(app, "bank-\(device)\(name)-needs-500"); boardWait = true }
                 } else {
                     XCTAssertTrue(s.contains("Bank it for"), "\(name): with Bank on, the status says what banking makes: \(s)")
                 }
-                if bank.isEnabled && keeps >= 2 && total >= 300 {
+                if bankOn && keeps >= 2 && total >= 300 {
                     XCTAssertTrue(bank.isHittable, "\(name): Bank can be tapped (nothing covers it): \(bank.frame)")
                     shot(app, "bank-\(device)\(name)-before-bank")
                     bank.tap()
                     let want = before + total
                     var ok = waitFor(8) { self.myScore(app) == want }
-                    if !ok && bank.exists && bank.isEnabled {
+                    if !ok && on(bank) {
                         dropped.append("Bank: \(debug(app))")
                         bank.tap()
                         ok = waitFor(8) { self.myScore(app) == want }
@@ -118,8 +120,8 @@ final class HotDiceBankUITests: XCTestCase {
                     break turn
                 }
                 // roll on (every die kept is hot dice: all six go again)
-                XCTAssertTrue(roll.isEnabled, "\(name): Roll is on after a scoring keep")
-                let allSix = roll.label.contains("6 dice") && keeps > 0
+                XCTAssertTrue(on(roll), "\(name): Roll is on after a scoring keep")
+                let allSix = said(roll).contains("6 dice") && keeps > 0
                 roll.tap(); turnRolls += 1
                 if allSix {
                     hot = true
@@ -188,22 +190,24 @@ final class HotDiceBankUITests: XCTestCase {
         tapWhenReady(app.buttons["start-game"])
     }
 
-    private func said(_ e: XCUIElement) -> String { e.exists ? e.label : "" }
+    /// One look at an element (it can change or go between two questions about it).
+    private func said(_ e: XCUIElement) -> String { (try? e.snapshot())?.label ?? "" }
+    private func on(_ e: XCUIElement) -> Bool { (try? e.snapshot())?.isEnabled ?? false }
 
     /// The test-only lines (-t2p-arena-debug): the room's turn and the screen's, and the 3D scene's own state.
     private func debug(_ app: XCUIApplication) -> String {
         ["hd-debug", "dice3d-debug"].map { id in
             let e = app.descendants(matching: .any)[id].firstMatch
-            return e.exists ? e.label : "(no \(id))"
+            return (try? e.snapshot())?.label ?? "(no \(id))"
         }.joined(separator: " | ")
     }
 
     /// Your banked score, from the score strip ("You, 1250 points, their turn").
     private func myScore(_ app: XCUIApplication) -> Int {
         let me = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'You, '")).firstMatch
-        guard me.exists else { return -1 }
+        guard let label = (try? me.snapshot())?.label else { return -1 }
         // "You, 1250 points" on the table; "You, 3,250" on the winner screen
-        let words = me.label.dropFirst(5)
+        let words = label.dropFirst(5)
         return Int(words.prefix { $0.isNumber || $0 == "," }.filter(\.isNumber)) ?? -1
     }
 
@@ -214,11 +218,13 @@ final class HotDiceBankUITests: XCTestCase {
     }
 
     /// Taps every die that scores, one at a time (a die in a set takes its whole set with it).
+    /// A die under something for a moment (a celebration fading) is waited for, not skipped.
     private func keepAllScoring(_ app: XCUIApplication) {
         let scoring = NSPredicate(format: "identifier BEGINSWITH 'die-' AND value == 'scores'")
-        for _ in 0..<6 {
-            let die = app.buttons.matching(scoring).allElementsBoundByIndex.first { $0.isHittable }
-            guard let die else { break }
+        for _ in 0..<12 {
+            let dice = app.buttons.matching(scoring).allElementsBoundByIndex
+            if dice.isEmpty { break }
+            guard let die = dice.first(where: { $0.isHittable }) else { usleep(400_000); continue }
             die.tap()
             usleep(600_000)
         }

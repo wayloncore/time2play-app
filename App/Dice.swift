@@ -372,7 +372,10 @@ struct HotDiceView: View {
                 ReactionBar(room: room)
             }
         }
-        .overlay { if let c = celebrate { Celebration(h: c).onTapGesture { celebrate = nil } } }
+        // as the website's phone: the celebration takes no tap of its own (a die under it still gets kept), and any tap
+        // ends it early (build 48: a die tapped during "Three pairs!" wasn't kept)
+        .overlay { if let c = celebrate { Celebration(h: c).allowsHitTesting(false) } }
+        .simultaneousGesture(TapGesture().onEnded { if celebrate != nil { celebrate = nil } }, including: celebrate == nil ? .subviews : .all)
         .overlay { if let b = big, celebrate == nil { BigMomentCard(m: b).transition(still ? AnyTransition.opacity : AnyTransition.scale.combined(with: .opacity)) } }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)   // a table, like Overdraft's: words to the largest standard size
         .onChange(of: view) { old, new in changed(from: old, to: new) }

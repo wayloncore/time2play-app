@@ -45,10 +45,10 @@ final class StatsKeeper: ObservableObject {
             announced = before
             d.set(Array(before).sorted(), forKey: StatsKeeper.announcedKey)
         }
-        // a UI test earns an achievement in one finished game: nine played already, so the next earns Regular (10 games),
-        // and its practice game counts
+        // a UI test earns an achievement in one finished game: nine played already (one won), so the next earns Regular
+        // (10 games) and nothing else, won or lost; its practice game counts
         if StatsKeeper.earnTest, ledger.isEmpty {
-            ledger = (0..<9).map { _ in LedgerEntry(game: .rollCall, won: false, score: 100) }
+            ledger = [LedgerEntry(game: .rollCall, won: true, score: 100)] + (0..<8).map { _ in LedgerEntry(game: .rollCall, won: false, score: 100) }
         }
     }
 
