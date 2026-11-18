@@ -75,7 +75,7 @@ struct TVTableView: View {
     @ObservedObject var model: TVModel
     var body: some View {
         ZStack {
-            (model.game == .hotDice ? T2P.felt : model.game == .overdraft ? T2P.table : Color(hex: 0x0B1121)).ignoresSafeArea()
+            background.ignoresSafeArea()
             if let f = model.floor, let g = model.game, f["phase"].string != "lobby" {
                 content(f, g)
             } else if let f = model.floor, let c = model.code {
@@ -116,6 +116,13 @@ struct TVTableView: View {
             }
         }
         .environment(\.colorScheme, .dark)
+    }
+
+    /// The game's own table once it starts; before that, the lobby is the logo clip's navy, so the loop melts into it
+    /// (#543).
+    private var background: Color {
+        if let f = model.floor, f["phase"].string == "lobby" || f["phase"].string == nil { return Color(uiColor: Intro.navy) }
+        return model.game == .hotDice ? T2P.felt : model.game == .overdraft ? T2P.table : Color(hex: 0x0B1121)
     }
 
     @ViewBuilder private func content(_ f: JSON, _ g: Game) -> some View {

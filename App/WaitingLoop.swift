@@ -146,8 +146,12 @@ final class WaitingLoop: ObservableObject {
 /// Reduce Motion and Low Power Mode show the still mark; it's gone the moment the game starts (or when You → Logo on
 /// the waiting screen is off).
 struct WaitingLogo: View {
+    /// How it sits on its screen: blended (its edges melt into a screen of the clip's own navy: the iPad host's stage
+    /// and the TV), or a badge (a rounded square around the ring, for the phone lobby, light or dark).
+    enum Style { case blend, badge }
     /// The room's phase: the clip shows only in the lobby.
     var phase: String?
+    var style: Style = .blend
     @ObservedObject private var loop = WaitingLoop.shared
     @AppStorage(WaitingLoopSettings.key) private var on = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -160,6 +164,8 @@ struct WaitingLogo: View {
     static let clipSize = CGSize(width: 1080, height: 1916)
     static let shownHeight: CGFloat = 1480
     static var aspect: CGFloat { clipSize.width / shownHeight }
+    /// The badge: a square around the ring (its center is at row 935), so rows 395 to 1475.
+    static let badgeTop: CGFloat = 395
     private static let still = Bundle.main.path(forResource: "waiting-still", ofType: "jpg").flatMap { UIImage(contentsOfFile: $0) }
 
     private var mode: WaitingLoopPlan.Mode {
@@ -170,7 +176,7 @@ struct WaitingLogo: View {
     var body: some View {
         if mode != .hidden {
             picture
-                .aspectRatio(Self.aspect, contentMode: .fit)
+                .aspectRatio(style == .badge ? 1 : Self.aspect, contentMode: .fit)
                 .onAppear { onScreen = true; update() }
                 .onDisappear { onScreen = false; update() }
                 .onChange(of: scenePhase) { _, _ in update() }
@@ -189,9 +195,20 @@ struct WaitingLogo: View {
         if onScreen && mode == .moving && scenePhase != .background { loop.show(id) } else { loop.hide(id) }
     }
 
-    private var picture: some View {
+    @ViewBuilder private var picture: some View {
+        if style == .badge {
+            frames(top: Self.badgeTop)
+                .background(Color(uiColor: Intro.navy))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            frames(top: 0).mask { feather }
+        }
+    }
+
+    /// The clip (or the still) at its own shape, shown from row `top` of its frame down.
+    private func frames(top: CGFloat) -> some View {
         GeometryReader { g in
-            let full = g.size.width * Self.clipSize.height / Self.clipSize.width
+            let scale = g.size.width / Self.clipSize.width
             Group {
                 if mode == .moving {
                     LoopPlayerView(player: loop.player)
@@ -199,14 +216,14 @@ struct WaitingLogo: View {
                     Image(uiImage: ui).resizable()
                 }
             }
-            .frame(width: g.size.width, height: full)
+            .frame(width: g.size.width, height: Self.clipSize.height * scale)
+            .offset(y: -top * scale)
             .frame(width: g.size.width, height: g.size.height, alignment: .top)
             .clipped()
         }
-        .mask { feather }
     }
 
-    /// Soft edges, so the clip's navy melts into the screen's background (wide at the top, where the 2 jumps out of
+    /// Soft edges, so the clip's navy melts into the screen behind it (the same navy) (wide at the top, where the 2 jumps out of
     /// the frame; narrow at the sides, where the ring nearly touches them).
     private var feather: some View {
         LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.08),

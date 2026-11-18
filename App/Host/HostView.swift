@@ -236,7 +236,8 @@ struct HostView: View {
     @ViewBuilder private var stage: some View {
         if let f = host.floor {
             HostStage(floor: f, game: host.game, code: host.room.code)
-                .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 22))
+                // the waiting stage is the logo clip's own navy, so the loop melts into it (#543)
+                .background(host.phase == "lobby" ? Color(uiColor: Intro.navy) : Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 22))
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("host-stage")
         }
