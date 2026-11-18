@@ -56,7 +56,10 @@ final class AccountUITests: XCTestCase {
             alert.buttons["Allow"].tap()
             return true
         }
-        XCTAssertTrue(app.staticTexts["Signed in for review"].waitForExistence(timeout: 20))
+        // You is a long form now (the 3D table's and dice's rows, Card size): back up to the top, where the account is
+        let signedIn = app.staticTexts["Signed in for review"]
+        for _ in 0..<6 where !signedIn.waitForExistence(timeout: 3) { app.swipeDown() }
+        XCTAssertTrue(signedIn.waitForExistence(timeout: 20))
         shot(app, "403-signed-in")
         tapWhenReady(app.tabBars.buttons["Friends"])
         XCTAssertTrue(app.buttons["friend-link"].waitForExistence(timeout: 15))

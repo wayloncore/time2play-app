@@ -124,6 +124,7 @@ struct YouView: View {
     @State private var name = ""
     @AppStorage(Table3DSwitch.key) private var table3D = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
+    @AppStorage(HandSize.key) private var handSize = HandSize.medium.rawValue
     @AppStorage(Dice3DSwitch.key) private var dice3D = false
 
     var body: some View {
@@ -167,8 +168,15 @@ struct YouView: View {
                         .tint(T2P.gold)
                         .onChange(of: classicTable) { _, c in table3D = !c }
                         .accessibilityIdentifier("toggle-classic")
+                    if !classicTable {
+                        Picker("Card size", selection: $handSize) {
+                            ForEach(HandSize.allCases) { Text($0.name).tag($0.rawValue) }
+                        }
+                        .accessibilityIdentifier("card-size")
+                    }
                 } footer: {
-                    Text("Plays Overdraft at the flat table instead of the 3D one.")
+                    Text(classicTable ? "Plays Overdraft at the flat table instead of the 3D one."
+                         : "Plays Overdraft at the flat table instead of the 3D one. Card size is how big your hand is at the 3D table.")
                         .foregroundStyle(T2P.muted)
                 }
                 .listRowBackground(T2P.panel)

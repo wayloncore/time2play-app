@@ -8,9 +8,9 @@ final class Table3DUITests: XCTestCase {
 
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad-" : "" }
 
-    private func still(_ cfg: String, _ name: String) {
+    private func still(_ cfg: String, _ name: String, _ extra: [String] = []) {
         let app = XCUIApplication()
-        app.launchArguments = ["-t2p-3d-still", cfg]
+        app.launchArguments = ["-t2p-3d-still", cfg] + extra
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "\(name): the still never settled")
         XCTAssertTrue(app.descendants(matching: .any)["od3d-suit"].exists, "\(name): the suit shows between the piles")
@@ -46,6 +46,59 @@ final class Table3DUITests: XCTestCase {
     }
 
     /// Three players with nothing set: a new player gets the 3D table (#496, Nov 17: the default for everyone).
+    /// #524 (Tyler, Nov 17, 5:51 PM): at 9 cards, a playable card in the back row (the Bolt 7) comes in front of the
+    /// see-through cards and rises; at 12, none is buried. Each card size.
+    func testStillsHandSizes() {
+        for size in ["small", "medium", "large"] {
+            still("suit=bolt n=4 mine=1 hand=9", "3d-hand9-\(size)", ["-t2p-card-size", size])
+        }
+        still("suit=bolt n=4 mine=1 hand=12", "3d-hand12-medium", ["-t2p-card-size", "medium"])
+        still("suit=bolt n=4 mine=0 hand=9", "3d-hand9-off-turn", ["-t2p-card-size", "medium"])
+    }
+
+    /// A real game grown to 9 or more cards (you draw instead of playing), shot on your turn, at each card size.
+    func testHandNineSmall() { growHand("small") }
+    func testHandNineMedium() { growHand("medium") }
+    func testHandNineLarge() { growHand("large") }
+
+    private func growHand(_ size: String) {
+        let app = launch(["-t2p-3d", "-t2p-card-size", size])
+        app.swipeUp()
+        tapWhenReady(app.buttons["offline-overdraft"])
+        let name = app.textFields["name"]
+        if name.waitForExistence(timeout: 10) { name.tap(); name.typeText("Sim"); tapWhenReady(app.buttons["join-room"]) }
+        for i in 0..<2 {
+            let b = app.buttons[i == 0 ? "addbot-easy" : "addbot-normal"]
+            if !b.waitForExistence(timeout: 10) { break }
+            if !b.isHittable { app.swipeUp() }
+            b.tap(); usleep(500_000)
+        }
+        if !app.buttons["start-game"].isHittable { app.swipeUp() }
+        tapWhenReady(app.buttons["start-game"])
+        XCTAssertTrue(app.buttons["draw"].waitForExistence(timeout: 20), "the 3D table is dealt")
+        let cards = NSPredicate(format: "identifier BEGINSWITH 'legal-' OR identifier BEGINSWITH 'card-'")
+        let legal = NSPredicate(format: "identifier BEGINSWITH 'legal-'")
+        var shots = 0
+        let deadline = Date().addingTimeInterval(200)
+        while Date() < deadline && shots < 2 {
+            if app.staticTexts["hand-over"].exists || app.staticTexts["table-over"].exists { break }
+            guard app.staticTexts["your-turn"].exists else { usleep(500_000); continue }
+            let n = app.buttons.matching(cards).count
+            if n >= 9 && app.buttons.matching(legal).count > 0 {
+                usleep(600_000)
+                shot(app, "524-\(device)3d-game-\(size)-\(n)cards-\(shots)")
+                shots += 1
+            }
+            // grow the hand: draw, and keep what's drawn
+            if app.buttons["keep"].exists { app.buttons["keep"].tap() }
+            else if app.buttons["draw"].isEnabled { app.buttons["draw"].tap() }
+            else if app.buttons.matching(legal).count > 0 { app.buttons.matching(legal).element(boundBy: 0).tap() }
+            usleep(900_000)
+        }
+        XCTAssertGreaterThan(shots, 0, "the hand reached 9 cards on your turn")
+        app.terminate()
+    }
+
     func testPlayThree() { play(bots: 2, seconds: 150, args: ["-t2p-default"]) }
     func testPlayFive() { play(bots: 4, seconds: 150) }
     func testPlayTen() { play(bots: 9, seconds: 180) }
