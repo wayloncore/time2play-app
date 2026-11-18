@@ -163,9 +163,10 @@ struct WheelOfNamesView: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             GeometryReader { g in
-                let side = min(g.size.width - 24, g.size.height - 8)
+                let side = max(0, min(g.size.width - 24, g.size.height - 8))
                 ZStack {
-                    if let a = art {
+                    // only once the space is known: a 3D view first drawn at no size can stay blank
+                    if let a = art, side > 120 {
                         if use3D {
                             Wheel3DView(model: model, art: a).frame(width: side, height: side)
                         } else {
