@@ -14,7 +14,7 @@ final class Table3DUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "\(name): the still never settled")
         XCTAssertTrue(app.descendants(matching: .any)["od3d-suit"].exists, "\(name): the suit shows between the piles")
-        shot(app, "496-\(device)\(name)")
+        shot(app, name.hasPrefix("561-") ? "561-\(device)" + name.dropFirst(4) : "496-\(device)\(name)")
         app.terminate()
     }
 
@@ -39,6 +39,19 @@ final class Table3DUITests: XCTestCase {
         still("suit=ember n=5 reverse=1.5", "3d-reverse-back")
         still("suit=bolt n=3 strike=0.2", "3d-bolt-flash-3")
         still("suit=leaf n=7 mine=1 hand=5", "3d-leaf-your-turn")
+    }
+
+    /// Build 45 (Tyler, Nov 18: "the card acts very stiff when moving"): frames of a card's flight, stopped on the
+    /// scene's clock. A bot's card: picked up, in the air on its curve, touching down, and settling just past its spot.
+    /// Your card: picked up from your hand, and in the air. A card drawn to your hand, on its way to its own spot.
+    func testStillsCardMotion() {
+        for (t, name) in [(0.05, "1-pickup"), (0.36, "2-air"), (0.7, "3-touchdown"), (0.92, "4-settle")] {
+            still("suit=ember n=5 throw=\(t)", "561-card-seat-\(name)")
+        }
+        for (t, name) in [(0.07, "1-pickup"), (0.42, "2-air")] {
+            still("suit=wave n=4 mine=1 hand=6 play=\(t)", "561-card-yours-\(name)")
+        }
+        still("suit=leaf n=4 mine=1 hand=6 draw=0.45", "561-card-drawn")
     }
 
     func testStillsSeats() {

@@ -506,16 +506,37 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         fanAll()
     }
 
+    /// Where each seat-hand card is going (build 45: a hand that grows or shrinks eases into its new fan).
+    private var fanTargets: [ObjectIdentifier: (p: SIMD3<Float>, q: simd_quatf)] = [:]
+
     private func fanAll() {
         for (i, h) in seatHands.enumerated() where i < shownCounts.count {
             let fan = Table3D.handFan(shownCounts[i])
             let cards = h.childNodes.filter { $0.geometry === nil || !($0.geometry is SCNPlane) }
             for (j, c) in cards.enumerated() {
+                let was = c.isHidden
                 c.isHidden = j >= fan.count
                 if j < fan.count {
-                    c.simdPosition = [Float(fan[j].x), Float(fan[j].y), Float(fan[j].z)]
-                    c.simdOrientation = yaw(Float(fan[j].yaw)) * Self.faceDown
+                    let p = SIMD3<Float>(Float(fan[j].x), Float(fan[j].y), Float(fan[j].z)), q = yaw(Float(fan[j].yaw)) * Self.faceDown
+                    let id = ObjectIdentifier(c)
+                    // a card that just appeared (or the first layout, or Reduce Motion) goes straight to its place
+                    if was || reduced || fanTargets[id] == nil { c.simdPosition = p; c.simdOrientation = q }
+                    fanTargets[id] = (p, q)
                 }
+            }
+        }
+    }
+
+    /// The seats' hands ease toward their fans (render thread, each frame).
+    private func stepFans(_ dt: Float) {
+        guard dt > 0 else { return }
+        let k = 1 - exp(-13 * dt)
+        for h in seatHands {
+            for c in h.childNodes where !c.isHidden {
+                guard let t = fanTargets[ObjectIdentifier(c)] else { continue }
+                if simd_length(t.p - c.simdPosition) < 1e-4 { continue }
+                c.simdPosition += (t.p - c.simdPosition) * k
+                c.simdOrientation = simd_slerp(c.simdOrientation, t.q, k)
             }
         }
     }
@@ -661,27 +682,62 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
 
     // MARK: cards in the air
 
+    /// A card in the air (build 45: CardMotion's pickup, flight and settle; Reduce Motion: a fade in place).
     private struct Flight {
         var node: SCNNode, shadow: SCNNode
         var p0: SIMD3<Float>, q0: simd_quatf, p1: SIMD3<Float>, q1: simd_quatf
         var dur: Float, arc: Float, spin: Float, s0: Float, s1: Float, slide: Float, settle: Float
         var t: Float
         var landed = false
-        var landP: SIMD3<Float> = .zero, axis: SIMD3<Float> = [1, 0, 0]
+        /// The pickup: how long, and where it lifts to (and how it's turned there).
+        var lift: Float = 0, liftP: SIMD3<Float> = .zero, liftQ = simd_quatf(angle: 0, axis: [0, 1, 0])
+        /// Where it touches down (short of p1 by the slide), how it's turned then, and how fast it's going.
+        var landP: SIMD3<Float> = .zero, landQ = simd_quatf(angle: 0, axis: [0, 1, 0]), speed: Float = 0
+        var dir: SIMD3<Float> = [0, 0, 1], axis: SIMD3<Float> = [1, 0, 0]
+        /// The flight's curve to one side, its arrival speed (CardMotion.travel), and the touchdown's rock and turn.
+        var bow: Float = 0, arrive: Float = 0, rock: Float = 0, kick: Float = 0
+        var fade = false
         var onLand: (() -> Void)?, onDone: (() -> Void)?
     }
     private var flights: [Flight] = []
 
+    /// Sends a card from p0 to p1. `lift` picks it up first, `liftDir` the way it lifts (world up, or the screen's up
+    /// for a card from your hand). `slide` is how far it slides on the pile after touching down (0: it eases to a stop).
     private func fly(_ node: SCNNode, p0: SIMD3<Float>, q0: simd_quatf, p1: SIMD3<Float>, q1: simd_quatf, dur: Float, arc: Float = 0.8,
-                     spin: Float = 0, s0: Float = 1, s1: Float = 1, slide: Float = 0, settle: Float = 0.34, delay: Float = 0,
+                     spin: Float = 0, s0: Float = 1, s1: Float = 1, slide: Float = 0, settle: Float = Float(CardMotion.settleSeconds),
+                     delay: Float = 0, lift: Float = Float(CardMotion.pickupSeconds), liftDir: SIMD3<Float> = [0, 1, 0],
                      onLand: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
         var f = Flight(node: node, shadow: SCNNode(geometry: SCNPlane(width: Table3D.cardW * 1.6, height: Table3D.cardH * 1.5)),
-                       p0: p0, q0: q0, p1: p1, q1: q1, dur: dur, arc: arc, spin: spin, s0: s0, s1: s1, slide: slide, settle: settle, t: -delay)
-        if reduced { f.dur = min(f.dur, 0.26); f.arc = 0.12; f.spin = 0; f.slide = 0; f.settle = 0 }
-        var dir = SIMD3<Float>(p1.x - p0.x, 0, p1.z - p0.z)
-        dir = simd_length(dir) > 1e-5 ? simd_normalize(dir) : [0, 0, 1]
-        f.landP = p1 - dir * f.slide
-        f.axis = [dir.z, 0, -dir.x]
+                       p0: p0, q0: q0, p1: p1, q1: q1, dur: dur, arc: arc, spin: spin, s0: s0, s1: s1, slide: slide,
+                       settle: slide > 0 ? settle : 0, t: -delay)
+        if reduced {
+            // Reduce Motion: no flight, the card fades in where it ends up
+            f.fade = true; f.dur = 0.22; f.lift = 0; f.settle = 0
+        } else {
+            var dir = SIMD3<Float>(p1.x - p0.x, 0, p1.z - p0.z)
+            dir = simd_length(dir) > 1e-5 ? simd_normalize(dir) : [0, 0, 1]
+            let turn: Float = spin == 0 ? (Bool.random() ? 1 : -1) : (spin > 0 ? 1 : -1)
+            f.dir = dir
+            f.axis = [dir.z, 0, -dir.x]
+            // a spinning card turns one full time round as it flies, from none at the start (the website's and the
+            // old flight started already turned by the spin, so a card jumped sideways the moment it left the hand)
+            f.spin = spin == 0 ? 0 : turn * 2 * .pi
+            f.lift = lift
+            f.liftP = p0 + simd_normalize(liftDir) * Float(CardMotion.pickupLift) * max(0.5, s0)
+            // picked up: tipped back a little and turned a hair
+            f.liftQ = q0 * simd_quatf(angle: Float(CardMotion.pickupTilt), axis: [1, 0, 0]) * simd_quatf(angle: Float(CardMotion.pickupTurn) * turn, axis: [0, 0, 1])
+            f.landP = p1 - dir * slide
+            let dist = simd_length(f.landP - f.liftP)
+            f.speed = Float(CardMotion.landingSpeed(slide: Double(slide)))
+            f.arrive = Float(CardMotion.arrive(speed: Double(f.speed), distance: Double(dist), seconds: Double(dur)))
+            // a slight curve to one side, the way it spins
+            f.bow = 0.22 * turn * min(1, dist / 4)
+            if slide > 0 {
+                // it touches down a little tipped and still turning, and both die away as it settles
+                f.rock = 0.07; f.kick = 0.1 * turn
+            }
+            f.landQ = simd_quatf(angle: f.kick, axis: [0, 1, 0]) * simd_quatf(angle: f.rock, axis: f.axis) * q1
+        }
         f.onLand = onLand; f.onDone = onDone
         node.isHidden = true
         node.renderingOrder = 6
@@ -702,35 +758,54 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
             if f.t < 0 { flights[i] = f; i -= 1; continue }
             f.node.isHidden = false
             var done = false
-            if f.t < f.dur {
-                let uu = f.t / f.dur, s = 1 - pow(1 - uu, 2.1)
-                var p = simd_mix(f.p0, f.landP, SIMD3(repeating: s)); p.y += f.arc * 4 * uu * (1 - uu)
-                var q = simd_slerp(f.q0, f.q1, uu * uu * (3 - 2 * uu))
-                if f.spin != 0 { q = simd_quatf(angle: f.spin * (1 - s), axis: [0, 1, 0]) * q }
+            let up = f.t - f.lift, total = f.lift + f.dur + f.settle
+            if f.fade {
+                f.node.simdPosition = f.p1; f.node.simdOrientation = f.q1; f.node.simdScale = SIMD3(repeating: f.s1)
+                f.node.opacity = CGFloat(min(1, f.t / f.dur))
+                if f.t >= f.dur { if !f.landed { f.landed = true; f.onLand?() }; done = true }
+            } else if f.t < f.lift {
+                // the pickup: up and tipped back, slowing to a stop
+                let e = Float(CardMotion.pickup(Double(f.t / f.lift)))
+                f.node.simdPosition = simd_mix(f.p0, f.liftP, SIMD3(repeating: e))
+                f.node.simdOrientation = simd_slerp(f.q0, f.liftQ, e)
+                f.node.simdScale = SIMD3(repeating: f.s0 * (1 + 0.05 * e))
+            } else if up < f.dur {
+                // the flight: a gentle start, a curve up and to one side, flat by the time it lands, still moving
+                let u = up / f.dur
+                let h = Float(CardMotion.travel(Double(u), arrive: Double(f.arrive)))
+                var p = simd_mix(f.liftP, f.landP, SIMD3(repeating: h))
+                p.y += Float(CardMotion.arc(Double(u), Double(f.arc)))
+                p += f.axis * (f.bow * 4 * h * (1 - h))
+                var q = simd_slerp(f.liftQ, f.landQ, u * u * (3 - 2 * u))
+                if f.spin != 0 { q = simd_quatf(angle: f.spin * h, axis: [0, 1, 0]) * q }
                 f.node.simdPosition = p; f.node.simdOrientation = q
-                f.node.simdScale = SIMD3(repeating: f.s0 + (f.s1 - f.s0) * s)
-            } else if f.t < f.dur + f.settle {
+                let sa = f.s0 * 1.05
+                f.node.simdScale = SIMD3(repeating: sa + (f.s1 - sa) * h)
+            } else if f.t < total {
+                // the settle: it slides on, just past its spot and back, and its rock and turn die away
                 if !f.landed { f.landed = true; f.onLand?() }
-                let uu = (f.t - f.dur) / f.settle, d = pow(1 - uu, 2)
-                var p = simd_mix(f.landP, f.p1, SIMD3(repeating: 1 - pow(1 - uu, 3)))
-                p.y += 0.07 * abs(sin(uu * .pi * 2)) * d
-                f.node.simdPosition = p
-                f.node.simdOrientation = simd_quatf(angle: 0.16 * sin(uu * 10) * d, axis: f.axis) * f.q1
+                let tt = Double(up - f.dur)
+                let x = Float(CardMotion.settle(tt, slide: Double(f.slide), speed: Double(f.speed)))
+                let g = Float(CardMotion.settleShare(tt, slide: Double(f.slide), speed: Double(f.speed)))
+                f.node.simdPosition = f.p1 + f.dir * x
+                f.node.simdOrientation = simd_quatf(angle: f.kick * g, axis: [0, 1, 0]) * simd_quatf(angle: f.rock * g, axis: f.axis) * f.q1
                 f.node.simdScale = SIMD3(repeating: f.s1)
             } else {
                 if !f.landed { f.landed = true; f.onLand?() }
-                f.node.removeFromParentNode(); f.shadow.removeFromParentNode()
                 done = true
             }
-            if !done {
+            if done {
+                f.node.removeFromParentNode(); f.shadow.removeFromParentNode()
+            } else {
                 // a soft shadow on the glass under the card, fading as it climbs
                 let p = f.node.simdPosition, k = max(0, 1 - p.y / 1.4)
-                f.shadow.isHidden = false
+                f.shadow.isHidden = f.fade
                 f.shadow.simdPosition = [p.x + p.y * 0.25, 0.006, p.z + p.y * 0.2]
                 f.shadow.simdScale = SIMD3(repeating: f.node.simdScale.x * (1 + p.y * 0.3))
                 f.shadow.geometry?.firstMaterial?.transparency = CGFloat(0.8 * k)
                 flights[i] = f
-            } else {
+            }
+            if done {
                 let cb = f.onDone
                 flights.remove(at: i)
                 cb?()
@@ -768,7 +843,22 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         if shownCounts.indices.contains(i) { shownCounts[i] = max(0, shownCounts[i] - 1); fanAll() }
         fly(n, p0: seatHandPoint(i), q0: q0, p1: tg.p, q1: tg.q, dur: 0.62, arc: 1.0, spin: (Bool.random() ? -1 : 1) * .random(in: 2.2...4.2),
             s0: Float(Table3D.handScale), s1: 1, slide: 0.16,
-            onDone: { [weak self] in self?.landed(k, art, n, haptic: true) })
+            onLand: { DispatchQueue.main.async { Haptics.play() } },
+            onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
+    }
+
+    /// Where a card in your hand on the screen is in the world: on the camera's ray through it, at the depth where
+    /// it's `cardPoints` wide, but never below the glass (build 45: on an iPad's camera that depth is under the table,
+    /// so your card started, and a drawn card ended, hidden under it). Brought nearer, it's drawn smaller to match:
+    /// `s` is its scale.
+    private func handPoint(_ l: Table3DLayout, x: Double, y: Double, cardPoints: Double) -> (p: SIMD3<Float>, s: Float) {
+        let c = l.camera
+        let want = Table3D.cardW * c.focal / max(1, cardPoints)
+        let ray = c.right * ((x - c.width / 2) / c.focal) + c.up * (-(y - c.height / 2) / c.focal) - c.back
+        var depth = want
+        if ray.y < -1e-6 { depth = min(want, max(0.5, (c.eye.y - 0.6) / -ray.y)) }
+        let p = c.eye + ray * depth
+        return ([Float(p.x), Float(p.y), Float(p.z)], Float(depth / want))
     }
 
     /// You throw a card: from where it sat in your hand on the screen (`x`, `y`, `cardPoints` wide, turned `roll`°).
@@ -776,10 +866,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         guard let l = layout else { return }
         let n = card(art), tg = pileTarget(k)
         flyingK.insert(k); syncPile()
-        let p = l.camera.fromScreen(x: x, y: y, cardPoints: cardPoints)
-        fly(n, p0: [Float(p.x), Float(p.y), Float(p.z)], q0: facingCamera(roll: Float(roll * .pi / 180)), p1: tg.p, q1: tg.q, dur: 0.7, arc: 0.9,
-            spin: (Bool.random() ? -1 : 1) * .random(in: 2.6...4.4), slide: 0.2,
+        let h = handPoint(l, x: x, y: y, cardPoints: cardPoints)
+        fly(n, p0: h.p, q0: facingCamera(roll: Float(roll * .pi / 180)), p1: tg.p, q1: tg.q, dur: 0.7, arc: 0.9,
+            s0: h.s, slide: 0.2, liftDir: cameraUp,
             onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
+    }
+
+    /// The screen's up, in the world.
+    private var cameraUp: SIMD3<Float> {
+        guard let c = layout?.camera else { return [0, 1, 0] }
+        return [Float(c.up.x), Float(c.up.y), Float(c.up.z)]
     }
 
     /// A card faces the camera, as it does in your hand on the screen.
@@ -802,8 +898,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         if inbound.indices.contains(i) { inbound[i] += count }
         for j in 0..<count {
             let from = deckTop()
-            fly(card("card_back"), p0: from.p, q0: from.q, p1: target, q1: q1, dur: 0.55, arc: 0.7, spin: .random(in: -1.5...1.5),
-                s1: Float(Table3D.handScale), settle: 0, delay: Float(delay + Double(j) * 0.16),
+            fly(card("card_back"), p0: from.p, q0: from.q, p1: target, q1: q1, dur: 0.55, arc: 0.7,
+                s1: Float(Table3D.handScale), delay: Float(delay + Double(j) * 0.16), lift: 0.06,
                 onDone: { [weak self] in
                     guard let self, self.inbound.indices.contains(i) else { return }
                     self.inbound[i] -= 1
@@ -815,14 +911,17 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         }
     }
 
-    /// Cards fly from the draw pile to your hand on the screen (art: each card's face, in order).
-    func drawToScreen(x: Double, y: Double, cardPoints: Double, arts: [String], delay: Double = 0, landed: @escaping (Int) -> Void) {
+    /// Cards fly from the draw pile to your hand on the screen, each to its own spot in the fan (`spots`: its center,
+    /// width in points and turn in degrees), and each lands as the card there appears.
+    func drawToScreen(spots: [(x: Double, y: Double, w: Double, roll: Double)], arts: [String], delay: Double = 0, landed: @escaping (Int) -> Void) {
         guard let l = layout else { return }
-        let p = l.camera.fromScreen(x: x, y: y, cardPoints: cardPoints)
-        for (j, art) in arts.enumerated() {
+        for (j, art) in arts.enumerated() where spots.indices.contains(j) {
+            let sp = spots[j]
+            let h = handPoint(l, x: sp.x, y: sp.y, cardPoints: sp.w)
             let from = deckTop()
-            fly(card(art), p0: from.p, q0: from.q, p1: [Float(p.x), Float(p.y), Float(p.z)], q1: facingCamera(roll: 0), dur: 0.6, arc: 0.7,
-                settle: 0, delay: Float(delay + Double(j) * 0.16), onDone: { DispatchQueue.main.async { landed(j) } })
+            fly(card(art), p0: from.p, q0: from.q, p1: h.p, q1: facingCamera(roll: Float(sp.roll * .pi / 180)),
+                dur: 0.6, arc: 0.7, s1: h.s, delay: Float(delay + Double(j) * 0.16), lift: 0.06,
+                onDone: { DispatchQueue.main.async { landed(j) } })
         }
     }
 
@@ -904,6 +1003,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         applyElement(dt)
         stepFlow(dt)
         stepFlights(f)
+        stepFans(f)
         u.b.y += max(-f * 3, min(f * 3, turnTarget - u.b.y))
         rimLine?.transparency = CGFloat(0.55 + 0.45 * u.b.y)
     }

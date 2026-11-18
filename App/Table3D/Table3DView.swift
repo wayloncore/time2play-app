@@ -302,7 +302,7 @@ struct Table3DView: View {
     private func appeared(_ g: GeometryProxy) {
         let world = stage.world, r = reduceMotion
         world.post { world.reduced = r }
-        if let st = still { world.autoStepDown = false; st.run(world) }
+        if let st = still { world.autoStepDown = false; st.run(world); stillFlight(st) }
         DispatchQueue.main.async { refit(g) }
         if started { return }
         started = true
@@ -310,6 +310,34 @@ struct Table3DView: View {
         let fresh = (table.top?.k ?? 0) == 0 && table.seats.allSatisfy { $0.cards == view.hand.count }
         if fresh && still == nil { deal() } else if let top = table.top {
             say(table.turn == me ? "Your turn: match \(top.label)" : "\(cap(table.turn)) to play on \(top.label)")
+        }
+    }
+
+    /// Still mode (build 45): your first card thrown from your hand, or a card drawn to the end of your hand,
+    /// stopped mid-flight. The card is hidden in the fan while its 3D copy flies.
+    private func stillFlight(_ st: Table3DStill) {
+        guard st.playAt != nil || st.drawAt != nil, let c = st.playAt != nil ? view.hand.first : view.hand.last else { return }
+        arriving.insert(c.id)
+        stillFlightStart(st, c, after: 1.4)
+    }
+
+    /// Starts the still's flight once the table and your hand are laid out (a slow simulator can take a while).
+    private func stillFlightStart(_ st: Table3DStill, _ c: Overdraft.Card, after: Double, tries: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+            if (fan == .zero || stage.layout == nil) && tries < 40 { stillFlightStart(st, c, after: 0.25, tries: tries + 1); return }
+            let places = HandFan3D(view: view, dealt: nil, arriving: [], scale: handScale, onTap: { _, _, _, _ in }).places(width: fan.width)
+            guard let pl = places[c.id] else { return }
+            let spot = (x: Double(fan.minX + pl.center.x), y: Double(fan.minY + pl.center.y), w: Double(pl.width), roll: pl.roll)
+            let world = stage.world, art = c.artName
+            world.post {
+                if let t = st.playAt {
+                    world.freezeAt = world.clock + t
+                    world.throwFromScreen(x: spot.x, y: spot.y, cardPoints: spot.w, roll: spot.roll, art: art, k: 9)
+                } else if let t = st.drawAt {
+                    world.freezeAt = world.clock + t
+                    world.drawToScreen(spots: [spot], arts: [art]) { _ in }
+                }
+            }
         }
     }
 
@@ -383,20 +411,31 @@ struct Table3DView: View {
         }
     }
 
-    /// New cards in your hand fly in from the draw pile and drop into the fan as they land.
+    /// New cards in your hand fly in from the draw pile, each to its own spot in the fan (the others make room for
+    /// it with a spring), and appear there as they land. Reduce Motion: they fade in.
     private func handChanged(from old: [Overdraft.Card], to new: [Overdraft.Card]) {
         guard dealt == nil, !old.isEmpty else { return }
         let had = Set(old.map(\.id))
         let added = new.filter { !had.contains($0.id) }
         guard !added.isEmpty, fan != .zero else { return }
-        if reduceMotion { Haptics.select(); return }
-        arriving.formUnion(added.map(\.id))
         let ids = added.map(\.id), arts = added.map(\.artName)
+        arriving.formUnion(ids)
+        if reduceMotion {
+            Haptics.select()
+            DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.25)) { arriving.subtract(ids) } }
+            return
+        }
+        let places = HandFan3D(view: view, dealt: nil, arriving: [], scale: handScale, onTap: { _, _, _, _ in }).places(width: fan.width)
         let w = Double(HandFan3D.cardWidth(width: Double(fan.width) + 24, height: Double(UIScreen.main.bounds.height), scale: handScale))
-        let world = stage.world, x = Double(fan.midX), y = Double(fan.midY)
+        let spots = ids.map { id -> (x: Double, y: Double, w: Double, roll: Double) in
+            guard let pl = places[id] else { return (Double(fan.midX), Double(fan.midY), w, 0) }
+            return (Double(fan.minX + pl.center.x), Double(fan.minY + pl.center.y), Double(pl.width), pl.roll)
+        }
+        let world = stage.world
         world.post {
-            world.drawToScreen(x: x, y: y, cardPoints: w, arts: arts) { j in
-                if ids.indices.contains(j) { _ = withAnimation(.spring(duration: 0.28)) { arriving.remove(ids[j]) } }
+            world.drawToScreen(spots: spots, arts: arts) { j in
+                // the flying card has reached its spot: the card in the fan takes its place
+                if ids.indices.contains(j) { arriving.remove(ids[j]) }
                 Haptics.select()
             }
         }
@@ -507,6 +546,19 @@ private extension Color {
         var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0, r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
         a.getRed(&r1, green: &g1, blue: &b1, alpha: &a1); b.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
         return Color(red: r1 * a1 + r2 * (1 - a1), green: g1 * a1 + g2 * (1 - a1), blue: b1 * a1 + b2 * (1 - a1)).opacity(Double(a2))
+    }
+}
+
+/// A card in your hand under your finger (build 45): a playable one lifts a little and grows, ready to throw, and
+/// settles back with a spring if you let go without playing it.
+struct PickupStyle: ButtonStyle {
+    let on: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        let lifted = on && configuration.isPressed
+        configuration.label
+            .scaleEffect(lifted ? 1.05 : 1)
+            .offset(y: lifted ? -10 : 0)
+            .animation(.spring(response: 0.26, dampingFraction: 0.7), value: lifted)
     }
 }
 
@@ -741,46 +793,68 @@ struct HandFan3D: View {
     /// Your turn, and the seat is yours (not a bot's): playable cards come forward and rise.
     private var forward: Bool { view.yourTurn && !view.held }
 
+    /// Where a card sits in a fan `width` points wide: its center (in the fan), its turn (degrees) and its width.
+    struct Place { var center: CGPoint; var roll: Double; var width: CGFloat; var up: Bool }
+
+    /// Every card's place in a fan `width` points wide (the same math draws the fan, and aims a drawn card at its
+    /// own spot, build 45).
+    func places(width: CGFloat) -> [String: Place] {
+        let W = Double(width)
+        let hw = Self.cardWidth(width: W + 24, height: Double(UIScreen.main.bounds.height), scale: scale)
+        let ch = hw * 489 / 320
+        let spots = self.spots()
+        let rows = spots.contains { $0.row == 1 } ? 2 : 1
+        let rowGap = ch * 0.42, top = Self.headroom(ch)
+        var out: [String: Place] = [:]
+        for sp in spots {
+            let m = sp.m, j = sp.j, boxW = W - 20, up = sp.row < 0
+            // the raised row spreads its cards apart (a little gap); the fan overlaps them
+            let spread = up ? Double(hw) * 1.06 : Double(hw) * 0.42
+            let step = m > 1 ? min(spread, (boxW - Double(hw)) / Double(m - 1)) : 0
+            let total = step * Double(max(0, m - 1)) + Double(hw)
+            let x0 = (W - total) / 2 + Double(hw) / 2
+            let baseY = Double(top) + Double(ch) / 2 + 12 + (rows == 2 && sp.row == 1 ? Double(rowGap) : 0)
+            let mid = Double(m - 1) / 2
+            let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
+            let ok = playable(sp.card)
+            // raised about a third of a card over the fan's top row
+            let lift = up ? -Double(ch) / 3 : Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
+            out[sp.card.id] = Place(center: CGPoint(x: x0 + Double(j) * step, y: baseY + lift), roll: up ? r * 0.4 : r, width: hw, up: up)
+        }
+        return out
+    }
+
     var body: some View {
         GeometryReader { g in
-            let W = Double(g.size.width)
-            let hw = Self.cardWidth(width: W + 24, height: Double(UIScreen.main.bounds.height), scale: scale)
-            let ch = hw * 489 / 320
+            let hw = Self.cardWidth(width: Double(g.size.width) + 24, height: Double(UIScreen.main.bounds.height), scale: scale)
             let n = view.hand.count
             let spots = self.spots()
-            let rows = spots.contains { $0.row == 1 } ? 2 : 1
-            let rowGap = ch * 0.42, top = Self.headroom(ch)
+            let places = self.places(width: g.size.width)
             ZStack(alignment: .topLeading) {
                 Color.clear
                 ForEach(spots, id: \.card.id) { sp in
-                    let c = sp.card, m = sp.m, j = sp.j, boxW = W - 20, up = sp.row < 0
-                    // the raised row spreads its cards apart (a little gap); the fan overlaps them
-                    let spread = up ? Double(hw) * 1.06 : Double(hw) * 0.42
-                    let step = m > 1 ? min(spread, (boxW - Double(hw)) / Double(m - 1)) : 0
-                    let total = step * Double(max(0, m - 1)) + Double(hw)
-                    let x0 = (W - total) / 2 + Double(hw) / 2
-                    let baseY = Double(top) + Double(ch) / 2 + 12 + (rows == 2 && sp.row == 1 ? Double(rowGap) : 0)
-                    let mid = Double(m - 1) / 2
-                    let r = (Double(j) - mid) * min(3, 18 / Double(max(m, 1)))
+                    let c = sp.card, j = sp.j, up = sp.row < 0
+                    let pl = places[c.id] ?? Place(center: .zero, roll: 0, width: hw, up: up)
                     let ok = playable(c)
                     let fade = see(through: c, ok) ? Self.seeThrough : 1
-                    // raised about a third of a card over the fan's top row
-                    let lift = up ? -Double(ch) / 3 : Double(abs(Double(j) - mid) * 3) - (ok ? 10 : 0)
-                    let shown = (dealt.map { sp.i < $0 } ?? true) && !arriving.contains(c.id)
-                    let center = CGPoint(x: x0 + Double(j) * step, y: baseY + lift)
-                    Button { onTap(c, center, up ? 0 : r, Double(hw)) } label: {
+                    let dealing = dealt.map { sp.i >= $0 } ?? false
+                    let shown = !dealing && !arriving.contains(c.id)
+                    Button { onTap(c, pl.center, pl.roll, Double(hw)) } label: {
                         CardImage(name: c.artName, width: hw)
                             .saturation(ok ? 1 : 0.85)
                             .colorMultiply(ok ? .white : Color(white: 0.7))
                             .overlay(RoundedRectangle(cornerRadius: hw / 14).stroke(ok ? Color(hex: 0xF5DE95).opacity(0.85) : .black.opacity(0.4), lineWidth: ok ? 1.5 : 1))
                             .shadow(color: ok ? Color(hex: 0xF5DE95).opacity(0.6) : .black.opacity(0.55), radius: ok ? 8 : 6, y: ok ? 0 : 6)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PickupStyle(on: ok && !reduceMotion))
                     .compositingGroup()
-                    .rotationEffect(.degrees(up ? r * 0.4 : r))
+                    .rotationEffect(.degrees(pl.roll))
                     .opacity(shown ? fade : 0)
-                    .offset(y: shown ? 0 : 40)
-                    .position(center)
+                    // the deal drops cards in from below; a drawn card appears in its spot as the flying one lands
+                    .offset(y: dealing && !reduceMotion ? 40 : 0)
+                    .position(pl.center)
+                    // a played card leaves at once (the 3D card takes over from the same spot); Reduce Motion fades it
+                    .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.asymmetric(insertion: .opacity, removal: .identity))
                     // playable cards over every other card on your turn: never under a see-through one
                     .zIndex(Double(up ? 1000 + j : sp.row * 100 + j))
                     .accessibilityLabel(c.spoken)
@@ -792,11 +866,17 @@ struct HandFan3D: View {
             .frame(width: g.size.width, height: g.size.height)
         }
         .frame(height: Self.height(view.hand.count, scale: scale))
-        .animation(reduceMotion ? nil : .spring(duration: 0.3), value: view.hand)
-        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.3), value: fadeKey)
+        // build 45: the cards ease into their new spots with a soft spring (a touch past and back), not a snap;
+        // Reduce Motion moves them at once and fades cards in and out
+        .animation(reduceMotion ? nil : Self.refan, value: view.hand)
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : Self.refan, value: fadeKey)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Your hand, \(view.hand.count) cards")
     }
+
+    /// How the hand re-fans (build 45): a spring that goes a hair past and settles, about as quick as the website's
+    /// hand (src: static/live/overdraft.html, .hand .card, 0.16 s with a slight overshoot) but softer.
+    static let refan = Animation.spring(response: 0.4, dampingFraction: 0.74)
 
     /// The fan's height: one row, or two overlapping ones, and room over the top for a card to rise.
     static func height(_ n: Int, scale: Double = HandSize.medium.scale) -> CGFloat {

@@ -4,7 +4,9 @@ import T2PCore
 /// Still mode for the 3D table's screenshots (#496): a made-up table, stopped at an exact moment, so each suit, your
 /// turn, a card mid-throw and a scene mid-change can be shot the same way every run. UI tests launch the app with
 ///   -t2p-3d-still "suit=bolt n=5 mine=1 hand=9 throw=0.3 change=ember mix=0.5 strike=0.15 reverse=1.3"
-/// (every key optional). Nothing here talks to a room.
+/// (every key optional). Build 45: play=<seconds> stops your first card that long into its throw from your hand to
+/// the pile, and draw=<seconds> a card drawn from the deck that long into its flight to your hand. Nothing here talks
+/// to a room.
 struct Table3DStill {
     var suit = "wave"
     var players = 5
@@ -16,6 +18,10 @@ struct Table3DStill {
     var strikeAt: Double?
     /// Seconds into a Reverse of the turn flow (play turns from forward to backward).
     var reverseAt: Double?
+    /// Seconds into your card's throw from your hand (Table3DView starts it once the hand is laid out).
+    var playAt: Double?
+    /// Seconds into a drawn card's flight to your hand.
+    var drawAt: Double?
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> Table3DStill? {
         guard let i = args.firstIndex(of: "-t2p-3d-still") else { return nil }
@@ -34,6 +40,8 @@ struct Table3DStill {
             case "mix": s.mix = Double(kv[1]) ?? 0.5
             case "strike": s.strikeAt = Double(kv[1])
             case "reverse": s.reverseAt = Double(kv[1])
+            case "play": s.playAt = Double(kv[1])
+            case "draw": s.drawAt = Double(kv[1])
             default: break
             }
         }
@@ -43,6 +51,7 @@ struct Table3DStill {
     /// Sets the scene going and stops it at the moment asked for.
     func run(_ w: Table3DWorld) {
         let st = self
+        if playAt != nil || drawAt != nil { return }   // Table3DView starts these: they need the hand's place on screen
         w.post {
             let c0 = w.clock, start = 1.0
             if let t = st.throwAt {
