@@ -78,7 +78,7 @@ final class DiceArenaStage: ObservableObject {
         let v = SCNView(frame: .zero)
         v.scene = w.scene
         v.pointOfView = w.cameraNode
-        v.delegate = w
+        // build 48: no render delegate; the display link below moves the scene (DiceArenaWorld.tick)
         v.isPlaying = true
         v.rendersContinuously = true
         v.preferredFramesPerSecond = 60
@@ -89,10 +89,26 @@ final class DiceArenaStage: ObservableObject {
         v.isAccessibilityElement = false
         v.accessibilityElementsHidden = true   // the dice speak through the buttons over them
         world = w; scnView = v
+        startTicking()
         if let s = last { w.post { w.apply(s) } }
         if let c = camera { let t = top; w.post { w.setBase(c, top: t) } }
         if let z = Self.stillZoom, tray.shelf { w.post { w.zoom(by: Float(z)); w.orbit(dx: -50, dy: 20) } }
         return v
+    }
+
+    /// The scene's frames (build 48): a display link on the main thread, about 60 a second, while the view is in a
+    /// window. It stops by itself once the stage is gone.
+    private func startTicking() {
+        let link = CADisplayLink(target: Ticker { [weak self] in
+            guard let self else { return false }
+            if let v = self.scnView, v.window != nil, let w = self.world {
+                w.tick(CACurrentMediaTime())
+                if !v.isPlaying { v.isPlaying = true }
+            }
+            return true
+        }, selector: #selector(Ticker.fire(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        link.add(to: .main, forMode: .common)
     }
 
     // #523: what the player does to the view (Hot Dice): pinch, one finger to look round, two to slide, double-tap
@@ -134,6 +150,14 @@ final class DiceArenaStage: ObservableObject {
         let s = c.project(p)
         return CGPoint(x: s.x, y: s.y)
     }
+}
+
+/// The display link's target: it holds the stage weakly (a display link holds its target), and ends the link once
+/// the stage is gone.
+private final class Ticker: NSObject {
+    let step: () -> Bool
+    init(_ step: @escaping () -> Bool) { self.step = step }
+    @objc func fire(_ link: CADisplayLink) { if !step() { link.invalidate() } }
 }
 
 /// SceneKit's view.

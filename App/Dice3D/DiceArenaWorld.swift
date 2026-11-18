@@ -6,8 +6,11 @@ import T2PCore
 /// The dice arena in SceneKit (#521): a felt-lined tray with a wooden rim and a keep shelf in front, a leather cup,
 /// and the dice. A throw plays a simulated tumble (DiceSim) turned so each die lands on the room's face; everything
 /// else is a short tween. Few nodes, no SceneKit physics: the tumble is worked out before it plays.
-/// Everything in the scene changes on SceneKit's render thread: other threads `post` changes.
-final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
+/// Build 48: the scene moves on the main thread, a frame at a time, from the stage's own display link (`tick`), never
+/// from SceneKit's render callback. On Tyler's phone (and in the simulator) SceneKit sometimes stopped calling back
+/// after the first frame, so a roll never landed, its dice couldn't be kept and Bank never came on. Changes from
+/// elsewhere still go through `post`, run at the start of the next frame.
+final class DiceArenaWorld: NSObject {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     var reduced = false
@@ -114,7 +117,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     func post(_ f: @escaping () -> Void) { lock.lock(); pending.append(f); lock.unlock() }
 
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+    /// One frame (main thread, from the stage's display link): what was posted, then the dice, the cup and the camera.
+    func tick(_ time: TimeInterval) {
         lock.lock(); let work = pending; pending = []; lock.unlock()
         work.forEach { $0() }
         // a still keeps real time even when a slow simulator draws few frames, so it lands on time

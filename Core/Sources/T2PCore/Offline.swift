@@ -55,6 +55,8 @@ public final class OfflineTransport: RoomTransport {
     public var now: () -> Double = { Date().timeIntervalSince1970 * 1000 }
     /// For the UI tests' debug line: how many times the clock ran, when it last did, and the deadline it waits for.
     public private(set) var clockRuns = 0, lastRun = 0.0, nextAt = -1.0
+    /// ...and how many messages the phone sent it, and the last one's type.
+    public private(set) var sends = 0, lastSent = ""
 
     public init(rules: OfflineRules, game: Game, seed: UInt32 = .random(in: 1...UInt32.max)) {
         self.rules = rules; self.game = game; self.seed = seed
@@ -68,6 +70,7 @@ public final class OfflineTransport: RoomTransport {
 
     public func send(_ text: String) {
         guard let r = room else { return }
+        sends += 1; lastSent = JSON.parse(text)?["t"].string ?? "?"
         deliver(rules.send(r, text, now: now()))
         arm()
     }

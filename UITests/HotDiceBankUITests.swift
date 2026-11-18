@@ -48,6 +48,7 @@ final class HotDiceBankUITests: XCTestCase {
                 rescueSeen = true
                 XCTFail("\(name): the 3D scene didn't land a roll by itself (the safety net settled it): \(line)")
             }
+            let beforeTap = debug(app)
             roll.tap(); turnRolls += 1
             turn: while turnRolls < 20 {
                 // the roll lands: dice to choose from, or a Farkle
@@ -59,7 +60,7 @@ final class HotDiceBankUITests: XCTestCase {
                     else if said(status).contains("Tap the dice") { landed = "choose" }
                     else if !retapped && Date().timeIntervalSince(tapped) > 3 && on(roll) && said(status).contains("Roll all six") {
                         // the room never got the roll: say so, and tap again
-                        dropped.append("Roll at turn start: \(debug(app))")
+                        dropped.append("Roll at turn start. Before the tap: \(beforeTap) || 3 s after: \(debug(app))")
                         retapped = true
                         roll.tap()
                         end = Date().addingTimeInterval(15)

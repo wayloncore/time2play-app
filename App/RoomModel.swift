@@ -86,8 +86,8 @@ final class RoomModel: ObservableObject, Identifiable {
         var parts = ["refused=\(lastProblem.map { "\($0.0) \(ago($0.1))" } ?? "-")"]
         if let o = transport as? OfflineTransport {
             let now = Date().timeIntervalSince1970 * 1000
-            parts.append(String(format: "clock runs=%d last=%.1fs ago next=%@", o.clockRuns, (now - o.lastRun) / 1000,
-                                o.nextAt > 0 ? String(format: "in %.1fs", (o.nextAt - now) / 1000) : "none"))
+            parts.append(String(format: "clock runs=%d last=%.1fs ago next=%@ sends=%d last=%@", o.clockRuns, (now - o.lastRun) / 1000,
+                                o.nextAt > 0 ? String(format: "in %.1fs", (o.nextAt - now) / 1000) : "none", o.sends, o.lastSent))
         }
         parts.append(HangWatch.shared.line)
         return parts.joined(separator: " ")
