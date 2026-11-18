@@ -30,9 +30,11 @@ PEAKS = {"card-play": -4, "draw": -6, "your-turn": -4, "dice-roll": -5, "dice-la
 MAX_BYTES = 100 * 1024
 
 
-def decode(path):
-    """Any audio file as mono float samples at 44.1 kHz (ffmpeg does the decoding and the resampling)."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "f32le", "-"],
+def decode(path, filters=""):
+    """Any audio file as mono float samples at 44.1 kHz (ffmpeg does the decoding and the resampling), with any
+    ffmpeg audio filters (a pick's "filter", say "lowpass=f=1500" to make a thud duller)."""
+    af = ["-af", filters] if filters else []
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), *af, "-f", "f32le", "-"],
                          check=True, capture_output=True).stdout
     return np.frombuffer(raw, dtype="<f4").astype(np.float64)
 
@@ -76,8 +78,33 @@ def audio_files(packdir):
     return sorted(out)
 
 
+NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+# Melodic sounds whose notes the survey prints, so a rising (happy) one can be told from a falling one
+MELODIC = re.compile(r"jingles_(HIT|PIZZA|STEEL|SAX)\d+|confirmation_|question_|maximize_00[6-9]|zap|twoTone|threeTone")
+
+
+def contour(x):
+    """The strongest pitch in each 60 ms stretch that's loud, as note names (repeats merged)."""
+    n, out = 2646, []
+    peak = np.max(np.abs(x)) or 1
+    freqs = np.fft.rfftfreq(n, 1 / RATE)
+    band = (freqs > 150) & (freqs < 2500)
+    for k in range(0, len(x) - n, n):
+        w = x[k:k + n]
+        if np.sqrt(np.mean(w ** 2)) < peak * 0.05:
+            continue
+        spec = np.abs(np.fft.rfft(w * np.hanning(n)))
+        f = freqs[band][np.argmax(spec[band])]
+        m = int(round(69 + 12 * np.log2(f / 440)))
+        name = f"{NOTES[m % 12]}{m // 12 - 1}"
+        if not out or out[-1] != name:
+            out.append(name)
+    return " ".join(out)
+
+
 def survey(packdir):
-    files = audio_files(packdir)
+    files = [f for f in audio_files(packdir) if "preview" not in f.lower()]
+    melodic = []
     print(f"{len(files)} sounds")
     print(f"{'file':70} {'len s':>6} {'body s':>6} {'peak':>6} {'rms':>6} {'hits':>4} {'bright Hz':>9}")
     for rel in files:
@@ -87,6 +114,11 @@ def survey(packdir):
             print(f"{rel:70} (couldn't decode)")
             continue
         print(f"{rel:70} {s['len']:6.2f} {s['body']:6.2f} {s['peak']:6.1f} {s['rms']:6.1f} {s['hits']:4d} {s['hz']:9.0f}")
+        if MELODIC.search(rel):
+            melodic.append(rel)
+    print("\nNotes (the strongest pitch every 60 ms while it's loud):")
+    for rel in melodic:
+        print(f"{rel:70} {contour(decode(os.path.join(packdir, rel)))}")
 
 
 def shape(x, pick, name):
@@ -115,8 +147,11 @@ def field(html, name):
     if i < 0:
         return ""
     j = html.find("field-name-", i + 20)
-    text = re.sub(r"<[^>]+>", " ", html[i:j if j > 0 else i + 3000])
-    text = re.sub(r"\s+", " ", text.split(">", 1)[-1]).strip()
+    if j < 0:
+        j = i + 3000
+    j = html.rfind("<", i, j)   # the next field's opening tag isn't part of this one
+    text = re.sub(r"<[^>]+>", " ", html[i:j])
+    text = re.sub(r"\s+", " ", text.split(">", 1)[-1]).replace("&nbsp;", " ").replace("&quot;", '"').strip()
     return text
 
 
@@ -189,7 +224,7 @@ def pick(packdir, picks_path, outdir):
             bad.append(f"{name}: pack {pack}'s license isn't CC0 or CC-BY: {lic!r}")
             continue
         src = os.path.join(packdir, p["file"])
-        x = shape(decode(src), p, name)
+        x = shape(decode(src, p.get("filter", "")), p, name)
         path = os.path.join(outdir, f"{name}.caf")
         encode_caf(path, x)
         size = os.path.getsize(path)
