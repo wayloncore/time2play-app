@@ -194,6 +194,8 @@ struct YouView: View {
                 }
                 .listRowBackground(T2P.panel)
 
+                BoardSettingsSection()   // #535
+
                 Section {
                     Link("Help and support", destination: URL(string: "https://tyleralocke.com/help#app-support")!)
                     Link("Privacy", destination: URL(string: "https://tyleralocke.com/privacy")!)

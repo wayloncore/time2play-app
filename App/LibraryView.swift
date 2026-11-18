@@ -6,6 +6,8 @@ import T2PCore
 struct LibraryView: View {
     @EnvironmentObject var app: AppModel
     @State private var search = ""
+    /// #535: the Wheel of Names, played in the app
+    @State private var wheel = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +23,11 @@ struct LibraryView: View {
                             }
                             .accessibilityIdentifier("library-start-\(g.rawValue)")
                         }
+                        Button { wheel = true } label: {
+                            LibraryRow(title: "Wheel of Names", line: "Spin for a name: who goes first, who answers, who's up next.", detail: "Any group · on this device",
+                                       thumb: nil, symbol: "circle.circle.fill", tint: Color(hex: 0x3A2A10), action: "Open")
+                        }
+                        .accessibilityIdentifier("library-wheel")
                     } header: { Text("Play in the app") }
                     ForEach(app.library.categories) { c in
                         let items = app.library.items(in: c).filter { $0.game == nil }
@@ -40,10 +47,16 @@ struct LibraryView: View {
             .refreshable { await app.loadLibrary() }
             .task { await app.loadLibrary() }
         }
+        .fullScreenCover(isPresented: $wheel) { WheelOfNamesView() }
     }
 
     @ViewBuilder private func item(_ i: Library.Item) -> some View {
-        if let g = i.game {
+        if i.key == "wheel-of-names" {
+            // the website's wheel, played in the app (#535)
+            Button { wheel = true } label: {
+                LibraryRow(title: i.title, line: i.blurb, detail: i.playersLine, thumb: thumbURL(i), symbol: "circle.circle.fill", tint: Color(hex: 0x3A2A10), action: "Open")
+            }
+        } else if let g = i.game {
             Button { Task { await app.start(g) } } label: {
                 LibraryRow(title: i.title, line: i.blurb, detail: i.playersLine, thumb: thumbURL(i), symbol: g.symbol, tint: g.tint, action: "Start")
             }
