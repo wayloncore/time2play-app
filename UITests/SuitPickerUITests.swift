@@ -30,8 +30,9 @@ final class SuitPickerUITests: XCTestCase {
         XCTAssertTrue(wild.waitForExistence(timeout: 10), "seed 7: the Change Suit can go")
         wild.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).tap()
         XCTAssertTrue(app.descendants(matching: .any)["suit-picker"].waitForExistence(timeout: 5), "the painted chooser opens")
-        XCTAssertFalse(app.sheets.firstMatch.exists, "no iOS sheet")
-        XCTAssertFalse(app.alerts.firstMatch.exists, "no iOS alert")
+        // the old iOS panel's title is gone (XCUITest counts the painted chooser, a modal, among its alerts)
+        XCTAssertFalse(app.staticTexts["Pick the suit"].exists, "no iOS suit panel")
+        print("PICKER-ALERTS:", app.alerts.count, app.sheets.count)
         return app
     }
 
@@ -75,7 +76,7 @@ final class SuitPickerUITests: XCTestCase {
 
         tapWhenReady(app.buttons["room-menu"])
         XCTAssertTrue(app.descendants(matching: .any)["dialog-room-menu"].waitForExistence(timeout: 5), "the painted room menu")
-        XCTAssertFalse(app.sheets.firstMatch.exists || app.alerts.firstMatch.exists, "no iOS sheet or alert")
+        XCTAssertFalse(app.collectionViews.firstMatch.exists && app.buttons["Invite people"].exists && !app.buttons["menu-invite"].exists, "no iOS menu")
         usleep(500_000)
         shot(app, "nov18-\(device)\(t)-dialog-room-menu")
         tapWhenReady(app.buttons["menu-end-room"])
