@@ -39,10 +39,8 @@ jobs:
           done
       - name: What's in them
         run: |
-          sudo apt-get -qq install -y ffmpeg >/dev/null 2>&1 || true
-          find packs -type f \( -iname '*.ogg' -o -iname '*.wav' -o -iname '*.mp3' \) | sort | while read f; do
-            d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null)
-            echo "FILE ${f#packs/} $(stat -c %s "$f") ${d:-?}s"
+          find packs -type f \( -iname '*.ogg' -o -iname '*.wav' -o -iname '*.mp3' \) | sort | while read -r f; do
+            echo "FILE ${f#packs/} $(stat -c %s "$f")"
           done
       - name: The picked sounds, as base64
         env:
