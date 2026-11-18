@@ -125,7 +125,6 @@ struct YouView: View {
     @AppStorage(Table3DSwitch.key) private var table3D = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
     @AppStorage(HandSize.key) private var handSize = HandSize.medium.rawValue
-    @AppStorage(Dice3DSwitch.key) private var dice3D = false
 
     var body: some View {
         NavigationStack {
@@ -184,15 +183,10 @@ struct YouView: View {
                 }
                 .listRowBackground(T2P.panel)
 
-                Section {
-                    Toggle("3D dice (preview)", isOn: $dice3D)
-                        .tint(T2P.gold)
-                        .accessibilityIdentifier("toggle-dice3d")
-                } footer: {
-                    Text("Rolls Hot Dice and Roll Call in a 3D dice tray. It's still being built; off shows the usual dice.")
-                        .foregroundStyle(T2P.muted)
-                }
-                .listRowBackground(T2P.panel)
+                DiceSection()
+                FeelSection()
+                AlertsSection()
+                AppIconSection()
 
                 BoardSettingsSection()   // #535
 

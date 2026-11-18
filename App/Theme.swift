@@ -130,11 +130,13 @@ struct SectionLabel: View {
 }
 
 /// Haptics: a light tap for a play, a firmer one when it's your turn, a warning for a card that can't go.
+/// All of them stay quiet when You → "Haptics" is off (App/Feel.swift has the strong jolt and the light tap).
 enum Haptics {
-    static func play() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func yourTurn() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func nope() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
-    static func select() { UISelectionFeedbackGenerator().selectionChanged() }
+    static var on: Bool { FeelSettings.haptics }
+    static func play() { if on { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+    static func yourTurn() { if on { UINotificationFeedbackGenerator().notificationOccurred(.success) } }
+    static func nope() { if on { UINotificationFeedbackGenerator().notificationOccurred(.warning) } }
+    static func select() { if on { UISelectionFeedbackGenerator().selectionChanged() } }
 }
 
 extension Game {
@@ -162,14 +164,6 @@ extension Game {
         case .hotDice: return "2–8 · bots ok"
         case .rollCall: return "1–8 · solo too"
         case .closeEnough: return "1–8 · solo too"
-        }
-    }
-    var blurb: String {
-        switch self {
-        case .overdraft: return "Match the suit or the number, and be first to empty your hand."
-        case .hotDice: return "Roll six dice, keep what scores, and know when to bank."
-        case .rollCall: return "Five dice, three rolls, thirteen boxes to fill."
-        case .closeEnough: return "Give a range that holds the answer. Tighter scores more."
         }
     }
     /// The bots the room owner can add: each game's own.

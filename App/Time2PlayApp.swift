@@ -22,8 +22,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Task { @MainActor in self.app?.registerDevice(deviceToken) }
     }
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {}
-    // an alert that arrives while the app is open still shows as a banner
+    // an alert that arrives while the app is open still shows as a banner (a "your turn" for the room you're in
+    // doesn't: you can see it's your turn)
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        let info = notification.request.content.userInfo
+        if (info["kind"] as? String) == "turn", let r = info["room"] as? String {
+            let here = await MainActor.run { self.app?.room?.code == RoomCode.normalize(r) }
+            if here { return [] }
+        }
         Task { @MainActor in await self.app?.refreshSocial() }
         return [.banner, .sound]
     }
@@ -33,7 +39,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let friends = info["friends"] as? Bool ?? false
         await MainActor.run {
             guard let app = self.app else { return }
-            if let r = room, let c = RoomCode.normalize(r) { Task { await app.join(code: c) } }
+            // an invite or a "your turn" (#534): open its room (a room you're already in just carries on)
+            if let r = room, let c = RoomCode.normalize(r) { Task { await app.openRoom(code: c) } }
             else if friends { app.tab = .friends; Task { await app.refreshSocial() } }
         }
     }
@@ -51,6 +58,9 @@ struct Time2PlayApp: App {
             } else if let dice = DiceStill.fromArgs() {
                 // #521's screenshots: the 3D dice, a made-up turn stopped at a moment
                 DiceStillView(still: dice)
+            } else if let w = WidgetStill.fromArgs() {
+                // the home screen widget's screenshots, at its real sizes
+                WidgetStillView(still: w)
             } else {
             RootView()
                 .environmentObject(app)
@@ -58,9 +68,11 @@ struct Time2PlayApp: App {
                 .onAppear { delegate.app = app; GameCenter.shared.start() }   // #541: only does anything once a player turns it on
                 .onOpenURL { url in
                     // an invite link (time2play.live/K7QP), a friend or group link (time2play.live/f/CODE), or the app's
-                    // own time2play://join/K7QP
+                    // own time2play://join/K7QP (the widget's rejoin) and time2play://game/<key> (its game of the day)
                     if let f = FriendLink.code(url) { Task { await app.openFriendLink(f) } }
-                    else if let c = RoomCode.fromLink(url) { Task { await app.join(code: c) } }
+                    else if let k = AppLinks.gameKey(url) { app.showLibraryItem(k) }
+                    else if url.scheme == "time2play" && url.host == "play" { app.tab = .play }
+                    else if let c = RoomCode.fromLink(url) { Task { await app.openRoom(code: c) } }
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { a in
                     guard let url = a.webpageURL else { return }

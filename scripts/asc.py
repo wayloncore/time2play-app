@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """App Store Connect helper for the TestFlight workflow (#406). Runs on a GitHub runner, never prints a key.
 
-  asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and the App Store profile
+  asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and an App Store profile for
+                             the app and one for its home screen widget (registering the widget's App ID if missing)
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
   asc.py status              lists the app's builds (number, state) for the log
   asc.py gamecenter          Game Center (#541): the capability, the leaderboards and the achievements
@@ -17,6 +18,10 @@ import base64, hashlib, hmac, json, os, sys, time, urllib.error, urllib.parse, u
 
 API = "https://api.appstoreconnect.apple.com"
 BUNDLE_ID = "live.time2play.app"
+WIDGET_ID = "live.time2play.app.widget"
+# every bundle id the build signs: (the profile's name start, the file it's written to, the env name the workflow reads)
+BUNDLES = {BUNDLE_ID: ("Time2Play", "app", "T2P_PROFILE_NAME"),
+           WIDGET_ID: ("Time2Play Widget", "widget", "T2P_WIDGET_PROFILE_NAME")}
 VERSION = "1.0"
 
 
@@ -120,33 +125,8 @@ def signing(outdir):
         cert_id, cert_der = made["id"], base64.b64decode(made["attributes"]["certificateContent"])
         print(f"Distribution certificate: made a new one ({cert_id})")
 
-    # the App Store profile for the app, with this certificate
-    ids = call("GET", "/v1/bundleIds" + q({"filter[identifier]": BUNDLE_ID}))["data"]
-    ids = [b for b in ids if b["attributes"]["identifier"] == BUNDLE_ID]
-    if not ids:
-        die(f"The App ID {BUNDLE_ID} isn't registered")
-    bundle = ids[0]["id"]
-    caps = call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]
-    print("App ID capabilities: " + ", ".join(sorted(c["attributes"]["capabilityType"] for c in caps)))
-
-    name = f"Time2Play App Store {cert_id[:6]}"
-    profile = None
-    found = call("GET", "/v1/profiles" + q({"filter[name]": name, "filter[profileType]": "IOS_APP_STORE",
-                                             "include": "certificates", "limit": 50}))
-    for p in found["data"]:
-        certs = [c["id"] for c in p["relationships"]["certificates"]["data"] or []]
-        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs:
-            profile = p
-    if profile:
-        print(f"App Store profile: found ({name})")
-    else:
-        if found["data"]:  # same name but out of date (a capability changed): a fresh one with a dated name
-            name = f"{name} {time.strftime('%Y%m%d%H%M')}"
-        profile = call("POST", "/v1/profiles", {"data": {"type": "profiles", "attributes": {
-            "name": name, "profileType": "IOS_APP_STORE"}, "relationships": {
-            "bundleId": {"data": {"type": "bundleIds", "id": bundle}},
-            "certificates": {"data": [{"type": "certificates", "id": cert_id}]}}}})["data"]
-        print(f"App Store profile: made ({name})")
+    # an App Store profile for the app and one for its widget, with this certificate
+    profiles = {b: profile_for(b, cert_id) for b in BUNDLES}
 
     # a .p12 the Mac's keychain accepts (its importer wants the older SHA-1 / 3DES packing), with a throwaway password
     from cryptography.hazmat.primitives.serialization import pkcs12
@@ -159,10 +139,53 @@ def signing(outdir):
         f.write(p12)
     with open(os.path.join(outdir, "dist.p12.pass"), "wb") as f:
         f.write(password)
-    with open(os.path.join(outdir, "app.mobileprovision"), "wb") as f:
-        f.write(base64.b64decode(profile["attributes"]["profileContent"]))
-    with open(os.environ.get("GITHUB_ENV", os.devnull), "a") as f:
-        f.write(f"T2P_PROFILE_NAME={profile['attributes']['name']}\nT2P_PROFILE_UUID={profile['attributes']['uuid']}\n")
+    with open(os.environ.get("GITHUB_ENV", os.devnull), "a") as env:
+        for b, profile in profiles.items():
+            _, file, var = BUNDLES[b]
+            with open(os.path.join(outdir, f"{file}.mobileprovision"), "wb") as f:
+                f.write(base64.b64decode(profile["attributes"]["profileContent"]))
+            env.write(f"{var}={profile['attributes']['name']}\n")
+
+
+def bundle_id(identifier):
+    """The App ID's App Store Connect id. The widget's is registered here if it's missing (it needs no capabilities:
+    the Keychain group it shares with the app comes with any App Store profile); the app's must already exist."""
+    found = call("GET", "/v1/bundleIds" + q({"filter[identifier]": identifier, "limit": 20}))["data"]
+    found = [b for b in found if b["attributes"]["identifier"] == identifier]
+    if found:
+        print(f"App ID {identifier}: registered")
+        return found[0]["id"]
+    if identifier == BUNDLE_ID:
+        die(f"The App ID {identifier} isn't registered")
+    made = call("POST", "/v1/bundleIds", {"data": {"type": "bundleIds", "attributes": {
+        "identifier": identifier, "name": BUNDLES[identifier][0], "platform": "IOS"}}})["data"]
+    print(f"App ID {identifier}: registered it now")
+    return made["id"]
+
+
+def profile_for(identifier, cert_id):
+    bundle = bundle_id(identifier)
+    caps = call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]
+    print("  capabilities: " + (", ".join(sorted(c["attributes"]["capabilityType"] for c in caps)) or "none"))
+    name = f"{BUNDLES[identifier][0]} App Store {cert_id[:6]}"
+    profile = None
+    found = call("GET", "/v1/profiles" + q({"filter[name]": name, "filter[profileType]": "IOS_APP_STORE",
+                                             "include": "certificates", "limit": 50}))
+    for p in found["data"]:
+        certs = [c["id"] for c in p["relationships"]["certificates"]["data"] or []]
+        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs:
+            profile = p
+    if profile:
+        print(f"  App Store profile: found ({name})")
+        return profile
+    if found["data"]:  # same name but out of date (a capability changed): a fresh one with a dated name
+        name = f"{name} {time.strftime('%Y%m%d%H%M')}"
+    profile = call("POST", "/v1/profiles", {"data": {"type": "profiles", "attributes": {
+        "name": name, "profileType": "IOS_APP_STORE"}, "relationships": {
+        "bundleId": {"data": {"type": "bundleIds", "id": bundle}},
+        "certificates": {"data": [{"type": "certificates", "id": cert_id}]}}}})["data"]
+    print(f"  App Store profile: made ({name})")
+    return profile
 
 
 # ---------- after the upload ----------

@@ -196,6 +196,13 @@ extension AppModel {
         #else
         let sandbox = false
         #endif
-        Task { try? await api.registerPush(device: hex, sandbox: sandbox) }
+        Task { try? await api.registerPush(device: hex, sandbox: sandbox, turn: TurnAlerts.on) }
+    }
+
+    /// You → "Alerts for my turn": on asks for alerts if they haven't been allowed yet; either way the device
+    /// registers again, carrying the new choice to the server (#534).
+    func turnAlertsChanged(_ on: Bool) async {
+        guard signedIn else { return }
+        if on { await askForAlerts() } else { UIApplication.shared.registerForRemoteNotifications() }
     }
 }

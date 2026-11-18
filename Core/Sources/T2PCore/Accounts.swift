@@ -127,9 +127,12 @@ extension API {
     public func block(_ id: String) async throws { _ = try await players("block", ["account": .string(id)]) }
     public func unblock(_ id: String) async throws { _ = try await players("unblock", ["account": .string(id)]) }
 
-    /// This device's push token, for invite alerts (#404). sandbox: a test build.
-    public func registerPush(device: String, sandbox: Bool) async throws {
-        _ = try await players("push", ["device": .string(device), "sandbox": .bool(sandbox)])
+    /// This device's push token, for invite alerts (#404). sandbox: a test build. turn: "Alerts for my turn" is on
+    /// (wayloncore/tyleralocke#534; added, so a server from before it just ignores the field).
+    public func registerPush(device: String, sandbox: Bool, turn: Bool? = nil) async throws {
+        var body: [String: JSON] = ["device": .string(device), "sandbox": .bool(sandbox)]
+        if let t = turn { body["turn"] = .bool(t) }
+        _ = try await players("push", .object(body))
     }
 }
 

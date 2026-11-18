@@ -15,6 +15,7 @@ struct PlayView: View {
                     header
                     joinPanel
                     ForEach(app.challenges) { c in Panel { ChallengeRow(c: c) } }
+                    RecentRoomsPanel(keep: app.keep)
                     PresetsSection()   // #538
                     startRooms
                     offline
@@ -100,14 +101,7 @@ struct PlayView: View {
             }
             Text("Private: only people with the code or link can join. Bots can fill seats.")
                 .font(.subheadline).foregroundStyle(T2P.muted)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                ForEach(Game.allCases) { g in
-                    Button { Task { await app.start(g) } } label: { GameCard(game: g) }
-                        .buttonStyle(.plain)
-                        .disabled(app.busy)
-                        .accessibilityIdentifier("start-\(g.rawValue)")
-                }
-            }
+            StartGrid(keep: app.keep)
         }
     }
 }
@@ -126,6 +120,25 @@ extension PlayView {
                             .accessibilityLabel("Practice \(g.title) offline")
                             .accessibilityIdentifier("offline-\(g.rawValue)")
                     }
+                }
+            }
+        }
+    }
+}
+
+/// The Start cards, starred games first; the star sits on the card's picture.
+struct StartGrid: View {
+    @EnvironmentObject var app: AppModel
+    @ObservedObject var keep: Keepsakes
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            ForEach(keep.ordered(Game.allCases)) { g in
+                ZStack(alignment: .topTrailing) {
+                    Button { Task { await app.start(g) } } label: { GameCard(game: g) }
+                        .buttonStyle(.plain)
+                        .disabled(app.busy)
+                        .accessibilityIdentifier("start-\(g.rawValue)")
+                    FavoriteStar(keep: keep, game: g)
                 }
             }
         }
