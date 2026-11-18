@@ -16,6 +16,9 @@ struct CloseEnoughView: View {
     @State private var lockLines: [String] = []
     @State private var landed = true          // the answer's marker has dropped onto the scale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// #535: the 3D board, unless You → "Flat Close Enough board" is on
+    @AppStorage(Boards3D.flatCloseEnoughKey) private var flatBoard = false
+    private var board3D: Bool { Boards3D.closeEnough3D(flat: flatBoard) }
 
     private var me: String { view.common.meId }
     private func name(_ p: ScorePlayer) -> String { p.id == me ? "You" : RoomPlayer.stripBot(p.name) }
@@ -42,7 +45,13 @@ struct CloseEnoughView: View {
                         .id(q.n)
                         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .trailing).combined(with: .opacity))
                         if q.stage == "ask" {
-                            ScaleBar(q: q, lo: view.lockedIn ? view.answerLo ?? lo : lo, hi: view.lockedIn ? view.answerHi ?? hi : hi)
+                            if board3D {
+                                CloseEnoughBoard3D(state: .make(q: q, players: view.players, me: me, lo: view.lockedIn ? view.answerLo ?? lo : lo,
+                                                                hi: view.lockedIn ? view.answerHi ?? hi : hi, seated: view.common.seated))
+                                    .accessibilityIdentifier("ce-board3d")
+                            } else {
+                                ScaleBar(q: q, lo: view.lockedIn ? view.answerLo ?? lo : lo, hi: view.lockedIn ? view.answerHi ?? hi : hi)
+                            }
                             ask(q)
                             lockedIn(q)
                         } else {
@@ -170,7 +179,12 @@ struct CloseEnoughView: View {
                 .accessibilityIdentifier("ce-why-ended")
             Text("The answer: \(q.answer.map { q.format($0) } ?? "")").font(.title2.bold()).foregroundStyle(T2P.text)
                 .accessibilityIdentifier("ce-answer")
-            RangesChart(q: q, players: view.players.filter { q.results[$0.id] != nil }, me: me, landed: landed)
+            if board3D {
+                CloseEnoughBoard3D(state: .make(q: q, players: view.players, me: me, lo: lo, hi: hi, seated: view.common.seated))
+                    .accessibilityIdentifier("ce-ranges")
+            } else {
+                RangesChart(q: q, players: view.players.filter { q.results[$0.id] != nil }, me: me, landed: landed)
+            }
             if let r {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(verdictTitle(r.verdict))\(r.points > 0 ? " +\(r.points)" : "")").font(.headline).foregroundStyle(r.points > 0 ? T2P.good : T2P.ember)
