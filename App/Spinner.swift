@@ -13,8 +13,8 @@ struct T2PSpinner: View {
 
     /// The app's gold (#E9B45A), a deeper gold for the ring's shading, and the glint's warm white.
     static let gold = Color(red: 0xE9 / 255, green: 0xB4 / 255, blue: 0x5A / 255)
-    static let deep = Color(red: 0xA8 / 255, green: 0x72 / 255, blue: 0x1E / 255)
-    static let glint = Color(red: 1, green: 0.97, blue: 0.86)
+    static let deep = Color(red: 0x96 / 255, green: 0x62 / 255, blue: 0x16 / 255)
+    static let glint = Color.white
     /// One turn, in seconds; and one pulse under Reduce Motion.
     static let turn = 1.15
     static let pulse = 1.6
@@ -49,13 +49,14 @@ struct T2PSpinner: View {
             // the glint: a short arc of light that brightens and fades along the ring
             Circle()
                 .inset(by: line / 2)
-                .trim(from: 0, to: 0.26)
+                .trim(from: 0, to: 0.24)
                 .stroke(AngularGradient(stops: [.init(color: Self.glint.opacity(0), location: 0),
-                                                .init(color: Self.glint.opacity(0.95), location: 0.17),
-                                                .init(color: Self.glint.opacity(0), location: 0.26),
+                                                .init(color: Self.glint.opacity(0.55), location: 0.11),
+                                                .init(color: Self.glint, location: 0.19),
+                                                .init(color: Self.glint.opacity(0), location: 0.24),
                                                 .init(color: Self.glint.opacity(0), location: 1)],
                                         center: .center, startAngle: .degrees(0), endAngle: .degrees(360)),
-                        style: StrokeStyle(lineWidth: line * 0.7, lineCap: .butt))
+                        style: StrokeStyle(lineWidth: line * 0.8, lineCap: .butt))
         }
         .rotationEffect(.degrees(angle))
     }

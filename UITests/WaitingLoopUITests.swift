@@ -6,7 +6,7 @@ import XCTest
 /// and the spinner at small and large sizes. The rooms are live ones on tyleralocke.com.
 final class WaitingLoopUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
-    override func tearDown() { XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() { XCUIDevice.shared.orientation = .portrait; XCUIDevice.shared.appearance = .light }
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone" }
 
     /// The whole screen as the device shows it (an app screenshot comes out turned wrong in landscape on iPad).
@@ -97,6 +97,11 @@ final class WaitingLoopUITests: XCTestCase {
         XCTAssertTrue(logo(app).waitForExistence(timeout: 10), "the loop in the lobby")
         sleep(2)
         shot(app, "543-\(device)-lobby")
+        // the badge in dark mode too (the simulator's own setting, so the room's screens follow it)
+        XCUIDevice.shared.appearance = .dark
+        sleep(2)
+        shot(app, "543-\(device)-lobby-dark")
+        XCUIDevice.shared.appearance = .light
         app.buttons["leave"].tap()
         tapWhenReady(app.buttons["Leave the room"], 5)
     }

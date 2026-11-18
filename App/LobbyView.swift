@@ -52,7 +52,7 @@ struct LobbyView: View {
                         // #543: Tyler's looping logo while the room waits for players (not offline: nobody's coming)
                         if !room.offline && room.phase == "lobby" {
                             Spacer(minLength: 0)
-                            WaitingLogo(phase: room.phase).frame(height: 124)
+                            WaitingLogo(phase: room.phase, style: .badge).frame(width: 96, height: 96)
                         }
                     }
                     if !room.offline { codePanel }
