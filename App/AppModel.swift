@@ -46,6 +46,10 @@ final class AppModel: ObservableObject {
     @Published var friends = Friends()
     @Published var groups: [PlayerGroup] = []
     @Published var challenges: [Challenge] = []
+    /// Whether challenges have loaded once (after that, a new one shows the invite banner).
+    var challengesLoaded = false
+    /// Who this phone invited to which room (the lobby's "Invited: Sam, Jo").
+    let invites = InviteBook()
 
     enum Tab: Hashable { case play, friends, library, you }
 
@@ -119,7 +123,10 @@ final class AppModel: ObservableObject {
         TVModel.shared.watch(g, code: code, endpoints: endpoints)
     }
 
-    func closeRoom() { room?.close(); room = nil; TVModel.shared.watch(nil, code: nil, endpoints: endpoints) }
+    func closeRoom() {
+        if let r = room { keep.note(r) }   // who was in it, for Recent rooms (a confirmed Leave already took it off)
+        room?.close(); room = nil; TVModel.shared.watch(nil, code: nil, endpoints: endpoints)
+    }
 
     /// The server's own rules, loaded once, for playing bots with no signal (#402).
     /// Hot Dice also asks them which dice in a roll can score (#488), online too.

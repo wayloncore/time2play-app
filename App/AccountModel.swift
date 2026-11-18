@@ -63,6 +63,7 @@ extension AppModel {
     var signedIn: Bool { account != nil }
 
     func restoreAccount() {
+        if SocialDemo.on { SocialDemo.load(into: self); return }   // the test build's stand-in friends
         guard let saved: SavedAccount = UserDefaults.standard.data(forKey: "t2p.account").flatMap({ try? JSONDecoder().decode(SavedAccount.self, from: $0) }),
               let token = Keychain.load() else { return }
         account = saved; api.session = token
@@ -84,7 +85,7 @@ extension AppModel {
     private func forgetAccount() {
         account = nil; api.session = nil; Keychain.delete()
         UserDefaults.standard.removeObject(forKey: "t2p.account")
-        friends = Friends(); groups = []; challenges = []
+        friends = Friends(); groups = []; challenges = []; challengesLoaded = false
     }
 
     private func signedIn(_ s: SignedIn, kind: String) async {
@@ -140,28 +141,38 @@ extension AppModel {
     // MARK: friends, groups, challenges
 
     func refreshSocial() async {
-        guard signedIn else { return }
+        guard signedIn, !SocialDemo.on else { return }
         async let f = try? api.friends()
         async let g = try? api.groups()
         async let c = try? api.challenges()
         if let f = await f { friends = f }
         if let g = await g { groups = g }
-        if let c = await c { challenges = c }
+        if let c = await c {
+            // an invite that came in while the app is open: the painted banner (once per room; not the first load)
+            let new = c.filter { n in !challenges.contains { $0.id == n.id } }
+            let first = !challengesLoaded
+            challenges = c; challengesLoaded = true
+            if !first, let n = new.first, room?.code != n.room { bannerFor(n) }
+        }
+    }
+
+    func bannerFor(_ c: Challenge) {
+        AppDialogs.shared.showBanner(InviteNote(text: "\(c.from.name) invited you to \(c.game?.title ?? "a game")", game: c.game, room: c.room, face: c.from.face))
     }
 
     func social(_ work: @escaping () async throws -> Void) async {
+        if SocialDemo.on { return }   // the stand-in friends stay as they are
         do { try await work(); await refreshSocial() }
         catch { accountProblem = (error as? API.Failure)?.message ?? "That didn’t work. Check your signal and try again." }
     }
 
-    /// Starts a room, opens it (you own it), and invites friends or a group to it.
-    func challenge(_ game: Game, to: [String], group: String? = nil) async {
+    /// Starts a room, opens it (you own it), and invites friends or a group to it. The lobby then says who's invited.
+    func challenge(_ game: Game, to friends: [PlayerCard], group: PlayerGroup? = nil) async {
         await start(game)
         guard let r = room else { return }
         // wait for your own seat first: the first person in a room owns it
         for _ in 0..<40 where !r.hasSeat { try? await Task.sleep(nanoseconds: 250_000_000) }
-        do { try await api.sendChallenge(game: game, room: r.code, to: to, group: group) }
-        catch { r.toast = (error as? API.Failure)?.message ?? "The invite didn’t go." }
+        await invite(game: game, room: r.code, friends: friends, group: group)
     }
 
     func joinChallenge(_ c: Challenge) async {
@@ -170,14 +181,43 @@ extension AppModel {
         await join(code: c.room)
     }
 
-    /// A friend or group link (time2play.live/f/CODE).
+    /// A friend or group link (time2play.live/f/CODE), opened from outside the app: a painted question first. The
+    /// server tells whose link it is only by opening it (links/open adds the friend or joins the group at once), so
+    /// the question can't name them yet; the answer does.
     func openFriendLink(_ code: String) async {
-        guard signedIn else { tab = .friends; accountProblem = "Sign in to add friends from a link."; return }
+        guard signedIn else {
+            tab = .friends
+            AppDialogs.shared.say("Sign in to use friend links",
+                                  "A friend link adds a friend or puts you in a group, so it needs an account. Sign in here on Friends, then open the link again.",
+                                  identifier: "dialog-link-sign-in")
+            return
+        }
+        AppDialogs.shared.show(GameDialog(
+            title: "Open this friend link?",
+            message: "A friend link makes you friends with whoever sent it. A group link puts you in their group.",
+            choices: [GameChoice(label: "Open it", kind: .gold, identifier: "link-open") { [weak self] in
+                Task { await self?.acceptFriendLink(code) }
+            }],
+            cancel: "Not now", identifier: "dialog-friend-link"))
+    }
+
+    private func acceptFriendLink(_ code: String) async {
+        if SocialDemo.on {
+            AppDialogs.shared.say("You and Sam are friends", "Invite them from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done")
+            tab = .friends
+            return
+        }
         do {
             let r = try await api.openLink(code)
-            notice = r.kind == "friend" ? "You and \(r.name) are friends now." : "You joined \(r.name)."
             await refreshSocial(); tab = .friends
-        } catch { accountProblem = (error as? API.Failure)?.message ?? "That link didn’t work." }
+            if r.kind == "friend" {
+                AppDialogs.shared.say("You and \(r.name) are friends", "Invite them from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done")
+            } else {
+                AppDialogs.shared.say("You joined \(r.name)", "Invite the whole group from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done")
+            }
+        } catch {
+            AppDialogs.shared.say("That link didn’t work", (error as? API.Failure)?.message ?? "Check your signal and try again.", identifier: "dialog-link-failed")
+        }
     }
 
     // MARK: invite alerts (#404)

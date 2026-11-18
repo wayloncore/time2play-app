@@ -47,7 +47,8 @@ final class FeelUITests: XCTestCase {
         shot(app, "feel-play-starred")
     }
 
-    /// A room you were in shows on Play while it's open, and a tap rejoins it.
+    /// A room you dropped out of (the app closed, not a confirmed Leave) shows on Play while it's open, and a tap
+    /// rejoins it. Since Nov 18 a confirmed Leave takes a live room off the list (PaintFriendsUITests checks that).
     func testRecentRoomRejoins() throws {
         let code = try startRoom("overdraft")
         let app = launch(["-t2p-name", "Sim"])
@@ -60,8 +61,10 @@ final class FeelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["room-code-shown"].waitForExistence(timeout: 20), "in the room's lobby")
         tapWhenReady(app.buttons["addbot-easy"])   // a bot keeps the room open once you've gone
         sleep(1)
-        app.buttons["leave"].tap()
-        tapWhenReady(app.buttons["Leave the room"], 5)
+        // a drop-out: the app goes away mid-room, then comes back (no reset, so it remembers)
+        app.terminate()
+        app.launchArguments = ["-t2p-classic", "-t2p-classic-dice", "-t2p-name", "Sim"]
+        app.launch()
         let rejoin = app.buttons["rejoin-\(code)"]
         if !rejoin.waitForExistence(timeout: 15) {
             // the room closed with nobody in it: the list only shows open rooms, so nothing shows

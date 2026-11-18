@@ -22,6 +22,27 @@ final class RecentsTests: XCTestCase {
         XCTAssertEqual(list[1].playable, .hotDice)
     }
 
+    /// Nov 18: who was in a room, saved with it. The list saved before (no such fields) still reads, and the previous
+    /// version reads the new one (it ignores fields it doesn't know).
+    func testWhoWasInItReadsBothWays() throws {
+        let before = #"[{"code":"K7QP","game":"farkle","at":800000000}]"#
+        let old = try JSONDecoder().decode([RecentRoom].self, from: Data(before.utf8))
+        XCTAssertEqual(old.first?.code, "K7QP"); XCTAssertNil(old.first?.players); XCTAssertNil(old.first?.whoLine)
+        var r = RecentRoom(code: "ABCD", game: .rollCall)
+        r.players = 3; r.bots = 2; r.others = []; r.solo = true
+        XCTAssertEqual(r.whoLine, "You and 2 bots")
+        r.others = ["Sam", "Jo"]; r.bots = 1
+        XCTAssertEqual(r.whoLine, "With Sam and Jo, and 1 bot")
+        r.others = ["Sam", "Jo", "Priya", "Lena"]; r.bots = 0
+        XCTAssertEqual(r.whoLine, "With Sam, Jo and 2 more")
+        r.others = nil; r.bots = nil; r.players = 4
+        XCTAssertEqual(r.whoLine, "4 players")
+        let data = try JSONEncoder().encode([r])
+        struct Previous: Decodable { var code: String; var game: String; var at: Date }   // the version before's fields
+        XCTAssertEqual(try JSONDecoder().decode([Previous].self, from: data).first?.code, "ABCD")
+        XCTAssertEqual(try JSONDecoder().decode([RecentRoom].self, from: data), [r])
+    }
+
     func testGameOfTheDayStepsThroughTheLibrary() throws {
         let lib = Library.appOnly
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!

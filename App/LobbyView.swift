@@ -29,8 +29,8 @@ struct LobbyView: View {
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
     var onLeave: () -> Void
-    @State private var removing: LobbyPlayer?
-    @State private var confirmEnd = false
+    /// The room's painted dialogs (RoomView's); Take out, End the room and Report are painted like the game (Nov 18).
+    @Environment(\.gameDialogs) private var dialogs
     @State private var showQR = false
     @State private var tv = false
 
@@ -56,6 +56,8 @@ struct LobbyView: View {
                         }
                     }
                     if !room.offline { codePanel }
+                    // Nov 18: the room's owner invites friends or a group from here
+                    if !room.offline && owner { InviteFriendsBar(book: app.invites, game: room.game, code: room.code) }
                     if room.phase == "playing" || room.phase == "done" {
                         Label(room.game == .overdraft ? "A hand is on. You’re dealt in at the next one." : "A game is on. You’ll play in the next one.",
                               systemImage: "hourglass").foregroundStyle(T2P.muted)
@@ -68,16 +70,29 @@ struct LobbyView: View {
             }
             startBar
         }
-        .confirmationDialog("Take \(removing?.name ?? "them") out of the room?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { if let p = removing { room.send(Out.remove(p.id)) }; removing = nil }
-            Button("Keep", role: .cancel) { removing = nil }
-        }
-        .confirmationDialog("End the room for everyone?", isPresented: $confirmEnd, titleVisibility: .visible) {
-            Button("End the room", role: .destructive) { room.send(Out.close) }
-            Button("Keep it open", role: .cancel) {}
-        }
         .sheet(isPresented: $showQR) { BigQR(code: room.code, link: room.inviteLink) }
         .sheet(isPresented: $tv) { ShowOnTV() }
+    }
+
+    private func ask(_ d: GameDialog) {
+        if let dialogs { dialogs.show(d) } else { AppDialogs.shared.show(d) }
+    }
+
+    private func askRemove(_ p: LobbyPlayer) {
+        let r = room
+        ask(GameDialog(title: "Take \(p.name) out of the room?",
+                       message: p.bot == nil ? "They can come back in with the code." : nil,
+                       choices: [GameChoice(label: "Remove", kind: .danger, identifier: "remove-confirm") { r.send(Out.remove(p.id)) }],
+                       cancel: "Keep", identifier: "dialog-remove"))
+    }
+
+    private func askReport(_ p: LobbyPlayer) {
+        let r = room, a = app
+        let thanks = { r.toast = "Thanks. Tyler will look at it." }
+        ask(GameDialog(title: p.name, message: "Report this player to Tyler. Only the reason you pick goes with it.",
+                       choices: [GameChoice(label: "Report their name", identifier: "report-name") { Task { try? await a.api.report(name: p.name, why: "name", room: r.code); thanks() } },
+                                 GameChoice(label: "Report how they play", identifier: "report-behavior") { Task { try? await a.api.report(name: p.name, why: "behavior", room: r.code); thanks() } }],
+                       cancel: "Back", identifier: "dialog-report"))
     }
 
     private var topBar: some View {
@@ -161,21 +176,19 @@ struct LobbyView: View {
             }
             Spacer()
             if owner && !me && room.phase == "lobby" {
-                Button { removing = p } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(T2P.faint) }
+                Button { askRemove(p) } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(T2P.faint) }
                     .accessibilityLabel("Remove \(p.name)")
+                    .accessibilityIdentifier("remove-\(p.id)")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
         .accessibilityLabel([me ? "You" : p.name, sub].filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityIdentifier("player-\(p.id)")
-        .contextMenu {
-            // report a name from any player list (#395); guests can too. No free text: a preset reason.
-            if !me && p.bot == nil && !room.offline {
-                Button("Report their name") { Task { try? await app.api.report(name: p.name, why: "name", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
-                Button("Report how they play") { Task { try? await app.api.report(name: p.name, why: "behavior", room: room.code); room.toast = "Thanks. Tyler will look at it." } }
-            }
-        }
+        // report a name from any player list (#395); guests can too. No free text: a preset reason. A long press asks,
+        // painted (Nov 18).
+        .onLongPressGesture(minimumDuration: 0.5) { if !me && p.bot == nil && !room.offline { askReport(p) } }
+        .accessibilityAction(named: "Report") { if !me && p.bot == nil && !room.offline { askReport(p) } }
     }
 
     private var addBots: some View {
@@ -224,7 +237,9 @@ struct LobbyView: View {
                     .font(.footnote).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
                 HStack(spacing: 24) {
                     SavePresetButton(room: room)   // #538
-                    Button("End the room") { confirmEnd = true }.font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)
+                    Button("End the room") { let r = room; ask(.endRoom(keep: "Keep it open", end: { r.send(Out.close) })) }
+                        .font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)
+                        .accessibilityIdentifier("lobby-end-room")
                 }
             } else if room.phase == "lobby" {
                 Text(room.hostless ? "Waiting for \(room.ownerName ?? "the room’s owner") to start." : "The big screen starts the game.")

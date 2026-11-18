@@ -48,6 +48,7 @@ struct HostRoomsSection: View {
 /// The host screen on an iPad: how to join (code, QR, link), who's in, the controls, and the table everyone shares.
 struct HostView: View {
     @ObservedObject var host: HostModel
+    @EnvironmentObject var app: AppModel
     var onDone: () -> Void
     @State private var confirmEnd = false
     @State private var tv = false
@@ -79,6 +80,7 @@ struct HostView: View {
                     ScrollView {
                         VStack(spacing: 20) {
                             joinCard
+                            inviteBar
                             stage.frame(minHeight: 420)
                             playersCard
                             controls
@@ -140,10 +142,16 @@ struct HostView: View {
         ScrollView {
             VStack(spacing: 16) {
                 joinCard
+                inviteBar
                 playersCard
                 controls
             }
         }
+    }
+
+    /// Nov 18: invite friends or a group to the room this iPad hosts.
+    private var inviteBar: some View {
+        InviteFriendsBar(book: app.invites, game: host.game, code: host.room.code)
     }
 
     private var joinCard: some View {

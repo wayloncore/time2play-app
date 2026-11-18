@@ -30,6 +30,24 @@ final class Keepsakes: ObservableObject {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// Who's in a room right now (seats, bots, the other people's names) and whether it's a solo room, saved on its
+    /// recent-rooms entry when this phone steps away from it (the room closed on screen, the app went to the
+    /// background). Only updates an entry already there: a confirmed Leave has already taken the room off.
+    func note(_ r: RoomModel) {
+        guard !r.offline, let i = recents.firstIndex(where: { $0.code == r.code }) else { return }
+        let ps = r.lobbyPlayers
+        guard !ps.isEmpty else { return }
+        var e = recents[i]
+        e.players = ps.count
+        e.bots = ps.filter { $0.bot != nil }.count
+        e.others = Array(ps.filter { $0.bot == nil && $0.id != r.meId }.map(\.name).prefix(4))
+        e.solo = r.isSolo
+        e.at = Date()
+        recents[i] = e
+        if let j = open.firstIndex(where: { $0.code == r.code }) { open[j] = e }
+        UserDefaults.standard.set(try? JSONEncoder().encode(recents), forKey: Keepsakes.recentKey)
+    }
+
     func forget(_ code: String) {
         recents.removeAll { $0.code == code }
         open.removeAll { $0.code == code }
@@ -60,6 +78,16 @@ final class Keepsakes: ObservableObject {
     }
     /// The games for Start a room: starred ones first, each group in the usual order.
     func ordered(_ games: [Game]) -> [Game] { games.filter(isFavorite) + games.filter { !isFavorite($0) } }
+}
+
+extension RoomModel {
+    /// A solo room (Tyler, Nov 18: Rejoin "is for solo not live games"): Roll Call or Close Enough on the server with
+    /// nobody else in it but bots. Leave keeps a solo room in Recent rooms, seat and all, to pick it back up; a live
+    /// room (anyone else in it, or Overdraft and Hot Dice, which need others) leaves Recent rooms on a confirmed Leave.
+    var isSolo: Bool {
+        guard !offline, game == .rollCall || game == .closeEnough else { return false }
+        return !lobbyPlayers.contains { $0.bot == nil && $0.id != meId }
+    }
 }
 
 extension AppModel {
@@ -104,33 +132,48 @@ struct RecentRoomsPanel: View {
     }
 
     private func row(_ r: RecentRoom) -> some View {
+        RecentRoomRow(r: r, keep: keep)
+    }
+}
+
+/// One recent room: the game's own picture, its name, who's in it, the code smaller, and Rejoin (a live room you
+/// dropped out of) or Resume (a solo one). A long press asks, painted, whether to take it off the list.
+struct RecentRoomRow: View {
+    @EnvironmentObject var app: AppModel
+    let r: RecentRoom
+    @ObservedObject var keep: Keepsakes
+    @State private var longPressed = false
+
+    var body: some View {
         let g = r.playable
-        return Button { Task { await app.openRoom(code: r.code) } } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(g?.tint ?? T2P.panelHi)
-                    Image(systemName: g?.symbol ?? "gamecontroller.fill").font(.title3).foregroundStyle(.white.opacity(0.92))
-                }
-                .frame(width: 44, height: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(g?.title ?? "A game").font(.headline).foregroundStyle(T2P.text)
-                    Text("Room \(r.code) · \(r.at.formatted(.relative(presentation: .named)))").font(.subheadline).foregroundStyle(T2P.muted)
-                }
-                Spacer(minLength: 8)
-                Text("Rejoin").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.ink)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(T2P.gold, in: Capsule())
-            }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .contentShape(Rectangle())
+        let solo = r.solo == true
+        let verb = solo ? "Resume" : "Rejoin"
+        Button {
+            if longPressed { longPressed = false; return }   // the long press asked instead
+            Task { await app.openRoom(code: r.code) }
+        } label: {
+            GameRowLabel(game: g, title: g?.title ?? "A game", tag: solo ? "Solo" : "Live", line: r.whoLine,
+                         small: "Room \(r.code) · \(r.at.formatted(.relative(presentation: .named)))", action: verb)
+                .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .buttonStyle(.plain)
         .disabled(app.busy)
-        .contextMenu { Button("Remove from recent rooms", role: .destructive) { keep.forget(r.code) } }
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in longPressed = true; askRemove() })
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Rejoin \(g?.title ?? "the game"), room \(r.code)")
+        .accessibilityLabel(["\(verb) \(g?.title ?? "the game")", solo ? "solo" : "live", r.whoLine, "room \(r.code)"].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { Task { await app.openRoom(code: r.code) } }
+        .accessibilityAction(named: "Remove from recent rooms") { askRemove() }
         .accessibilityIdentifier("rejoin-\(r.code)")
+    }
+
+    private func askRemove() {
+        let code = r.code
+        let k = keep
+        AppDialogs.shared.show(GameDialog(
+            title: "Remove room \(code)?", message: "It comes off Recent rooms on this phone. The room itself carries on.",
+            choices: [GameChoice(label: "Remove it", kind: .danger, identifier: "recent-remove") { k.forget(code) }],
+            cancel: "Keep it", identifier: "dialog-recent-remove"))
     }
 }
 

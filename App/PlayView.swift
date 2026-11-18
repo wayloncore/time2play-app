@@ -151,20 +151,10 @@ struct GameCard: View {
     let game: Game
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                game.tint
-                if game == .overdraft, let a = Art.image("change_suit"), let b = Art.image("wave_7") {
-                    HStack(spacing: -34) {
-                        Image(uiImage: b).resizable().scaledToFit().rotationEffect(.degrees(-10))
-                        Image(uiImage: a).resizable().scaledToFit().rotationEffect(.degrees(8))
-                    }
-                    .padding(.vertical, 10)
-                } else {
-                    Image(systemName: game.symbol).font(.system(size: 44)).foregroundStyle(.white.opacity(0.92))
-                }
-            }
-            .frame(height: 96)
-            .clipped()
+            // each game's own picture (Nov 18), the same one Recent rooms, invites and the Library use
+            GameArt(game: game)
+                .frame(height: 96)
+                .frame(maxWidth: .infinity)
             VStack(alignment: .leading, spacing: 2) {
                 Text(game.title).font(.headline).foregroundStyle(T2P.text)
                 Text(game.players).font(.subheadline).foregroundStyle(T2P.muted)

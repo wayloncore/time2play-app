@@ -25,7 +25,15 @@ struct RoomView: View {
     }
 
     private var leaveDialog: GameDialog {
-        GameDialog(title: leaveTitle, message: leaveDetail,
+        // a solo room (just you and bots, Roll Call or Close Enough): it waits in Recent rooms, seat and all (Nov 18)
+        if room.isSolo {
+            return GameDialog(title: "Leave for now?", message: "It’s just you here, so the room waits in Recent rooms on Play. Pick it back up while it’s open.",
+                              choices: [GameChoice(label: room.phase == "playing" ? "Leave the game" : "Leave the room", kind: .danger) {
+                                  confirmLeave = false; app.closeRoom()
+                              }],
+                              cancel: "Stay", onCancel: { confirmLeave = false }, identifier: "dialog-leave")
+        }
+        return GameDialog(title: leaveTitle, message: leaveDetail,
                    choices: [GameChoice(label: room.phase == "playing" ? "Leave the game" : "Leave the room", kind: .danger) {
                        confirmLeave = false; room.leave(); app.closeRoom()
                    }],

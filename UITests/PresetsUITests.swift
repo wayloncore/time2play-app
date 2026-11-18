@@ -14,12 +14,13 @@ final class PresetsUITests: XCTestCase {
         tapWhenReady(app.buttons["addbot-bold"]); sleep(1)
         tapWhenReady(app.buttons["2,500"]); sleep(1)
         tapWhenReady(app.buttons["save-preset"])
-        let field = app.alerts.textFields.firstMatch
+        // the painted naming dialog (Nov 18; was an iOS alert)
+        let field = app.textFields["preset-name"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20) + "Quick dice")
         shot(app, "538-presets-1-naming")
-        app.alerts.buttons["Save"].tap()
+        app.buttons["preset-save"].tap()
         sleep(1)
         tapWhenReady(app.buttons["leave"])
         tapWhenReady(app.buttons["Leave the room"])

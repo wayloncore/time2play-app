@@ -33,6 +33,7 @@ public struct PlayerGroup: Equatable, Sendable, Identifiable {
         guard let id = j["id"].string else { return nil }
         self.id = id; name = j["name"].string ?? ""; mine = j["mine"].bool ?? false; members = j["members"].array.compactMap(PlayerCard.init)
     }
+    public init(id: String, name: String, mine: Bool, members: [PlayerCard]) { self.id = id; self.name = name; self.mine = mine; self.members = members }
 }
 
 /// A challenge: a ready-made room and an invite to it (#396). Lasts 2 hours.
@@ -41,6 +42,9 @@ public struct Challenge: Equatable, Sendable, Identifiable {
     init?(_ j: JSON) {
         guard let id = j["id"].string, let from = PlayerCard(j["from"]), let room = j["room"].string else { return nil }
         self.id = id; self.from = from; game = j["game"].string.flatMap(Game.init(rawValue:)); self.room = room; created = j["created"].double ?? 0
+    }
+    public init(id: String, from: PlayerCard, game: Game?, room: String, created: Double) {
+        self.id = id; self.from = from; self.game = game; self.room = room; self.created = created
     }
 }
 
@@ -109,7 +113,7 @@ extension API {
     public func leaveGroup(_ group: String) async throws { _ = try await players("groups/leave", ["group": .string(group)]) }
 
     public func challenges() async throws -> [Challenge] { try await players("challenges")["challenges"].array.compactMap(Challenge.init) }
-    /// Invites friends (or a group) to a room you've started. Only Overdraft and Hot Dice rooms for now (the server's list).
+    /// Invites friends (or a group) to a room you've started (any of the four games; see `challengeable`).
     public func sendChallenge(game: Game, room: String, to: [String] = [], group: String? = nil) async throws {
         var b: [String: JSON] = ["game": .string(game.rawValue), "room": .string(room), "to": .array(to.map { .string($0) })]
         if let g = group { b["group"] = .string(g) }
@@ -136,8 +140,10 @@ extension API {
     }
 }
 
-/// The games a challenge can be for (the server's list, social.js GAMES).
-public extension Game { var challengeable: Bool { self == .overdraft || self == .hotDice } }
+/// The games a challenge can be for: all four (Nov 18). The server's list (social.js GAMES) had Overdraft and Hot Dice
+/// until wayloncore/tyleralocke#566 added Roll Call and Close Enough; before that, it refuses the other two with an
+/// error, which the app shows in a painted dialog.
+public extension Game { var challengeable: Bool { true } }
 
 /// A friend or group link: time2play.live/f/CODE (8 letters and numbers).
 public enum FriendLink {

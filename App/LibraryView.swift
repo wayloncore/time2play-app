@@ -19,7 +19,7 @@ struct LibraryView: View {
                     Section {
                         ForEach(Game.allCases) { g in
                             Button { Task { await app.start(g) } } label: {
-                                LibraryRow(title: g.title, line: g.blurb, detail: g.players, thumb: nil, symbol: g.symbol, tint: g.tint, action: "Start")
+                                LibraryRow(title: g.title, line: g.blurb, detail: g.players, thumb: nil, symbol: g.symbol, tint: g.tint, action: "Start", game: g)
                             }
                             .accessibilityIdentifier("library-start-\(g.rawValue)")
                         }
@@ -65,7 +65,7 @@ struct LibraryView: View {
             }
         } else if let g = i.game {
             Button { Task { await app.start(g) } } label: {
-                LibraryRow(title: i.title, line: i.blurb, detail: i.playersLine, thumb: thumbURL(i), symbol: g.symbol, tint: g.tint, action: "Start")
+                LibraryRow(title: i.title, line: i.blurb, detail: i.playersLine, thumb: thumbURL(i), symbol: g.symbol, tint: g.tint, action: "Start", game: g)
             }
         } else {
             Link(destination: app.endpoints.api(String(i.page.drop(while: { $0 == "/" })))) {
@@ -83,11 +83,15 @@ struct LibraryView: View {
 
 struct LibraryRow: View {
     let title: String; let line: String?; let detail: String?; let thumb: URL?; let symbol: String; let tint: Color; let action: String?
+    /// One of the app's own games: its picture (GameArt, Nov 18) in place of the thumbnail or symbol.
+    var game: Game? = nil
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
                 tint
-                if let u = thumb {
+                if let g = game {
+                    GameArt(game: g)
+                } else if let u = thumb {
                     AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: symbol).foregroundStyle(.white.opacity(0.8)) }
                 } else {
                     Image(systemName: symbol).font(.title2).foregroundStyle(.white.opacity(0.9))
