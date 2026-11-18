@@ -132,6 +132,7 @@ struct RecentRoomsPanel: View {
                     .background(T2P.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(T2P.line))
                 }
+                .accessibilityElement(children: .contain)   // so each row keeps its own rejoin-CODE
                 .accessibilityIdentifier("recent-rooms")
             }
         }
