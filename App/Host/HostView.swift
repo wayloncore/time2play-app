@@ -52,6 +52,7 @@ struct HostView: View {
     @State private var confirmEnd = false
     @State private var tv = false
     @State private var removing: FloorPlayer?
+    @StateObject private var dialogs = GameDialogs()
     @ScaledMetric(relativeTo: .headline) private var face: CGFloat = 44
 
     var body: some View {
@@ -96,14 +97,18 @@ struct HostView: View {
             }
             .padding(.top, 60)
         }
-        .confirmationDialog("End the room for everyone?", isPresented: $confirmEnd, titleVisibility: .visible) {
-            Button("End the room", role: .destructive) { host.endRoom(); onDone() }
-            Button("Keep it open", role: .cancel) {}
+        // End the room and Take out, painted like the game (Nov 18)
+        .onChange(of: confirmEnd) { _, on in
+            guard on else { return }
+            dialogs.show(.endRoom(keep: "Keep it open", onCancel: { confirmEnd = false }, end: { confirmEnd = false; host.endRoom(); onDone() }))
         }
-        .confirmationDialog("Take \(removing?.name ?? "them") out of the room?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { if let p = removing { host.send(Out.remove(p.id)) }; removing = nil }
-            Button("Keep", role: .cancel) { removing = nil }
+        .onChange(of: removing?.id) { _, id in
+            guard id != nil, let p = removing else { return }
+            dialogs.show(GameDialog(title: "Take \(p.name) out of the room?",
+                                    choices: [GameChoice(label: "Remove", kind: .danger) { host.send(Out.remove(p.id)); removing = nil }],
+                                    cancel: "Keep", onCancel: { removing = nil }, identifier: "dialog-remove"))
         }
+        .gameDialogHost(dialogs)
         .sheet(isPresented: $tv) { ShowOnTV() }
     }
 

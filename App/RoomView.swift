@@ -6,6 +6,7 @@ struct RoomView: View {
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
     @State private var confirmLeave = false
+    @StateObject private var dialogs = GameDialogs()
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
     @AppStorage(Dice3DSwitch.classicKey) private var classicDice = false
 
@@ -18,10 +19,17 @@ struct RoomView: View {
         .overlay(alignment: .bottom) { reactionsShown }
         .overlay(alignment: .bottomLeading) { if Sounds.logging { SoundLog() } }
         .preferredColorScheme((room.game == .overdraft || room.game == .hotDice) && room.phase != "lobby" && room.view != nil ? .dark : nil)   // the card table and the felt are dark either way
-        .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button(room.phase == "playing" ? "Leave the game" : "Leave the room", role: .destructive) { room.leave(); app.closeRoom() }
-            Button("Stay", role: .cancel) {}
-        } message: { Text(leaveDetail) }
+        // Leave, painted like the game (Nov 18), and every painted dialog the tables show
+        .onChange(of: confirmLeave) { _, on in if on { dialogs.show(leaveDialog) } }
+        .gameDialogHost(dialogs)
+    }
+
+    private var leaveDialog: GameDialog {
+        GameDialog(title: leaveTitle, message: leaveDetail,
+                   choices: [GameChoice(label: room.phase == "playing" ? "Leave the game" : "Leave the room", kind: .danger) {
+                       confirmLeave = false; room.leave(); app.closeRoom()
+                   }],
+                   cancel: "Stay", onCancel: { confirmLeave = false }, identifier: "dialog-leave")
     }
 
     private var leaveTitle: String { room.isOwner ? "Leave your room?" : "Leave?" }

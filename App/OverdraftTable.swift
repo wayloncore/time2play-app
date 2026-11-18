@@ -9,8 +9,8 @@ struct OverdraftTableView: View {
     @ObservedObject var room: RoomModel
     let view: Overdraft.View
     var onLeave: () -> Void
-    @State private var wild: Overdraft.Card?
-    @State private var wildJump = false
+    @State private var picking: WildPick?
+    @State private var pileCenter: CGPoint?
     @State private var feed: [FeedLine] = []
     @State private var flash: Flash?
     @State private var flying: Flying?
@@ -52,24 +52,39 @@ struct OverdraftTableView: View {
                 .frame(height: hsize == .regular ? 230 : 172)
             if view.drawn != nil && view.yourTurn {
                 Button("Keep it and end my turn") { room.move("hold"); Haptics.select() }
-                    .buttonStyle(QuietButtonStyle()).padding(.top, 4)
+                    .buttonStyle(PaintedButtonStyle(kind: .quiet, wide: false)).padding(.top, 4)
                     .accessibilityIdentifier("keep")
             }
             ReactionBar(room: room)
         }
         .overlay { if showOver { HandOver(room: room, view: view).transition(.opacity) } }
+        .overlay { suitPicker }
         .animation(.easeInOut(duration: 0.3), value: showOver)
         // a card table can't reflow like a list: its words grow to the largest standard size, and VoiceOver reads all of it
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .confirmationDialog("Pick the suit", isPresented: Binding(get: { wild != nil }, set: { if !$0 { wild = nil } }), titleVisibility: .visible) {
-            ForEach(Overdraft.suits, id: \.self) { s in
-                Button(Overdraft.suitNames[s] ?? s) { if let c = wild { send(c, suit: s, jump: wildJump) }; wild = nil }
-            }
-            Button("Cancel", role: .cancel) { wild = nil }
-        }
         .onAppear(perform: appeared)
         .onChange(of: view.yourTurn) { _, mine in if mine { Haptics.yourTurn() } }
         .onChange(of: view.table) { old, new in if let new { changed(from: old, to: new) } }
+        .onChange(of: view.hand) { _, _ in closePickerIfGone() }
+        .onChange(of: view.yourTurn) { _, _ in closePickerIfGone() }
+    }
+
+    /// The painted suit chooser (SuitPicker), over the whole table while a wild waits for its suit.
+    @ViewBuilder private var suitPicker: some View {
+        if let p = picking {
+            SuitPicker(hand: view.hand, wild4: p.card.kind == "wild4", pile: pileCenter, sendAtTap: p.jump,
+                       onPick: { s in picking?.sent = true; send(p.card, suit: s, jump: p.jump) },
+                       onDone: { withAnimation(.easeOut(duration: 0.2)) { picking = nil } })
+                .id(p.token)
+                .transition(.opacity)
+        }
+    }
+
+    /// A wild that can't go any more (the turn's clock ran out, the jump was missed) closes its chooser.
+    private func closePickerIfGone() {
+        guard let p = picking, !p.sent else { return }
+        let canGo = p.jump ? view.jump.contains(p.card.id) : (view.yourTurn && view.legal.contains(p.card.id))
+        if !canGo { withAnimation(.easeOut(duration: 0.2)) { picking = nil } }
     }
 
     // MARK: what just happened
@@ -253,8 +268,12 @@ struct OverdraftTableView: View {
                         .offset(x: CGFloat(((c.k ?? i) * 13) % 9) - 4)
                 }
                 if let top = table.top {
+                    let named = top.isWild ? table.suit.map { SuitPaint.of($0).mid } : nil
                     CardImage(name: top.artName, width: cardWidth + 8)
-                        .shadow(radius: 8)
+                        // a wild on the pile glows in the suit it named
+                        .overlay(RoundedRectangle(cornerRadius: (cardWidth + 8) / 14).stroke(named ?? .clear, lineWidth: 3))
+                        .shadow(color: named?.opacity(0.8) ?? .black.opacity(0.33), radius: named == nil ? 8 : 14)
+                        .animation(.easeInOut(duration: 0.4), value: table.suit)
                         .opacity(flying != nil && flying?.card.k == top.k ? 0 : 1)
                         .accessibilityLabel("On the table: \(top.spoken)\(top.isWild ? ", \(Overdraft.suitNames[table.suit ?? ""] ?? "") named" : "")")
                 }
@@ -275,6 +294,10 @@ struct OverdraftTableView: View {
                 }
             }
         }
+        .onGeometryChange(for: CGPoint.self) { p in
+            let f = p.frame(in: .global)
+            return CGPoint(x: f.midX + (cardWidth + 28) / 2, y: f.midY)   // the discard pile, right of the draw pile
+        } action: { pileCenter = $0 }
         .overlay {
             if let f = flash {
                 VStack(spacing: 6) {
@@ -364,7 +387,7 @@ struct OverdraftTableView: View {
     private func tap(_ c: Overdraft.Card) {
         let jump = !view.yourTurn && view.jump.contains(c.id)
         guard (view.yourTurn && view.legal.contains(c.id)) || jump else { Haptics.nope(); return }
-        if c.isWild { wild = c; wildJump = jump; return }
+        if c.isWild { withAnimation(.easeOut(duration: 0.15)) { picking = WildPick(card: c, jump: jump) }; return }
         send(c, suit: nil, jump: jump)
     }
 
@@ -517,7 +540,7 @@ struct TableTopBar: View {
     var onLeave: () -> Void
     let owner: Bool
     @ObservedObject var room: RoomModel
-    @State private var confirmEnd = false
+    @Environment(\.gameDialogs) private var dialogs
     var body: some View {
         HStack {
             Button(action: onLeave) {
@@ -536,21 +559,23 @@ struct TableTopBar: View {
             .accessibilityElement(children: .combine)
             Spacer()
             HowToButton(game: game, view: room.view)
-            Menu {
-                if !room.offline { ShareLink(item: room.inviteLink) { Label("Invite people", systemImage: "square.and.arrow.up") } }
-                if owner { Button("End the room", role: .destructive) { confirmEnd = true } }
-                Button("Leave", role: .destructive, action: onLeave)
-            } label: {
+            // the room's menu is painted like the game (Nov 18), not an iOS menu
+            Button(action: showMenu) {
                 Image(systemName: "ellipsis").font(.headline).foregroundStyle(T2P.text)
                     .frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
             }
             .accessibilityLabel("Room menu")
+            .accessibilityIdentifier("room-menu")
         }
         .padding(.horizontal, 16).padding(.top, 6)
-        .confirmationDialog("End the room for everyone?", isPresented: $confirmEnd, titleVisibility: .visible) {
-            Button("End the room", role: .destructive) { room.send(Out.close) }
-            Button("Keep playing", role: .cancel) {}
-        }
+    }
+
+    private func showMenu() {
+        guard let dialogs else { return }
+        let r = room
+        dialogs.show(.roomMenu(room: r, reactions: false,
+                               onEnd: { dialogs.show(.endRoom(end: { r.send(Out.close) })) },
+                               onLeave: onLeave))
     }
 }
 
@@ -598,7 +623,7 @@ struct HandOver: View {
             ScrollView { card(t: t, winner: winner, me: me, w: w, name: name, rest: rest).padding(28) }
         }
         .frame(maxWidth: 440)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .background(PaintedPanel(corner: 24))
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.35))
@@ -613,7 +638,7 @@ struct HandOver: View {
         VStack(spacing: 14) {
             if let w { FaceView(face: w.face, size: 76).overlay(Circle().stroke(T2P.gold, lineWidth: 3).padding(-3)) }
             else { Image(systemName: "flag.checkered").font(.system(size: 44)).foregroundStyle(T2P.gold).accessibilityHidden(true) }
-            Text(me ? "You win!" : "\(name) wins").font(.largeTitle.bold()).foregroundStyle(T2P.text)
+            Text(me ? "You win!" : "\(name) wins").font(Painted.display(34, .bold)).foregroundStyle(Painted.titleGold)
                 .accessibilityIdentifier("hand-over")
             if let top = t?.top {
                 Text("\(me ? "You" : name) played the last card: \(top.label).").foregroundStyle(T2P.muted).multilineTextAlignment(.center)
@@ -630,11 +655,12 @@ struct HandOver: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            .background(T2P.panel.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Painted.gold.opacity(0.3)))
             if room.isOwner {
-                Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(GoldButtonStyle())
+                Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(PaintedButtonStyle(kind: .gold))
                     .accessibilityIdentifier("play-again")
-                Button("Back to the lobby") { room.send(Out.again) }.buttonStyle(QuietButtonStyle())
+                Button("Back to the lobby") { room.send(Out.again) }.buttonStyle(PaintedButtonStyle(kind: .quiet))
             } else {
                 Text("Waiting for \(ownerName) to deal again.").foregroundStyle(T2P.muted).multilineTextAlignment(.center)
             }
