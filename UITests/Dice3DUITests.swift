@@ -13,6 +13,8 @@ final class Dice3DUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-t2p-dice-still", cfg]
         app.launch()
+        // a slow simulator (the iPad) can time out on a snapshot while the scene starts: let it start first
+        sleep(UIDevice.current.userInterfaceIdiom == .pad ? 6 : 1)
         XCTAssertTrue(app.descendants(matching: .any)["dice3d-ready"].waitForExistence(timeout: 60), "\(name): the still never stopped")
         usleep(300_000)
         shot(app, name.hasPrefix("561-") ? name : "521-\(device)\(name)")
