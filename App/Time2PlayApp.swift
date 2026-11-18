@@ -55,7 +55,7 @@ struct Time2PlayApp: App {
             RootView()
                 .environmentObject(app)
                 .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-t2p-light") ? .light : nil)
-                .onAppear { delegate.app = app }
+                .onAppear { delegate.app = app; GameCenter.shared.start() }   // #541: only does anything once a player turns it on
                 .onOpenURL { url in
                     // an invite link (time2play.live/K7QP), a friend or group link (time2play.live/f/CODE), or the app's
                     // own time2play://join/K7QP

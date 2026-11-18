@@ -84,6 +84,10 @@ jobs:
           brew install xcodegen >/dev/null && xcodegen generate
           # App Store builds use Apple's production push service
           /usr/libexec/PlistBuddy -c "Set :aps-environment production" App/Time2Play.entitlements
+          # Game Center (#541): only once the App ID has it, so its profile carries the entitlement (else signing fails)
+          if security cms -D -i "$RUNNER_TEMP/sign/app.mobileprovision" | grep -q "com.apple.developer.game-center"; then
+            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.game-center bool true" App/Time2Play.entitlements && echo "Game Center: in the entitlements"
+          else echo "Game Center: not on the App ID yet (scripts/asc.py gamecenter), left out"; fi
           plutil -p App/Time2Play.entitlements
       - name: Archive (signed)
         run: |
