@@ -49,6 +49,7 @@ final class HotDiceBankUITests: XCTestCase {
                 XCTFail("\(name): the 3D scene didn't land a roll by itself (the safety net settled it): \(line)")
             }
             let beforeTap = debug(app)
+            let room0 = roomNow(app)
             roll.tap(); turnRolls += 1
             turn: while turnRolls < 20 {
                 // the roll lands: dice to choose from, or a Farkle
@@ -58,8 +59,13 @@ final class HotDiceBankUITests: XCTestCase {
                 while Date() < end && landed.isEmpty {
                     if banner.exists { landed = "farkle" }
                     else if said(status).contains("Tap the dice") { landed = "choose" }
-                    else if !retapped && Date().timeIntervalSince(tapped) > 3 && on(roll) && said(status).contains("Roll all six") {
-                        // the room never got the roll: say so, and tap again
+                    else if let r0 = room0, let r = roomNow(app), r.n != r0.n {
+                        // the turn went by between two looks (a Farkle's 2.4 seconds can, on a slow simulator)
+                        landed = "passed"
+                    }
+                    else if turnRolls == 1, !retapped, Date().timeIntervalSince(tapped) > 3, let r0 = room0, let r = roomNow(app),
+                            r.n == r0.n, r.state == "start", r.sends == r0.sends {
+                        // the room never got the roll (its turn and its count of messages haven't moved): say so, tap again
                         dropped.append("Roll at turn start. Before the tap: \(beforeTap) || 3 s after: \(debug(app))")
                         retapped = true
                         roll.tap()
@@ -78,6 +84,7 @@ final class HotDiceBankUITests: XCTestCase {
                     if banner.exists { landed = "farkle" } else if said(status).contains("Tap the dice") { landed = "choose" }
                     else { XCTFail("\(name): a roll of yours never landed: \(stalls.joined(separator: " || "))"); return }
                 }
+                if landed == "passed" { break turn }
                 if landed == "farkle" {
                     let words = said(banner)
                     XCTAssertTrue(words.contains("Farkle"), "\(name): a Farkle says so: \(words)")
@@ -201,6 +208,16 @@ final class HotDiceBankUITests: XCTestCase {
             let e = app.descendants(matching: .any)[id].firstMatch
             return (try? e.snapshot())?.label ?? "(no \(id))"
         }.joined(separator: " | ")
+    }
+
+    /// The room's turn as the test-only line says it ("room=start 7.0 …", "sends=23"): nil without -t2p-arena-debug.
+    private func roomNow(_ app: XCUIApplication) -> (state: String, n: Int, sends: Int)? {
+        let line = debug(app)
+        guard let r = line.range(of: #"room=(\w+) (\d+)\."#, options: .regularExpression),
+              let s = line.range(of: #"sends=(\d+)"#, options: .regularExpression) else { return nil }
+        let words = line[r].dropFirst(5).dropLast().split(separator: " ")
+        guard words.count == 2, let n = Int(words[1]), let sends = Int(line[s].dropFirst(6)) else { return nil }
+        return (String(words[0]), n, sends)
     }
 
     /// Your banked score, from the score strip ("You, 1250 points, their turn").
