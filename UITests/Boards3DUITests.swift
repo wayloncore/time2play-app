@@ -12,8 +12,10 @@ final class Boards3DUITests: XCTestCase {
         let lock = app.buttons["lock-in"]
         XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
         XCTAssertTrue(app.descendants(matching: .any)["ce-board3d"].exists, "the 3D board is on")
-        app.sliders["ce-low"].adjust(toNormalizedSliderPosition: 0.3)
-        app.sliders["ce-high"].adjust(toNormalizedSliderPosition: 0.6)
+        if app.sliders["ce-low"].waitForExistence(timeout: 20) {
+            app.sliders["ce-low"].adjust(toNormalizedSliderPosition: 0.3)
+            app.sliders["ce-high"].adjust(toNormalizedSliderPosition: 0.6)
+        }
         sleep(1)
         shot(app, "535-\(device)ce-1-asking")
         lock.tap()
@@ -26,7 +28,9 @@ final class Boards3DUITests: XCTestCase {
     }
 
     private func openWheel(_ app: XCUIApplication) {
-        tapWhenReady(app.tabBars.buttons["Library"])
+        // iPad (iOS 18 and up) draws its tabs at the top, outside a tab bar
+        let tab = app.tabBars.buttons["Library"]
+        if tab.waitForExistence(timeout: 5) { tab.tap() } else { tapWhenReady(app.buttons["Library"].firstMatch) }
         tapWhenReady(app.buttons["library-wheel"])
         XCTAssertTrue(app.buttons["wheel-spin"].waitForExistence(timeout: 10), "the wheel opens")
     }

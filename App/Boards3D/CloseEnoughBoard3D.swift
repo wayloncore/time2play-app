@@ -111,8 +111,8 @@ final class CloseEnoughBoardWorld {
             board.addChildNode(t)
         }
         for (k, text) in s.labels.enumerated() {
-            let lab = Scene3D.plane(Scene3D.label(text, size: 40, color: UIColor(hex: 0xEEF1F7)), height: 0.36)
-            lab.position = SCNVector3(Float(k) / 2 * Self.length - Self.length / 2, 0.06, Float(depth) / 2 + 0.25)
+            let lab = Scene3D.plane(Scene3D.label(text, size: 40, color: UIColor(hex: 0xEEF1F7)), height: 0.5)
+            lab.position = SCNVector3(Float(k) / 2 * Self.length - Self.length / 2, 0.06, Float(depth) / 2 + 0.32)
             lab.eulerAngles.x = -.pi / 2.6
             board.addChildNode(lab)
         }
@@ -129,8 +129,8 @@ final class CloseEnoughBoardWorld {
     /// The camera, raised and pulled back as lanes are added, so the whole board always fits.
     private func aim(lanes n: Int) {
         let k = Float(max(1, n))
-        camera.position = SCNVector3(0, 5.0 + k * 0.45, 6.9 + k * 0.4)
-        camera.look(at: SCNVector3(0, 0, 0.35))
+        camera.position = SCNVector3(0, 4.2 + k * 0.45, 5.6 + k * 0.4)
+        camera.look(at: SCNVector3(0, 0.1, 0.45))
     }
 
     private func bar(_ l: CloseEnoughBoardState.Lane, _ s: CloseEnoughBoardState, glow: Bool) -> SCNNode? {
@@ -169,7 +169,7 @@ final class CloseEnoughBoardWorld {
             let lane = SCNNode()
             lane.position = SCNVector3(0, 0, z(i, of: s.lanes.count))
             lanesNode.addChildNode(lane)
-            let nm = Scene3D.plane(Scene3D.label(l.name, size: 40, weight: l.me ? .bold : .semibold, color: .white, face: l.face), height: 0.42)
+            let nm = Scene3D.plane(Scene3D.label(l.name, size: 40, weight: l.me ? .bold : .semibold, color: .white, face: l.face), height: 0.56)
             nm.position = SCNVector3(-Self.length / 2 - 0.15 - Float((nm.geometry as! SCNPlane).width) / 2, 0.08, 0)
             nm.eulerAngles.x = -.pi / 2.6
             lane.addChildNode(nm)
@@ -186,7 +186,7 @@ final class CloseEnoughBoardWorld {
             }
             if s.reveal {
                 let txt = l.lo == nil ? "none" : l.points > 0 ? "+\(l.points)" : "0"
-                let pts = Scene3D.plane(Scene3D.label(txt, size: 44, weight: .heavy, color: l.points > 0 ? UIColor(hex: 0x5CC88A) : UIColor(hex: 0x8A95AD)), height: 0.4)
+                let pts = Scene3D.plane(Scene3D.label(txt, size: 44, weight: .heavy, color: l.points > 0 ? UIColor(hex: 0x5CC88A) : UIColor(hex: 0x8A95AD)), height: 0.52)
                 pts.position = SCNVector3(Self.length / 2 + 0.2 + Float((pts.geometry as! SCNPlane).width) / 2, 0.08, 0)
                 pts.eulerAngles.x = -.pi / 2.6
                 lane.addChildNode(pts)
@@ -261,7 +261,7 @@ struct CloseEnoughBoard3D: View {
 
     var body: some View {
         Host(holder: holder)
-            .frame(height: 150 + CGFloat(max(1, state.lanes.count)) * 30)
+            .frame(height: 118 + CGFloat(max(1, state.lanes.count)) * 34)
             .background(LinearGradient(colors: [Color(hex: 0x0B1121), Color(hex: 0x16203A)], startPoint: .top, endPoint: .bottom),
                         in: RoundedRectangle(cornerRadius: 16))
             .clipShape(RoundedRectangle(cornerRadius: 16))

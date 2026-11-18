@@ -26,25 +26,14 @@ final class Wheel3DWorld: NSObject, SCNSceneRendererDelegate {
     override init() {
         super.init()
         let R = Self.radius
-        let cam = SCNCamera(); cam.fieldOfView = 38; cam.zNear = 0.1; cam.zFar = 60
+        let cam = SCNCamera(); cam.fieldOfView = 46; cam.zNear = 0.1; cam.zFar = 60
         camera.camera = cam
         camera.position = SCNVector3(1.1, 0.35, 7.4)
         camera.look(at: SCNVector3(0, -0.15, 0))
         scene.rootNode.addChildNode(camera)
         Scene3D.lights(into: scene, key: SCNVector3(-4, 6, 8))
-        let spot = SCNNode(); spot.light = SCNLight(); spot.light!.type = .spot; spot.light!.intensity = 900
-        spot.light!.spotOuterAngle = 50; spot.light!.castsShadow = true; spot.light!.shadowRadius = 6
-        spot.light!.shadowColor = UIColor(white: 0, alpha: 0.5)
-        spot.position = SCNVector3(2, 5, 6); spot.look(at: SCNVector3(0, -1, 0))
-        scene.rootNode.addChildNode(spot)
 
-        // the stand: a floor shadow catcher, a post and a foot
-        let shadowFloor = SCNFloor(); shadowFloor.reflectivity = 0
-        let floor = SCNNode(geometry: shadowFloor)
-        let fm = SCNMaterial(); fm.lightingModel = .shadowOnly; fm.colorBufferWriteMask = .all
-        floor.geometry!.materials = [fm]
-        floor.position = SCNVector3(0, Float(-R - 1.0), 0)
-        scene.rootNode.addChildNode(floor)
+        // the stand: a post and a foot
         let post = SCNNode(geometry: SCNCylinder(radius: 0.14, height: 1.2))
         post.geometry!.materials = [Scene3D.material(UIColor(hex: 0x2A3350), metal: 0.6, rough: 0.35)]
         post.position = SCNVector3(0, Float(-R - 0.4), -0.25)
@@ -62,7 +51,8 @@ final class Wheel3DWorld: NSObject, SCNSceneRendererDelegate {
         body.position = SCNVector3(0, 0, -0.13)
         spinner.addChildNode(body)
         let plane = SCNPlane(width: R * 2, height: R * 2)
-        let m = SCNMaterial(); m.lightingModel = .physicallyBased; m.roughness.contents = 0.45; m.metalness.contents = 0.05
+        // the face in its true colors (lit, it washed out to pastels); the art carries its own shading
+        let m = SCNMaterial(); m.lightingModel = .constant
         m.transparencyMode = .aOne
         plane.materials = [m]
         face.geometry = plane

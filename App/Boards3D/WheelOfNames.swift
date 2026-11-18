@@ -167,7 +167,7 @@ struct WheelOfNamesView: View {
                 ZStack {
                     if let a = art {
                         if use3D {
-                            Wheel3DView(model: model, art: a)
+                            Wheel3DView(model: model, art: a).frame(width: side, height: side)
                         } else {
                             WheelFlatView(model: model, art: a).frame(width: side, height: side)
                         }
