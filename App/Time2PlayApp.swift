@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             c.delegateClass = TVSceneDelegate.self
             return c
         }
+        // opened by a link, a QR scan, an invite, an alert or the widget: straight in, no intro (#562)
+        if !options.urlContexts.isEmpty || !options.userActivities.isEmpty || options.notificationResponse != nil {
+            Intro.shared.skip()
+        }
         return UISceneConfiguration(name: nil, sessionRole: session.role)
     }
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -35,6 +39,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
+        Intro.shared.skip()   // an invite or "your turn" goes straight in (#562)
         let room = info["room"] as? String
         let friends = info["friends"] as? Bool ?? false
         await MainActor.run {
@@ -63,10 +68,12 @@ struct Time2PlayApp: App {
                 WidgetStillView(still: w)
             } else {
             RootView()
+                .overlay { IntroOverlay() }   // the intro at a fresh launch, over Play, which starts underneath (#562)
                 .environmentObject(app)
                 .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-t2p-light") ? .light : nil)
                 .onAppear { delegate.app = app; GameCenter.shared.start() }   // #541: only does anything once a player turns it on
                 .onOpenURL { url in
+                    Intro.shared.skip()   // links go straight in, never through the intro (#562)
                     // an invite link (time2play.live/K7QP), a friend or group link (time2play.live/f/CODE), or the app's
                     // own time2play://join/K7QP (the widget's rejoin) and time2play://game/<key> (its game of the day)
                     if let f = FriendLink.code(url) { Task { await app.openFriendLink(f) } }
@@ -75,6 +82,7 @@ struct Time2PlayApp: App {
                     else if let c = RoomCode.fromLink(url) { Task { await app.openRoom(code: c) } }
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { a in
+                    Intro.shared.skip()
                     guard let url = a.webpageURL else { return }
                     if let f = FriendLink.code(url) { Task { await app.openFriendLink(f) } }
                     else if let c = RoomCode.fromLink(url) { Task { await app.join(code: c) } }

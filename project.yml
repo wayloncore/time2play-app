@@ -32,6 +32,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: live.time2play.app
             CFBundleURLSchemes: [time2play]
+        # The launch screen is the intro clip's first-frame navy (#00071F, LaunchNavy in the asset catalog), so launch
+        # to intro has no flash (wayloncore/tyleralocke#562). It's written here, so the generated one is off below.
+        UILaunchScreen:
+          UIColorName: LaunchNavy
     # Used by the signed builds (#406): invite links that open the app, invite alerts, Sign in with Apple. Unsigned
     # simulator builds leave them out. The TestFlight workflow switches aps-environment to production.
     entitlements:
@@ -47,7 +51,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: NO   # UILaunchScreen is in info above (the navy)
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_NSCameraUsageDescription: "Time2Play uses the camera to scan a room’s QR code, so you can join without typing the code."

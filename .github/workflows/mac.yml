@@ -88,6 +88,17 @@ jobs:
             -parallel-testing-enabled NO $sel \
             CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -60
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: The launch screen in the built app (wayloncore/tyleralocke#562)
+        if: always()
+        run: |
+          A=build/Build/Products/Debug-iphonesimulator/Time2Play.app
+          [ -d "$A" ] || exit 0
+          echo "UILaunchScreen: $(plutil -extract UILaunchScreen json -o - "$A/Info.plist" 2>&1)"
+          xcrun assetutil --info "$A/Assets.car" 2>/dev/null | python3 -c '
+          import json,sys
+          for a in json.load(sys.stdin):
+              if a.get("Name") == "LaunchNavy": print("LaunchNavy:", a.get("Color components"), a.get("Colorspace"))' || true
+          ls -l "$A"/intro.mp4 "$A"/intro-end.jpg 2>&1 || true
       - name: The tour again on an iPad (#405)
         if: github.event.inputs.ipad == 'true'
         env:
