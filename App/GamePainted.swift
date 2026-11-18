@@ -4,7 +4,9 @@ import T2PCore
 /// Game-painted pieces (Tyler, Nov 18: "Make this look like a game option not an apple option"): the choices you make
 /// while you play look like part of the game, never an iOS sheet, alert, menu or gray capsule. A dark card-face panel
 /// with a gold rim and the cards' corner stars, the game's serif display type, and painted plaques for the choices.
-/// Settings screens and account forms keep the system look: they aren't game moments.
+/// Settings screens and account forms keep the system look: they aren't game moments. Since Nov 18 ("whatever style
+/// is applied everywhere"), every confirmation and choice in the app is painted too: the lobby's, Friends', the app's
+/// errors and account questions (App/PaintedAlerts.swift shows those over everything, the way an iOS alert does).
 enum Painted {
     /// The gold of the cards' frames, light to dark.
     static let goldHi = Color(hex: 0xFFF0C2)
@@ -108,17 +110,19 @@ struct PaintedButtonStyle: ButtonStyle {
     enum Kind { case gold, danger, quiet }
     var kind: Kind = .quiet
     var wide = true
+    /// A small plaque in a list row (Invite, Accept): shorter, smaller type.
+    var compact = false
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: compact ? 11 : 14, style: .continuous)
         configuration.label
-            .font(Painted.display(17))
+            .font(Painted.display(compact ? 15 : 17))
             .tracking(0.3)
             .multilineTextAlignment(.center)
             .foregroundStyle(text)
-            .padding(.horizontal, 18)
-            .frame(maxWidth: wide ? CGFloat.infinity : nil, minHeight: 52)
+            .padding(.horizontal, compact ? 14 : 18)
+            .frame(maxWidth: wide ? CGFloat.infinity : nil, minHeight: compact ? 38 : 52)
             .background(shape.fill(fill))
             .overlay(shape.inset(by: 2).stroke(.white.opacity(kind == .quiet ? 0.06 : 0.28), lineWidth: 1).mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center)))
             .overlay(shape.strokeBorder(kind == .quiet ? AnyShapeStyle(Painted.gold.opacity(0.6)) : AnyShapeStyle(Painted.rim), lineWidth: kind == .quiet ? 1 : 1.5))
@@ -171,15 +175,54 @@ struct GameDialog: Identifiable {
     var cancel: String? = "Cancel"
     var onCancel: () -> Void = {}
     var identifier = "game-dialog"
+    /// A text box under the message (a preset's name); the choices read what's typed from it.
+    var field: DialogField? = nil
+}
+
+/// The text box in a painted dialog. The choices keep a reference and read `text` when tapped.
+final class DialogField: ObservableObject {
+    @Published var text: String
+    let placeholder: String
+    let identifier: String
+    let limit: Int
+    init(_ text: String = "", placeholder: String, identifier: String, limit: Int = 24) {
+        self.text = text; self.placeholder = placeholder; self.identifier = identifier; self.limit = limit
+    }
+    var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
+}
+
+/// The painted dialog's text box: dark, with a gold edge.
+struct DialogFieldView: View {
+    @ObservedObject var field: DialogField
+    @FocusState private var focused: Bool
+    var body: some View {
+        TextField("", text: Binding(get: { field.text }, set: { field.text = String($0.prefix(field.limit)) }),
+                  prompt: Text(field.placeholder).foregroundStyle(Painted.paperDim.opacity(0.6)))
+            .font(.title3)
+            .foregroundStyle(Painted.paper)
+            .tint(Painted.gold)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled()
+            .submitLabel(.done)
+            .focused($focused)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black.opacity(0.38)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Painted.gold.opacity(focused ? 0.95 : 0.55), lineWidth: 1))
+            .accessibilityLabel(field.placeholder)
+            .accessibilityIdentifier(field.identifier)
+            .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true } }
+    }
 }
 
 /// The dialogs one screen shows, over everything on it (RoomView and HostView each keep one; the tables find it in
 /// the environment).
 final class GameDialogs: ObservableObject {
     @Published private(set) var current: GameDialog?
-    func show(_ d: GameDialog) { current = d; Haptics.select() }
-    func close() { current = nil }
-    func cancel() { let d = current; current = nil; d?.onCancel() }
+    /// Told when a dialog shows (or nil: goes). The app's own dialogs use it to show and hide their window.
+    var onChange: ((GameDialog?) -> Void)?
+    func show(_ d: GameDialog) { current = d; Haptics.select(); onChange?(d) }
+    func close() { current = nil; onChange?(nil) }
+    func cancel() { let d = current; current = nil; onChange?(nil); d?.onCancel() }
 }
 
 private struct GameDialogsKey: EnvironmentKey { static let defaultValue: GameDialogs? = nil }
@@ -253,7 +296,9 @@ struct GameDialogView: View {
             if let m = dialog.message {
                 Text(m).font(.callout).foregroundStyle(Painted.paperDim).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("dialog-message")
             }
+            if let f = dialog.field { DialogFieldView(field: f) }
             if !dialog.chips.isEmpty {
                 VStack(spacing: 8) {
                     if let t = dialog.chipsTitle {

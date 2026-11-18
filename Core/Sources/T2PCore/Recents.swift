@@ -6,10 +6,32 @@ public struct RecentRoom: Codable, Equatable, Sendable, Identifiable {
     public var code: String
     public var game: String          // Game's raw value ("overdraft", "farkle"…), kept as text so a new game reads
     public var at: Date
+    /// Who was in it the last time this phone was (Nov 18, wayloncore/tyleralocke#565 follow-up): every seat, the bots
+    /// among them, and the other people's names (up to 4). Optional, so a list saved before them still reads.
+    public var players: Int?
+    public var bots: Int?
+    public var others: [String]?
+    /// Just you (and bots) in a Roll Call or Close Enough room: Leave keeps it here to resume (Tyler, Nov 18).
+    public var solo: Bool?
     public var id: String { code }
     public var playable: Game? { Game(rawValue: game) }
 
     public init(code: String, game: Game, at: Date = Date()) { self.code = code; self.game = game.rawValue; self.at = at }
+
+    /// Who's in it, in a few words: "With Sam and Jo, and 2 bots", "You and 2 bots", "4 players"; nil when unknown.
+    public var whoLine: String? {
+        let names = others ?? []
+        let b = bots ?? 0
+        let botWords = b == 1 ? "1 bot" : "\(b) bots"
+        if !names.isEmpty {
+            let shown = names.count <= 2 ? names.joined(separator: " and ")
+                : names.prefix(2).joined(separator: ", ") + " and \(names.count - 2) more"
+            return b > 0 ? "With \(shown), and \(botWords)" : "With \(shown)"
+        }
+        if b > 0 { return "You and \(botWords)" }
+        if let p = players, p > 1 { return "\(p) players" }
+        return nil
+    }
 
     /// How long a room is worth offering again: rooms close well before a day is out (the seats go then too).
     public static let keepFor: TimeInterval = 86_400

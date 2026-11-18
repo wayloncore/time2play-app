@@ -59,14 +59,21 @@ struct AgeGate: View {
 /// Signing in: optional, to keep your name and face, friends, groups and challenges. Guests play everything.
 struct SignInPanel: View {
     @EnvironmentObject var app: AppModel
+    /// On a painted screen (Friends, the invite screen): paper-and-gold words and a painted Sign in.
+    var painted = false
+    /// "Save your progress" over it (the invite screen has its own line).
+    var heading = true
     @State private var asking = false
     @State private var over13: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Save your progress").font(.headline).foregroundStyle(T2P.text)
+            if heading {
+                Text("Save your progress").font(painted ? Painted.display(19) : .headline).foregroundStyle(painted ? Painted.paper : T2P.text)
+            }
             Text("Sign in to add friends, make groups and get invites. You can keep playing as a guest without it.")
-                .font(.subheadline).foregroundStyle(T2P.muted)
+                .font(.subheadline).foregroundStyle(painted ? Painted.paperDim : T2P.muted)
+                .fixedSize(horizontal: false, vertical: true)
             switch over13 {
             case .some(true):
                 SignInWithAppleButton(.signIn) { r in r.requestedScopes = [] } onCompletion: { result in
@@ -84,9 +91,13 @@ struct SignInPanel: View {
                 .accessibilityIdentifier("apple-sign-in")
             case .some(false):
                 Label("Accounts are for 13 and up. You can keep playing every game as a guest.", systemImage: "person.fill.checkmark")
-                    .foregroundStyle(T2P.text).accessibilityIdentifier("under-13")
+                    .foregroundStyle(painted ? Painted.paper : T2P.text).accessibilityIdentifier("under-13")
             case .none:
-                Button("Sign in") { asking = true }.buttonStyle(GoldButtonStyle()).accessibilityIdentifier("sign-in")
+                if painted {
+                    Button("Sign in") { asking = true }.buttonStyle(PaintedButtonStyle(kind: .gold)).accessibilityIdentifier("sign-in")
+                } else {
+                    Button("Sign in") { asking = true }.buttonStyle(GoldButtonStyle()).accessibilityIdentifier("sign-in")
+                }
             }
         }
         .sheet(isPresented: $asking) { AgeGate { over13 = $0 } }
@@ -118,7 +129,6 @@ struct ReviewSignIn: View {
 struct YouView: View {
     @EnvironmentObject var app: AppModel
     @State private var picking = false
-    @State private var confirmDelete = false
     @State private var taps = 0
     @State private var review = false
     @State private var name = ""
@@ -154,8 +164,8 @@ struct YouView: View {
 
                 if app.signedIn {
                     Section {
-                        Button("Sign out") { Task { await app.signOut() } }.accessibilityIdentifier("sign-out")
-                        Button("Delete account", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("delete-account")
+                        Button("Sign out") { askSignOut() }.accessibilityIdentifier("sign-out")
+                        Button("Delete account", role: .destructive) { askDelete() }.accessibilityIdentifier("delete-account")
                     } footer: { Text("Deleting removes your account, friends, groups and invites from Time2Play for good. You can still play as a guest.").foregroundStyle(T2P.muted) }
                     .listRowBackground(T2P.panel)
                 } else {
@@ -214,11 +224,22 @@ struct YouView: View {
                 }))
             }
             .sheet(isPresented: $review) { ReviewSignIn() }
-            .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete account", role: .destructive) { Task { _ = await app.deleteAccount() } }
-                Button("Keep it", role: .cancel) {}
-            } message: { Text("Your account, friends, groups and invites go for good. This can’t be undone.") }
         }
+    }
+
+    // Sign out and Delete account, painted (Nov 18)
+    private func askSignOut() {
+        let a = app
+        AppDialogs.shared.show(GameDialog(title: "Sign out?", message: "Your friends and groups stay with your account. On this phone you play as a guest until you sign in again.",
+                                          choices: [GameChoice(label: "Sign out", kind: .gold, identifier: "confirm-sign-out") { Task { await a.signOut() } }],
+                                          cancel: "Stay signed in", identifier: "dialog-sign-out"))
+    }
+
+    private func askDelete() {
+        let a = app
+        AppDialogs.shared.show(GameDialog(title: "Delete your account?", message: "Your account, friends, groups and invites go for good. This can’t be undone.",
+                                          choices: [GameChoice(label: "Delete account", kind: .danger, identifier: "confirm-delete-account") { Task { _ = await a.deleteAccount() } }],
+                                          cancel: "Keep it", identifier: "dialog-delete-account"))
     }
 
     private func save() {
@@ -228,110 +249,249 @@ struct YouView: View {
     }
 }
 
-/// Friends (#403): invites, requests, friends, people you played with, groups, and your friend link. No search and
-/// no directory: every way in starts with someone you already know (#385).
+
+/// Friends (#403), painted (Nov 18): invites at the top with Join, friend requests, your friends (each with Invite),
+/// the people you played with, groups (members, Invite, the group's link, Leave or Delete), and your friend link.
+/// No search and no directory: every way in starts with someone you already know (#385). The server has no way to
+/// edit a group yet (social.js: create, link, leave), so there's no Edit here.
 struct FriendsView: View {
     @EnvironmentObject var app: AppModel
     @State private var inviting: PlayerCard?
     @State private var invitingGroup: PlayerGroup?
     @State private var newGroup = false
-    @State private var link: URL?
+    @State private var share: ShareItem?
 
     var body: some View {
         NavigationStack {
-            List {
-                if !app.signedIn {
-                    Section { SignInPanel() }.listRowBackground(T2P.panel)
-                } else {
-                    if !app.challenges.isEmpty {
-                        Section("Invites") { ForEach(app.challenges) { ChallengeRow(c: $0) } }.listRowBackground(T2P.panel)
-                    }
-                    if !app.friends.incoming.isEmpty {
-                        Section("Friend requests") {
-                            ForEach(app.friends.incoming) { p in
-                                PersonRow(p: p) {
-                                    Button("Accept") { Task { await app.social { try await app.api.acceptFriend(p.id) } } }.buttonStyle(.borderless).foregroundStyle(T2P.goldText)
-                                    Button("Decline") { Task { await app.social { try await app.api.declineFriend(p.id) } } }.buttonStyle(.borderless).foregroundStyle(T2P.muted)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    if !app.signedIn {
+                        PaintedCard(title: "Play with friends") { SignInPanel(painted: true) }
+                    } else {
+                        if !app.challenges.isEmpty {
+                            PaintedCard(title: "Invites") {
+                                ForEach(app.challenges) { ChallengeRow(c: $0, painted: true) }
+                            }
+                        }
+                        if !app.friends.incoming.isEmpty { requests }
+                        friendsCard
+                        if !app.friends.recent.isEmpty { playedWith }
+                        if !app.friends.outgoing.isEmpty {
+                            PaintedCard(title: "Waiting for them", footer: "They see your request on their Friends tab.") {
+                                ForEach(app.friends.outgoing) { p in
+                                    personLine(p) { Text("Asked").font(.subheadline.weight(.semibold)).foregroundStyle(Painted.paperDim) }
                                 }
                             }
                         }
-                        .listRowBackground(T2P.panel)
+                        groupsCard
                     }
-                    Section {
-                        if app.friends.friends.isEmpty {
-                            Text("No friends yet. Send your link, or add people after a game.").foregroundStyle(T2P.muted)
-                        }
-                        ForEach(app.friends.friends) { p in
-                            PersonRow(p: p) {
-                                Button("Invite") { inviting = p }.buttonStyle(.borderless).foregroundStyle(T2P.goldText)
-                            }
-                            .contextMenu { personMenu(p, friend: true) }
-                            .swipeActions { Button("Remove", role: .destructive) { Task { await app.social { try await app.api.removeFriend(p.id) } } } }
-                        }
-                        Button { Task { await shareLink() } } label: { Label("Send your friend link", systemImage: "link") }
-                            .accessibilityIdentifier("friend-link")
-                    } header: { Text("Friends") }
-                    .listRowBackground(T2P.panel)
-                    if !app.friends.recent.isEmpty {
-                        Section {
-                            ForEach(app.friends.recent) { p in
-                                PersonRow(p: p) {
-                                    Button("Add friend") { Task { await app.social { try await app.api.requestFriend(p.id) } } }.buttonStyle(.borderless).foregroundStyle(T2P.goldText)
-                                }
-                                .contextMenu { personMenu(p, friend: false) }
-                            }
-                        } header: { Text("You played with") } footer: { Text("Signed-in players from your games in the last 30 days.").foregroundStyle(T2P.muted) }
-                        .listRowBackground(T2P.panel)
-                    }
-                    if !app.friends.outgoing.isEmpty {
-                        Section("Waiting for them") { ForEach(app.friends.outgoing) { PersonRow(p: $0) { EmptyView() } } }.listRowBackground(T2P.panel)
-                    }
-                    Section {
-                        ForEach(app.groups) { g in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(g.name).font(.headline).foregroundStyle(T2P.text)
-                                    Spacer()
-                                    Button("Invite") { invitingGroup = g }.buttonStyle(.borderless).foregroundStyle(T2P.goldText)
-                                }
-                                HStack(spacing: -8) { ForEach(g.members.prefix(8)) { FaceView(face: $0.face, size: 28) } }
-                                Text("\(g.members.count) people").font(.caption).foregroundStyle(T2P.muted)
-                            }
-                            .swipeActions { Button(g.mine ? "Delete" : "Leave", role: .destructive) { Task { await app.social { try await app.api.leaveGroup(g.id) } } } }
-                            .contextMenu { Button("Share the group’s link") { Task { await shareGroup(g) } } }
-                        }
-                        Button { newGroup = true } label: { Label("Make a group", systemImage: "person.3") }.disabled(app.friends.friends.isEmpty)
-                    } header: { Text("Groups") }
-                    .listRowBackground(T2P.panel)
                 }
+                .padding(.horizontal, 16).padding(.bottom, 32)
+                .frame(maxWidth: 700).frame(maxWidth: .infinity)
             }
-            .scrollContentBackground(.hidden)
-            .background(T2P.navy.ignoresSafeArea())
-            .navigationTitle("Friends")
+            .background(PaintedBackdrop().ignoresSafeArea())
+            // a painted band under the status bar, so the list doesn't scroll under the clock
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(LinearGradient(colors: [Painted.faceTop, Painted.faceTop.opacity(0.85)], startPoint: .top, endPoint: .bottom).ignoresSafeArea(edges: .top))
+            }
+            .environment(\.colorScheme, .dark)
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await app.refreshSocial() }
             .task { await app.refreshSocial() }
-            .sheet(item: $inviting) { p in GamePicker(title: "Invite \(p.name)") { g in Task { await app.challenge(g, to: [p.id]) } } }
-            .sheet(item: $invitingGroup) { g in GamePicker(title: "Invite \(g.name)") { game in Task { await app.challenge(game, to: [], group: g.id) } } }
-            .sheet(isPresented: $newGroup) { NewGroup() }
-            .sheet(item: Binding(get: { link.map { ShareItem(url: $0) } }, set: { if $0 == nil { link = nil } })) { s in
-                ShareSheet(items: [s.url])
+            .sheet(item: $inviting) { p in
+                GamePicker(title: "Invite \(p.name)") { g in Task { await app.challenge(g, to: [p]) } }.environmentObject(app)
+            }
+            .sheet(item: $invitingGroup) { g in
+                GamePicker(title: "Invite \(g.name)") { game in Task { await app.challenge(game, to: [], group: g) } }.environmentObject(app)
+            }
+            .sheet(isPresented: $newGroup) { NewGroup().environmentObject(app) }
+            .sheet(item: $share) { s in ShareSheet(items: [s.url]) }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Friends").font(Painted.display(34, .bold)).foregroundStyle(Painted.titleGold).accessibilityAddTraits(.isHeader)
+            Text("People you add by link or after a game. Nobody can search for you.")
+                .font(.subheadline).foregroundStyle(Painted.paperDim)
+        }
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: sections
+
+    private var requests: some View {
+        PaintedCard(title: "Friend requests") {
+            ForEach(app.friends.incoming) { p in
+                personLine(p) {
+                    HStack(spacing: 8) {
+                        Button("Accept") { Task { await app.social { try await app.api.acceptFriend(p.id) } } }
+                            .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
+                            .accessibilityIdentifier("accept-\(p.id)")
+                        Button("Decline") { Task { await app.social { try await app.api.declineFriend(p.id) } } }
+                            .buttonStyle(PaintedButtonStyle(kind: .quiet, wide: false, compact: true))
+                            .accessibilityIdentifier("decline-\(p.id)")
+                    }
+                }
             }
         }
     }
 
-    @ViewBuilder private func personMenu(_ p: PlayerCard, friend: Bool) -> some View {
-        if friend { Button("Remove friend", role: .destructive) { Task { await app.social { try await app.api.removeFriend(p.id) } } } }
-        Button("Block", role: .destructive) { Task { await app.social { try await app.api.block(p.id) } } }
-        Button("Report their name") { Task { await app.social { try await app.api.report(name: p.name, why: "name", account: p.id) } } }
+    private var friendsCard: some View {
+        PaintedCard(title: "Friends") {
+            if app.friends.friends.isEmpty {
+                Text("No friends yet. Send your link, or add people after a game.").font(.subheadline).foregroundStyle(Painted.paperDim)
+            }
+            ForEach(app.friends.friends) { p in
+                personLine(p) {
+                    HStack(spacing: 8) {
+                        Button("Invite") { inviting = p }
+                            .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
+                            .accessibilityLabel("Invite \(p.name)")
+                            .accessibilityIdentifier("friend-invite-\(p.id)")
+                        PaintedIconButton(icon: "ellipsis", label: "More for \(p.name)", identifier: "friend-more-\(p.id)") { personMenu(p, friend: true) }
+                    }
+                }
+            }
+            PaintedDivider().frame(maxWidth: .infinity).padding(.vertical, 2)
+            Button { Task { if let u = await app.friendLinkURL() { share = ShareItem(url: u) } } } label: {
+                Label("Send your friend link", systemImage: "link")
+            }
+            .buttonStyle(PaintedButtonStyle(kind: .gold))
+            .accessibilityIdentifier("friend-link")
+            Text("Anyone who opens your link becomes your friend right away, no request needed. It works for 7 days; after that, send a new one.")
+                .font(.footnote).foregroundStyle(Painted.paperDim).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
-    private func shareLink() async {
-        do { link = FriendLink.url(try await app.api.friendLink()) }
-        catch { app.accountProblem = (error as? API.Failure)?.message ?? "Couldn’t make a link." }
+    private var playedWith: some View {
+        PaintedCard(title: "You played with", footer: "Signed-in players from your games in the last 30 days.") {
+            ForEach(app.friends.recent) { p in
+                personLine(p) {
+                    HStack(spacing: 8) {
+                        Button("Add friend") { Task { await app.social { try await app.api.requestFriend(p.id) } } }
+                            .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
+                            .accessibilityIdentifier("add-friend-\(p.id)")
+                        PaintedIconButton(icon: "ellipsis", label: "More for \(p.name)", identifier: "recent-more-\(p.id)") { personMenu(p, friend: false) }
+                    }
+                }
+            }
+        }
     }
+
+    private var groupsCard: some View {
+        PaintedCard(title: "Groups", footer: app.groups.isEmpty ? "A group is a few friends you invite in one go, like a Thursday crew." : nil) {
+            ForEach(app.groups) { g in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(g.name).font(Painted.display(19)).foregroundStyle(Painted.paper).lineLimit(1).minimumScaleFactor(0.8)
+                        Spacer(minLength: 4)
+                        Button("Invite") { invitingGroup = g }
+                            .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
+                            .accessibilityLabel("Invite \(g.name)")
+                            .accessibilityIdentifier("group-invite-\(g.id)")
+                        PaintedIconButton(icon: "ellipsis", label: "More for \(g.name)", identifier: "group-more-\(g.id)") { groupMenu(g) }
+                    }
+                    HStack(spacing: -8) {
+                        ForEach(g.members.prefix(8)) { m in
+                            FaceView(face: m.face, size: 30).overlay(Circle().stroke(Painted.faceBottom, lineWidth: 1.5))
+                        }
+                    }
+                    .accessibilityHidden(true)
+                    HStack(spacing: 6) {
+                        if g.mine { PaintedTag(text: "Yours") }
+                        Text(g.line(me: app.account?.account.id)).font(.caption).foregroundStyle(Painted.paperDim)
+                    }
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Painted.gold.opacity(0.25), lineWidth: 1))
+            }
+            Button { newGroup = true } label: { Label("Make a group", systemImage: "person.3.fill") }
+                .buttonStyle(PaintedButtonStyle(kind: .quiet))
+                .disabled(app.friends.friends.isEmpty)
+                .accessibilityIdentifier("make-group")
+            if app.friends.friends.isEmpty {
+                Text("Add a friend first, then make a group.").font(.footnote).foregroundStyle(Painted.paperDim)
+            }
+        }
+    }
+
+    private func personLine<Actions: View>(_ p: PlayerCard, @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(spacing: 12) {
+            FaceView(face: p.face, size: 42)
+            Text(p.name).font(Painted.display(18)).foregroundStyle(Painted.paper).lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            actions()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("person-\(p.id)")
+    }
+
+    // MARK: painted choices and confirms (Nov 18: no iOS menus, swipes or alerts here)
+
+    private func personMenu(_ p: PlayerCard, friend: Bool) {
+        let a = app
+        var choices: [GameChoice] = []
+        if friend { choices.append(GameChoice(label: "Invite to a game", kind: .gold, identifier: "person-invite") { inviting = p }) }
+        else { choices.append(GameChoice(label: "Add friend", kind: .gold, identifier: "person-add") { Task { await a.social { try await a.api.requestFriend(p.id) } } }) }
+        if friend { choices.append(GameChoice(label: "Remove friend", kind: .danger, identifier: "person-remove") { confirmRemove(p) }) }
+        choices.append(GameChoice(label: "Block", kind: .danger, identifier: "person-block") { confirmBlock(p) })
+        choices.append(GameChoice(label: "Report their name", identifier: "person-report") {
+            Task {
+                await a.social { try await a.api.report(name: p.name, why: "name", account: p.id) }
+                AppDialogs.shared.say("Thanks", "Tyler will look at it.", identifier: "dialog-reported")
+            }
+        })
+        AppDialogs.shared.show(GameDialog(title: p.name, choices: choices, cancel: "Back", identifier: "dialog-person"))
+    }
+
+    private func confirmRemove(_ p: PlayerCard) {
+        let a = app
+        AppDialogs.shared.show(GameDialog(title: "Remove \(p.name)?", message: "You stop being friends. You can add each other again later.",
+                                          choices: [GameChoice(label: "Remove friend", kind: .danger, identifier: "confirm-remove-friend") {
+                                              Task { await a.social { try await a.api.removeFriend(p.id) } }
+                                          }],
+                                          cancel: "Keep", identifier: "dialog-remove-friend"))
+    }
+
+    private func confirmBlock(_ p: PlayerCard) {
+        let a = app
+        AppDialogs.shared.show(GameDialog(title: "Block \(p.name)?", message: "Neither of you can send the other requests, invites or links, and you won’t see each other in your lists.",
+                                          choices: [GameChoice(label: "Block", kind: .danger, identifier: "confirm-block") {
+                                              Task { await a.social { try await a.api.block(p.id) } }
+                                          }],
+                                          cancel: "Cancel", identifier: "dialog-block"))
+    }
+
+    private func groupMenu(_ g: PlayerGroup) {
+        let a = app
+        let leave = g.mine ? "Delete the group" : "Leave the group"
+        AppDialogs.shared.show(GameDialog(title: g.name, message: g.line(me: a.account?.account.id),
+            choices: [GameChoice(label: "Invite to a game", kind: .gold, identifier: "group-invite") { invitingGroup = g },
+                      GameChoice(label: "Share the group’s link", icon: "link", identifier: "group-link") { Task { await shareGroup(g) } },
+                      GameChoice(label: leave, kind: .danger, identifier: "group-leave") { confirmLeave(g) }],
+            cancel: "Back", identifier: "dialog-group"))
+    }
+
+    private func confirmLeave(_ g: PlayerGroup) {
+        let a = app
+        AppDialogs.shared.show(GameDialog(
+            title: g.mine ? "Delete \(g.name)?" : "Leave \(g.name)?",
+            message: g.mine ? "The group goes for everyone in it. Your friendships stay." : "You can come back with the group’s link.",
+            choices: [GameChoice(label: g.mine ? "Delete the group" : "Leave the group", kind: .danger, identifier: "confirm-group-leave") {
+                Task { await a.social { try await a.api.leaveGroup(g.id) } }
+            }],
+            cancel: "Keep it", identifier: "dialog-group-leave"))
+    }
+
     private func shareGroup(_ g: PlayerGroup) async {
-        do { link = FriendLink.url(try await app.api.groupLink(g.id)) }
-        catch { app.accountProblem = (error as? API.Failure)?.message ?? "Couldn’t make a link." }
+        if SocialDemo.on { share = ShareItem(url: FriendLink.url("GRP23456")); return }
+        do { share = ShareItem(url: FriendLink.url(try await app.api.groupLink(g.id))) }
+        catch { AppDialogs.shared.say("Couldn’t make a link", (error as? API.Failure)?.message ?? "Check your signal and try again.") }
     }
 }
 
@@ -343,83 +503,122 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
-struct PersonRow<Actions: View>: View {
-    let p: PlayerCard
-    @ViewBuilder var actions: Actions
-    var body: some View {
-        HStack(spacing: 12) {
-            FaceView(face: p.face, size: 40)
-            Text(p.name).font(.headline).foregroundStyle(T2P.text)
-            Spacer()
-            actions
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
+/// An invite to a room: the game's picture with the friend's face on it, who sent it, the code, and Join.
 struct ChallengeRow: View {
     @EnvironmentObject var app: AppModel
     let c: Challenge
+    var painted = false
     var body: some View {
-        HStack(spacing: 12) {
-            FaceView(face: c.from.face, size: 44)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(c.from.name) invited you to \(c.game?.title ?? "a game")").font(.headline).foregroundStyle(T2P.text)
-                Text(Date(timeIntervalSince1970: c.created / 1000), style: .relative).font(.caption).foregroundStyle(T2P.muted)
-            }
-            Spacer()
-            Button("Join") { Task { await app.joinChallenge(c) } }
-                .font(.headline).foregroundStyle(T2P.ink).padding(.horizontal, 16).padding(.vertical, 8).background(T2P.gold, in: Capsule())
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("join-invite")
+        let when = Date(timeIntervalSince1970: c.created / 1000).formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
+        Button { Task { await app.joinChallenge(c) } } label: {
+            GameRowLabel(game: c.game, title: c.game?.title ?? "A game", line: "\(c.from.name) invited you",
+                         small: "Room \(c.room) · \(when)", action: "Join", face: c.from.face, painted: painted)
         }
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(c.from.name) invited you to \(c.game?.title ?? "a game"), room \(c.room). Join")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("join-invite")
     }
 }
 
-/// Which game to invite someone to (the server's challenge list: Overdraft and Hot Dice).
+/// Which game to invite someone to: the four, each with its picture (painted, Nov 18).
 struct GamePicker: View {
     let title: String
     var pick: (Game) -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack {
-            List(Game.allCases.filter(\.challengeable)) { g in
-                Button { dismiss(); pick(g) } label: { LibraryRow(title: g.title, line: g.blurb, detail: g.players, thumb: nil, symbol: g.symbol, tint: g.tint, action: "Invite") }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(title.uppercased()).font(Painted.display(19)).tracking(1.3).foregroundStyle(Painted.titleGold)
+                    .lineLimit(1).minimumScaleFactor(0.7).accessibilityAddTraits(.isHeader)
+                Spacer()
+                PaintedIconButton(icon: "xmark", label: "Cancel", identifier: "picker-cancel") { dismiss() }
             }
-            .navigationTitle(title)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        }
-        .presentationDetents([.medium, .large])
-    }
-}
-
-struct NewGroup: View {
-    @EnvironmentObject var app: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var picked: Set<String> = []
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Group name (like Thursday crew)", text: $name)
-                Section("Friends in it") {
-                    ForEach(app.friends.friends) { p in
-                        Button { if picked.contains(p.id) { picked.remove(p.id) } else { picked.insert(p.id) } } label: {
-                            HStack { PersonRow(p: p) { EmptyView() }; if picked.contains(p.id) { Image(systemName: "checkmark").foregroundStyle(T2P.gold) } }
+            Text("Pick a game. A room starts with you in it, and they get the invite.").font(.subheadline).foregroundStyle(Painted.paperDim)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(Game.allCases.filter(\.challengeable)) { g in
+                        Button { dismiss(); pick(g) } label: {
+                            GameRowLabel(game: g, title: g.title, line: g.blurb, small: g.players, action: "Invite", painted: true)
+                                .padding(12)
+                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Painted.gold.opacity(0.3), lineWidth: 1))
                         }
-                        .accessibilityAddTraits(picked.contains(p.id) ? .isSelected : [])
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("pick-\(g.rawValue)")
                     }
                 }
             }
-            .navigationTitle("Make a group")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Make it") { Task { await app.social { try await app.api.createGroup(name: name, members: Array(picked)) }; dismiss() } }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).count < 2)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(PaintedBackdrop().ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground { PaintedBackdrop() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("game-picker")
+    }
+}
+
+/// Make a group: a name and the friends in it (painted, Nov 18). Anyone else joins by the group's link.
+struct NewGroup: View {
+    @EnvironmentObject var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var name = DialogField(placeholder: "Group name, like Thursday crew", identifier: "group-name")
+    @State private var picked: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("MAKE A GROUP").font(Painted.display(19)).tracking(1.3).foregroundStyle(Painted.titleGold).accessibilityAddTraits(.isHeader)
+                Spacer()
+                PaintedIconButton(icon: "xmark", label: "Cancel", identifier: "group-cancel") { dismiss() }
+            }
+            DialogFieldView(field: name)
+            Text("FRIENDS IN IT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Painted.paperDim)
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(app.friends.friends) { p in
+                        let on = picked.contains(p.id)
+                        Button { if on { picked.remove(p.id) } else { picked.insert(p.id) }; Haptics.select() } label: {
+                            HStack(spacing: 12) {
+                                FaceView(face: p.face, size: 40)
+                                Text(p.name).font(Painted.display(18)).foregroundStyle(Painted.paper)
+                                Spacer()
+                                PaintedCheck(on: on)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? Painted.gold.opacity(0.14) : Color.white.opacity(0.04)))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(on ? Painted.gold : Painted.gold.opacity(0.25), lineWidth: on ? 1.5 : 1))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(p.name)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                        .accessibilityIdentifier("group-pick-\(p.id)")
+                    }
                 }
             }
+            Button(picked.isEmpty ? "Make it" : "Make it with \(picked.count) \(picked.count == 1 ? "friend" : "friends")") {
+                let n = name.trimmed, m = Array(picked), a = app
+                Task { await a.social { try await a.api.createGroup(name: n, members: m) } }
+                dismiss()
+            }
+            .buttonStyle(PaintedButtonStyle(kind: .gold))
+            .disabled(name.trimmed.count < 2)
+            .accessibilityIdentifier("group-make")
+            Text("Anyone else can join with the group’s link, from Groups.").font(.caption).foregroundStyle(Painted.paperDim)
         }
+        .padding(20)
+        .frame(maxWidth: 620)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(PaintedBackdrop().ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .presentationBackground { PaintedBackdrop() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("new-group")
     }
 }

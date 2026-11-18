@@ -34,6 +34,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let here = await MainActor.run { self.app?.room?.code == RoomCode.normalize(r) }
             if here { return [] }
         }
+        // an invite (a room, and no kind) while the app is open: the painted banner with Join, not the system's (Nov 18)
+        if info["kind"] == nil, let r = info["room"] as? String, let code = RoomCode.normalize(r) {
+            let text = notification.request.content.body
+            let game = (info["game"] as? String).flatMap(Game.init(rawValue:))
+            await MainActor.run {
+                guard let app = self.app, app.room?.code != code else { return }
+                AppDialogs.shared.showBanner(InviteNote(text: text.isEmpty ? "You’re invited to \(game?.title ?? "a game")" : text, game: game, room: code))
+                Task { await app.refreshSocial() }
+            }
+            return [.sound]
+        }
         Task { @MainActor in await self.app?.refreshSocial() }
         return [.banner, .sound]
     }
@@ -41,11 +52,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let info = response.notification.request.content.userInfo
         Intro.shared.skip()   // an invite or "your turn" goes straight in (#562)
         let room = info["room"] as? String
+        let kind = info["kind"] as? String
         let friends = info["friends"] as? Bool ?? false
         await MainActor.run {
             guard let app = self.app else { return }
-            // an invite or a "your turn" (#534): open its room (a room you're already in just carries on)
-            if let r = room, let c = RoomCode.normalize(r) { Task { await app.openRoom(code: c) } }
+            // an invite or a "your turn" (#534): open its room (a room you're already in just carries on); an invite
+            // also leaves Friends' list once it's used
+            if let r = room, let c = RoomCode.normalize(r) {
+                if kind == nil { Task { await app.openInvite(code: c) } } else { Task { await app.openRoom(code: c) } }
+            }
             else if friends { app.tab = .friends; Task { await app.refreshSocial() } }
         }
     }
@@ -55,6 +70,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 struct Time2PlayApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var app = AppModel()
+    #if DEBUG
+    private var artGallery: Bool { ArtGallery.requested }
+    private var galleryView: some View {
+        ArtGallery().preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-t2p-light") ? .light : .dark)
+    }
+    #else
+    private var artGallery: Bool { false }
+    private var galleryView: some View { EmptyView() }
+    #endif
     var body: some Scene {
         WindowGroup {
             if let still = Table3DStill.fromArgs() {
@@ -69,6 +93,9 @@ struct Time2PlayApp: App {
             } else if SpinnerGallery.requested {
                 // #543's screenshots: the loading spinner at its sizes
                 SpinnerGallery()
+            } else if artGallery {
+                // Nov 18's screenshots: each game's picture at its real sizes (the test build only)
+                galleryView
             } else {
             RootView()
                 .overlay { IntroOverlay() }   // the intro at a fresh launch, over Play, which starts underneath (#562)
@@ -121,19 +148,41 @@ struct RootView: View {
             RoomView(room: room)
                 .environmentObject(app)
         }
-        .alert("Can’t join", isPresented: Binding(get: { app.problem != nil }, set: { if !$0 { app.problem = nil; app.webFallback = nil } })) {
-            if let u = app.webFallback { Button("Open on the website") { openURL(u) } }
-            Button("OK", role: .cancel) {}
-        } message: { Text(app.problem ?? "") }
-        .alert("Account", isPresented: Binding(get: { app.accountProblem != nil }, set: { if !$0 { app.accountProblem = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(app.accountProblem ?? "") }
-        .alert(app.notice ?? "", isPresented: Binding(get: { app.notice != nil }, set: { if !$0 { app.notice = nil } })) {
-            Button("OK", role: .cancel) {}
+        // the app's own messages, painted (Nov 18): over everything, the way an iOS alert was
+        .onChange(of: app.problem) { _, p in
+            guard let p else { return }
+            let a = app, web = app.webFallback, open = openURL
+            let clear = { a.problem = nil; a.webFallback = nil }
+            AppDialogs.shared.show(GameDialog(
+                title: "Can’t join", message: p,
+                choices: web.map { u in [GameChoice(label: "Open on the website", kind: .gold, identifier: "open-website") { open(u); clear() }] } ?? [],
+                cancel: "OK", onCancel: clear, identifier: "dialog-problem"))
+        }
+        .onChange(of: app.accountProblem) { _, p in
+            guard let p else { return }
+            let a = app
+            AppDialogs.shared.say("That didn’t work", p, identifier: "dialog-account") { a.accountProblem = nil }
+        }
+        .onChange(of: app.notice) { _, n in
+            guard let n else { return }
+            let a = app
+            AppDialogs.shared.say(n, ok: "OK", identifier: "dialog-notice") { a.notice = nil }
+        }
+        .onAppear {
+            let a = app
+            AppDialogs.shared.onJoin = { code in Task { await a.openInvite(code: code) } }
+            // the test build's banner, for its screenshot
+            if SocialDemo.banner {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    MainActor.assumeIsolated {
+                        AppDialogs.shared.showBanner(InviteNote(text: "Sam invited you to Hot Dice", game: .hotDice, room: "DEMO", face: 3))
+                    }
+                }
+            }
         }
         .onChange(of: phase) { _, p in
             // the phone locked or the app was switched away: the room holds the seat (a bot plays); back, it resumes
-            if p == .background { app.room?.pause() }
+            if p == .background { if let r = app.room { app.keep.note(r) }; app.room?.pause() }
             if p == .active { app.room?.resume(); Task { await app.refreshSocial() } }
         }
     }

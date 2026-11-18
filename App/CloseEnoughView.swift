@@ -313,7 +313,9 @@ struct CloseEnoughOver: View {
                     Image(systemName: "trophy.fill").font(.system(size: 48)).foregroundStyle(T2P.gold).accessibilityHidden(true)
                 }
                 Text(winners.count > 1 ? "A shared win!" : winners.contains(me) ? "You win!" : "\(names.first ?? "Someone") wins!")
-                    .font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityIdentifier("game-over")
+                    .font(Painted.display(34, .bold)).foregroundStyle(T2P.text).multilineTextAlignment(.center)
+                    .accessibilityIdentifier("game-over")
+                PaintedDivider()
                 Text(winners.count > 1 ? "\(names.joined(separator: " and ")) finished level on points after \(asked) questions."
                      : "The highest total after \(asked) question\(asked == 1 ? "" : "s").")
                     .foregroundStyle(T2P.muted).multilineTextAlignment(.center)
@@ -337,15 +339,17 @@ struct CloseEnoughOver: View {
                     }
                 }
                 .background(T2P.panel, in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Painted.rim, lineWidth: 1.5))
+                // the choices, painted like the game (Nov 18)
                 if room.isOwner {
-                    Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(GoldButtonStyle())
+                    Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(PaintedButtonStyle(kind: .gold))
                         .accessibilityIdentifier("play-again")
-                    Button("Change seats") { room.send(Out.again) }.buttonStyle(QuietButtonStyle())
+                    Button("Change seats") { room.send(Out.again) }.buttonStyle(PaintedButtonStyle(kind: .quiet))
                 } else {
                     Text("If \(room.ownerName ?? "the room’s owner") starts another game, you’ll be in it.").foregroundStyle(T2P.muted).multilineTextAlignment(.center)
                 }
                 Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
-                    .font(.headline).foregroundStyle(T2P.goldText).frame(minHeight: 44)
+                    .buttonStyle(PaintedButtonStyle(kind: .quiet))
                     .accessibilityIdentifier("back-to-library")
             }
             .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)

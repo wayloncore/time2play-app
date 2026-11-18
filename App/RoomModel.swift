@@ -101,7 +101,8 @@ final class RoomModel: ObservableObject, Identifiable {
 
     func pause() { if offline { return }; retry?.cancel(); session.pause() }
     func resume() { Music.shared.resumeIfStopped(); if offline { return }; retry?.cancel(); session.reconnect() }
-    func leave() { retry?.cancel(); session.leave() }
+    /// Leaving on purpose: the room comes off Recent rooms too (Nov 18; a solo room's Leave doesn't come here).
+    func leave() { retry?.cancel(); app?.keep.forget(code); session.leave() }
     func close() { retry?.cancel(); transport.close(); Music.shared.stop() }
 
     private func sync() {
@@ -114,6 +115,8 @@ final class RoomModel: ObservableObject, Identifiable {
         if let now = view, now != before { Feel.events(FeelEvents.between(before, now, game: game)) }
         // a room you're in goes on Play's recent rooms (and the widget's rejoin); practice rooms don't
         if !offline, !recorded, case .inRoom = status { recorded = true; app?.remember(code: code, game: game) }
+        // a room that has ended (closed, you were taken out, it expired) comes off Recent rooms (Nov 18)
+        if !offline, case let .ended(why) = status, why != .moved { app?.keep.forget(code) }
         if case .reconnecting = session.status {
             retry?.cancel()
             let w = DispatchWorkItem { [weak self] in self?.session.reconnect() }

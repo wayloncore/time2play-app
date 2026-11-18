@@ -46,9 +46,11 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap(); field.typeText("ZZZ9")
         app.buttons["Join ZZZ9"].tap()
-        XCTAssertTrue(app.alerts["Can’t join"].waitForExistence(timeout: 20))
+        // painted since Nov 18, over everything like the iOS alert it replaced
+        XCTAssertTrue(app.descendants(matching: .any)["dialog-problem"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.alerts.firstMatch.exists && app.alerts.staticTexts["Can’t join"].exists, "no iOS alert")
         shot(app, "399-no-such-room")
-        app.alerts.buttons["OK"].tap()
+        app.buttons["dialog-cancel"].tap()
     }
 
     func testLibrary() {

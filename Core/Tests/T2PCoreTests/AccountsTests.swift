@@ -49,6 +49,6 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(FriendLink.code(URL(string: "https://time2play.live/f/ab12cd34")!), "AB12CD34")
         XCTAssertNil(FriendLink.code(URL(string: "https://time2play.live/K7QP")!))
         XCTAssertEqual(RoomCode.fromLink(URL(string: "time2play://join/k7qp")!), "K7QP")
-        XCTAssertTrue(Game.hotDice.challengeable); XCTAssertFalse(Game.rollCall.challengeable)
+        XCTAssertTrue(Game.allCases.allSatisfy(\.challengeable), "all four games take invites (Nov 18)")
     }
 }
