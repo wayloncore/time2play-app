@@ -48,6 +48,10 @@ final class RoomModel: ObservableObject, Identifiable {
     }
 
     var seat: Seat? { session.seat }
+    /// #539: the room takes watchers (its /exists said so), and whether this phone is one.
+    var canWatch = false
+    var watching: Bool { session.watching }
+    func watch(name: String?) { session.watch(name: name) }
     var hasSeat: Bool { session.seat != nil }
 
     func start() {

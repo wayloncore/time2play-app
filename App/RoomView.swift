@@ -56,7 +56,9 @@ struct RoomView: View {
     }
 
     @ViewBuilder private func game(_ v: JSON) -> some View {
-        if (v["phase"].string ?? "lobby") == "lobby" {
+        if room.watching && (v["phase"].string ?? "lobby") != "lobby" {
+            WatchView(room: room, view: v, onLeave: { room.leave(); app.closeRoom() })   // #539
+        } else if (v["phase"].string ?? "lobby") == "lobby" {
             LobbyView(room: room, onLeave: { confirmLeave = true })
         } else {
             switch room.game {
@@ -205,8 +207,15 @@ struct NameFacePicker: View {
             } label: { Text(ready ? "Join as \(cleanName)" : "Join") }
                 .buttonStyle(GoldButtonStyle())
                 .disabled(!ready)
-                .padding(.horizontal, 20).padding(.vertical, 12)
+                .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, room.canWatch ? 0 : 12)
                 .accessibilityIdentifier("join-room")
+            // #539: hidden until the server takes watchers (its /exists says so)
+            if room.canWatch {
+                Button("Just watch") { room.watch(name: cleanName.count >= 2 ? cleanName : nil) }
+                    .font(.headline).foregroundStyle(T2P.goldText).frame(minHeight: 44).padding(.bottom, 8)
+                    .accessibilityHint("See the table and the game without playing")
+                    .accessibilityIdentifier("watch-room")
+            }
         }
         .onAppear {
             if name.isEmpty { name = app.profile.name }

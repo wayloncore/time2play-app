@@ -91,7 +91,7 @@ final class AppModel: ObservableObject {
                 webFallback = endpoints.invite(code: c)
                 return
             }
-            open(g, code: c, taken: found.taken)
+            open(g, code: c, taken: found.taken, canWatch: found.watch)
         } catch {
             problem = (error as? API.Failure)?.message ?? "No connection. Check your signal and try again."
         }
@@ -109,9 +109,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func open(_ g: Game, code: String, taken: [Int], starting: Bool = false) {
+    func open(_ g: Game, code: String, taken: [Int], starting: Bool = false, canWatch: Bool = false) {
         room?.close()
         let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting, session: api.session)
+        r.canWatch = canWatch
         room = r
         r.start()
         TVModel.shared.watch(g, code: code, endpoints: endpoints)

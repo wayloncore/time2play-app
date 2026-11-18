@@ -64,6 +64,12 @@ public enum Out {
         if let f = face { o["face"] = .number(Double(f)) }
         return .object(o)
     }
+    /// #539: join to watch, without a seat (the server's #534). A name is optional (the host sees "Watching: N").
+    public static func watch(name: String?) -> JSON {
+        var o: [String: JSON] = ["t": "join", "watch": true]
+        if let n = name, !n.isEmpty { o["name"] = .string(n) }
+        return .object(o)
+    }
     public static func resume(id: String, token: String) -> JSON { ["t": "resume", "id": .string(id), "token": .string(token)] }
     public static func leave(id: String, token: String) -> JSON { ["t": "leave", "id": .string(id), "token": .string(token)] }
     public static func react(_ r: Reaction) -> JSON { ["t": "react", "r": .string(r.rawValue)] }

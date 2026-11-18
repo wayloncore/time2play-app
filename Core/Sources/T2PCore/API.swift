@@ -71,6 +71,8 @@ public final class API: @unchecked Sendable {
         public var phase: String
         public var players: Int
         public var taken: [Int]
+        /// #539: the room takes watchers (the server's /exists says so once #534 lands; until then the Watch button is hidden)
+        public var watch: Bool = false
     }
 
     /// Which game a code is, asking each game's room (the same rooms answer for all four; only the right one is in use).
@@ -81,7 +83,7 @@ public final class API: @unchecked Sendable {
                     let j = try await self.call(self.endpoints.exists(g, code: code))
                     guard j["inUse"].bool == true, j["ended"].bool != true else { return nil }
                     return Found(game: g, code: code, phase: j["phase"].string ?? "lobby", players: j["players"].int ?? 0,
-                                 taken: j["taken"].array.compactMap(\.int))
+                                 taken: j["taken"].array.compactMap(\.int), watch: j["watch"].bool ?? false)
                 }
             }
             group.addTask {
