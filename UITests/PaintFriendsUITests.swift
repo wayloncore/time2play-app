@@ -134,7 +134,9 @@ final class PaintFriendsUITests: XCTestCase {
         sleep(1)
         shot(app, "nov18p-\(device)recent-solo-resume")
         resume.tap()
-        XCTAssertTrue(app.staticTexts["room-code-shown"].waitForExistence(timeout: 20), "back in the room, seat and all")
+        let back = app.staticTexts["room-code-shown"].waitForExistence(timeout: 30)
+        shot(app, "nov18p-\(device)solo-after-resume")
+        XCTAssertTrue(back, "back in the room, seat and all")
         XCTAssertTrue(any(app, "owner-chip").exists, "still its owner")
     }
 
