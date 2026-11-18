@@ -234,7 +234,7 @@ struct SuitPicker: View {
         let shown = min(1, rise) * (1 - Self.clamp((go - 0.55) / 0.4))
         let tint = picked.map { SuitPaint.of($0).mid } ?? .clear
         return ZStack {
-            Color(hex: 0x07050A).opacity(0.6)
+            Color(hex: 0x07050A).opacity(0.72)
             RadialGradient(colors: [tint.opacity(0.22 * Self.clamp(go / 0.3)), .clear], center: .center, startRadius: 20, endRadius: 420)
         }
         .opacity(shown)
@@ -380,7 +380,8 @@ private struct MedallionSlot: View, Animatable {
             return m
         }
         // the rise: up from your hand, one after another, turning straight as they arrive
-        let r = max(0, (rise - 0.09 * Double(index)) / 0.73)
+        // each one's own 0...1 (the first starts first), plus the spring's overshoot past 1 for all of them alike
+        let r = min(1, max(0, (rise - 0.09 * Double(index)) / 0.73)) + max(0, rise - 1)
         m.y = (1 - r) * 280
         m.scale = 0.45 + 0.55 * r
         m.turn = (1 - r) * 16 * side
