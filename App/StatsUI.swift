@@ -136,6 +136,7 @@ struct StatsSections: View {
                     }
                     if let fav = s.favorites.first.flatMap(Game.init(rawValue:)) {
                         Label("Favorite: \(fav.title)", systemImage: "heart.fill").foregroundStyle(T2P.text)
+                            .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("stats-favorite")
                     }
                 } header: { Text("Your games") } footer: {
