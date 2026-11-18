@@ -9,23 +9,33 @@ final class HotDiceBankUITests: XCTestCase {
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad-" : "" }
 
     func testBankWith3DDice() { playAGame(["-t2p-dice3d", "-t2p-seed", "5", "-t2p-arena-debug"], name: "3d") }
+    /// The 3D dice through a longer game (to 10,000, about seven minutes of it): every roll of yours lands and can be
+    /// kept, however many there are.
+    func testEveryRollLands3D() { playAGame(["-t2p-dice3d", "-t2p-seed", "11", "-t2p-arena-debug"], name: "3d-long", long: true) }
     /// Also earns an achievement at the end (-t2p-earn-test: nine games played already, and this practice game counts):
     /// its line at the top goes away on its own, stays clear of the game, and isn't said again.
     func testBankWithClassicDice() { playAGame(["-t2p-seed", "5", "-t2p-earn-test"], name: "classic", achievement: true) }
 
     // MARK: the game
 
-    private func playAGame(_ args: [String], name: String, achievement: Bool = false) {
+    /// A roll of yours that didn't land within 15 seconds: what the room, the screen and the 3D scene said.
+    private var stalls: [String] = []
+    /// The achievement line, the first time a look saw it (it lasts about 3 seconds, so every wait looks for it).
+    private var toastSeen: (at: Date, words: String, clear: Bool)?
+    private var watchToast = false
+
+    private func playAGame(_ args: [String], name: String, achievement: Bool = false, long: Bool = false) {
         let app = launch(args)
-        startOffline(app, short: true)
+        watchToast = achievement
+        startOffline(app, short: !long)
         let roll = app.buttons["roll"], bank = app.buttons["bank"]
         let status = app.descendants(matching: .any)["dice-status"].firstMatch
         let banner = app.descendants(matching: .any)["farkle-banner"].firstMatch
         var banked = 0, twoKeepBank = false, hot = false, farkled = false, boardWait = false
-        let deadline = Date().addingTimeInterval(540)
+        let deadline = Date().addingTimeInterval(long ? 420 : 540)
         while Date() < deadline && !app.staticTexts["game-over"].exists {
             // wait for your turn (or the end)
-            guard roll.exists && roll.isEnabled && said(status).contains("Roll all six") else { usleep(300_000); continue }
+            guard roll.exists && roll.isEnabled && said(status).contains("Roll all six") else { peekToast(app); usleep(300_000); continue }
             let before = myScore(app)
             var keeps = 0, turnRolls = 0
             roll.tap(); turnRolls += 1
@@ -39,13 +49,15 @@ final class HotDiceBankUITests: XCTestCase {
                     else { usleep(150_000) }
                 }
                 if landed.isEmpty {
-                    // the roll never landed: what the room, the screen and the 3D scene each think, now and later
+                    // the roll never landed: what the room, the screen and the 3D scene each think, now and 30 s later;
+                    // the game goes on if it lands after all, and the test fails at the end with every stall listed
                     let first = debug(app)
-                    shot(app, "bank-\(device)\(name)-never-landed")
+                    if stalls.isEmpty { shot(app, "bank-\(device)\(name)-never-landed") }
                     let later = Date().addingTimeInterval(30)
                     while Date() < later && !said(status).contains("Tap the dice") && !banner.exists { usleep(300_000) }
-                    XCTFail("\(name): the roll lands; status: \(said(status)); at 15 s: \(first); 30 s later: \(debug(app))")
-                    return
+                    stalls.append("status \(said(status)); at 15 s: \(first); 30 s later: \(debug(app))")
+                    if banner.exists { landed = "farkle" } else if said(status).contains("Tap the dice") { landed = "choose" }
+                    else { XCTFail("\(name): a roll of yours never landed: \(stalls.joined(separator: " || "))"); return }
                 }
                 if landed == "farkle" {
                     let words = banner.label
@@ -94,7 +106,9 @@ final class HotDiceBankUITests: XCTestCase {
                 }
             }
         }
+        XCTAssertTrue(stalls.isEmpty, "\(name): every roll of yours lands within 15 seconds: \(stalls.joined(separator: " || "))")
         XCTAssertGreaterThan(banked, 0, "\(name): you banked")
+        if long { return }
         XCTAssertTrue(twoKeepBank, "\(name): a whole turn of roll, keep, roll, keep, bank")
         XCTAssertTrue(farkled, "\(name): a Farkle came up")
         XCTAssertTrue(hot, "\(name): hot dice came up")
@@ -112,21 +126,28 @@ final class HotDiceBankUITests: XCTestCase {
     /// top, clear of the game's buttons, and goes by itself in about 3 seconds.
     private func checkAchievementLine(_ app: XCUIApplication) {
         let toast = app.descendants(matching: .any)["toast"].firstMatch
-        XCTAssertTrue(toast.waitForExistence(timeout: 3), "the game's end earns Regular (10 games), said at the top")
-        let words = toast.label
-        let seen = Date()
-        XCTAssertTrue(words.contains("Achievement") && words.contains("Regular"), "it says which: \(words)")
-        XCTAssertLessThan(toast.frame.maxY, app.frame.height * 0.2, "it sits at the top: \(toast.frame) in \(app.frame)")
-        for b in ["play-again", "back-to-library"] where app.buttons[b].exists {
-            XCTAssertFalse(toast.frame.intersects(app.buttons[b].frame), "it covers no button (\(b))")
-        }
-        shot(app, "bank-\(device)achievement-shown")
-        XCTAssertTrue(waitFor(6) { !toast.exists }, "it goes by itself (still up after \(Date().timeIntervalSince(seen)) s): \(words)")
-        let gone = Date().timeIntervalSince(seen)
+        if toastSeen == nil { _ = toast.waitForExistence(timeout: 3); peekToast(app) }
+        guard let seen = toastSeen else { XCTFail("the game's end earns Regular (10 games), said at the top"); return }
+        XCTAssertTrue(seen.words.contains("Achievement") && seen.words.contains("Regular"), "it says which: \(seen.words)")
+        XCTAssertTrue(seen.clear, "it sits at the top, over no button or die")
+        XCTAssertTrue(waitFor(6) { !toast.exists }, "it goes by itself (still up after \(Date().timeIntervalSince(seen.at)) s): \(seen.words)")
+        let gone = Date().timeIntervalSince(seen.at)
         XCTAssertLessThan(gone, 5, "gone in about 3 seconds, not \(gone)")
         shot(app, "bank-\(device)achievement-gone")
         // never said again as the room's view refreshes
         XCTAssertFalse(toast.waitForExistence(timeout: 4), "the achievement isn't announced again")
+    }
+
+    /// Looks for the achievement line once (cheap enough to do in every wait while it's being watched for).
+    private func peekToast(_ app: XCUIApplication) {
+        guard watchToast, toastSeen == nil else { return }
+        let toast = app.descendants(matching: .any)["toast"].firstMatch
+        guard toast.exists else { return }
+        let f = toast.frame
+        let covers = ["roll", "bank", "play-again", "back-to-library"].contains { app.buttons[$0].exists && app.buttons[$0].frame.intersects(f) }
+            || app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex.contains { $0.frame.intersects(f) }
+        toastSeen = (Date(), toast.label, f.maxY < app.frame.height * 0.2 && !covers)
+        shot(app, "bank-\(device)achievement-shown")
     }
 
     // MARK: helpers
@@ -185,7 +206,7 @@ final class HotDiceBankUITests: XCTestCase {
 
     private func waitFor(_ seconds: TimeInterval, _ check: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(seconds)
-        while Date() < end { if check() { return true }; usleep(250_000) }
+        while Date() < end { if check() { return true }; peekToast(XCUIApplication()); usleep(250_000) }
         return false
     }
 }
