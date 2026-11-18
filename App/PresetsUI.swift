@@ -33,7 +33,6 @@ extension RoomModel {
 
 /// Play → "Your presets": one tap starts a room set up the saved way. Long-press for offline practice or Delete.
 struct PresetsSection: View {
-    @EnvironmentObject var app: AppModel
     @ObservedObject private var store = PresetStore.shared
 
     var body: some View {
@@ -43,46 +42,67 @@ struct PresetsSection: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(Array(store.list.enumerated()), id: \.element.id) { i, p in
-                            if let g = p.gameValue {
-                                Button { Task { await start(p, offline: p.offline == true) } } label: { card(p, g) }
-                                    .buttonStyle(.plain)
-                                    .disabled(app.busy)
-                                    .contextMenu {
-                                        Button { Task { await start(p, offline: false) } } label: { Label("Start a room", systemImage: "person.3") }
-                                        Button { Task { await start(p, offline: true) } } label: { Label("Practice offline", systemImage: "airplane") }
-                                        Button(role: .destructive) { store.delete(p) } label: { Label("Delete preset", systemImage: "trash") }
-                                    }
-                                    .accessibilityLabel("Start \(p.name), \(g.title), \(p.summary)")
-                                    .accessibilityAction(named: "Practice offline") { Task { await start(p, offline: true) } }
-                                    .accessibilityAction(named: "Delete preset") { store.delete(p) }
-                                    .accessibilityIdentifier("preset-\(i)")
-                            }
+                            PresetButton(preset: p, index: i)
                         }
                     }
                 }
             }
         }
     }
+}
 
-    private func card(_ p: Preset, _ g: Game) -> some View {
+/// One preset on Play.
+struct PresetButton: View {
+    @EnvironmentObject var app: AppModel
+    let preset: Preset
+    let index: Int
+
+    var body: some View {
+        if let g = preset.gameValue {
+            Button { go(offline: preset.offline == true) } label: { PresetCard(preset: preset, game: g) }
+                .buttonStyle(.plain)
+                .disabled(app.busy)
+                .contextMenu { menu }
+                .accessibilityLabel("Start \(preset.name), \(g.title), \(preset.summary)")
+                .accessibilityAction(named: "Practice offline") { go(offline: true) }
+                .accessibilityAction(named: "Delete preset") { PresetStore.shared.delete(preset) }
+                .accessibilityIdentifier("preset-\(index)")
+        }
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button { go(offline: false) } label: { Label("Start a room", systemImage: "person.3") }
+        Button { go(offline: true) } label: { Label("Practice offline", systemImage: "airplane") }
+        Button(role: .destructive) { PresetStore.shared.delete(preset) } label: { Label("Delete preset", systemImage: "trash") }
+    }
+
+    private func go(offline: Bool) {
+        let p = preset
+        let a = app
+        Task { @MainActor in
+            guard let g = p.gameValue else { return }
+            if offline { a.startOffline(g) } else { await a.start(g) }
+            a.room?.preset = p
+        }
+    }
+}
+
+struct PresetCard: View {
+    let preset: Preset
+    let game: Game
+    var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: g.symbol).font(.title2).foregroundStyle(.white.opacity(0.92))
-                .frame(width: 44, height: 44).background(g.tint, in: RoundedRectangle(cornerRadius: 10))
+            Image(systemName: game.symbol).font(.title2).foregroundStyle(.white.opacity(0.92))
+                .frame(width: 44, height: 44).background(game.tint, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(p.name).font(.headline).foregroundStyle(T2P.text).lineLimit(1)
-                Text("\(g.title) · \(p.summary)").font(.caption).foregroundStyle(T2P.muted).lineLimit(1)
+                Text(preset.name).font(.headline).foregroundStyle(T2P.text).lineLimit(1)
+                Text(game.title + " · " + preset.summary).font(.caption).foregroundStyle(T2P.muted).lineLimit(1)
             }
         }
         .padding(10)
         .frame(width: 250, alignment: .leading)
         .background(T2P.panel, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(T2P.line))
-    }
-
-    private func start(_ p: Preset, offline: Bool) async {
-        guard let g = p.gameValue else { return }
-        if offline { app.startOffline(g) } else { await app.start(g) }
-        app.room?.preset = p
     }
 }
 
