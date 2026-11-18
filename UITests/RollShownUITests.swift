@@ -93,7 +93,7 @@ extension XCTestCase {
         app.swipeUp()
         tapWhenReady(app.buttons["offline-\(game)"])
         let name = app.textFields["name"]
-        if name.waitForExistence(timeout: 10) { name.tap(); name.typeText("Sim"); tapWhenReady(app.buttons["join-room"]) }
+        if name.waitForExistence(timeout: 10) { typeName(app, name); tapWhenReady(app.buttons["join-room"]) }
         tapWhenReady(app.buttons["addbot-\(bot)"]); sleep(1)
         tapWhenReady(app.buttons["start-game"])
     }

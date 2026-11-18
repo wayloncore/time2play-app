@@ -65,3 +65,14 @@ extension XCTestCase {
         return false
     }
 }
+
+extension XCTestCase {
+    /// Types the player's name once the field has the keyboard (an iPad simulator can take a moment to give it focus).
+    func typeName(_ app: XCUIApplication, _ field: XCUIElement, _ text: String = "Sim") {
+        for _ in 0..<3 {
+            field.tap()
+            if app.keyboards.firstMatch.waitForExistence(timeout: 5) { break }
+        }
+        field.typeText(text)
+    }
+}

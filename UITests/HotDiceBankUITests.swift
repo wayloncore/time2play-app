@@ -12,6 +12,10 @@ final class HotDiceBankUITests: XCTestCase {
     /// The 3D dice through a longer game (to 10,000, about seven minutes of it): every roll of yours lands and can be
     /// kept, however many there are.
     func testEveryRollLands3D() { playAGame(["-t2p-dice3d", "-t2p-seed", "11", "-t2p-arena-debug"], name: "3d-long", long: true) }
+    /// One whole turn (roll, keep, roll, keep, bank) with the score checked, then done: light enough for the iPad
+    /// simulator, which runs a whole game too slowly to finish in time.
+    func testOneTurnBanks3D() { playAGame(["-t2p-dice3d", "-t2p-seed", "5", "-t2p-arena-debug"], name: "3d-turn", oneBank: true) }
+    func testOneTurnBanksClassic() { playAGame(["-t2p-seed", "5"], name: "classic-turn", oneBank: true) }
     /// Also earns an achievement at the end (-t2p-earn-test: nine games played already, one of them won, and this
     /// practice game counts, so its end earns Regular and nothing else):
     /// its line at the top goes away on its own, stays clear of the game, and isn't said again.
@@ -28,7 +32,7 @@ final class HotDiceBankUITests: XCTestCase {
     private var watchToast = false
     private var rescueSeen = false
 
-    private func playAGame(_ args: [String], name: String, achievement: Bool = false, long: Bool = false) {
+    private func playAGame(_ args: [String], name: String, achievement: Bool = false, long: Bool = false, oneBank: Bool = false) {
         let app = launch(args)
         watchToast = achievement
         startOffline(app, short: !long)
@@ -125,6 +129,11 @@ final class HotDiceBankUITests: XCTestCase {
                     banked += 1
                     if keeps >= 2 { twoKeepBank = true }
                     if banked == 1 { usleep(700_000); shot(app, "bank-\(device)\(name)-after-bank") }
+                    if oneBank && twoKeepBank {
+                        XCTAssertTrue(stalls.isEmpty, "\(name): every roll of yours lands within 15 seconds: \(stalls.joined(separator: " || "))")
+                        XCTAssertTrue(dropped.isEmpty, "\(name): every tap on Roll and Bank reaches the room: \(dropped.joined(separator: " || "))")
+                        return
+                    }
                     break turn
                 }
                 // roll on (every die kept is hot dice: all six go again)
@@ -192,7 +201,7 @@ final class HotDiceBankUITests: XCTestCase {
         app.swipeUp()
         tapWhenReady(app.buttons["offline-farkle"])
         let name = app.textFields["name"]
-        if name.waitForExistence(timeout: 10) { name.tap(); name.typeText("Sim"); tapWhenReady(app.buttons["join-room"]) }
+        if name.waitForExistence(timeout: 10) { typeName(app, name); tapWhenReady(app.buttons["join-room"]) }
         tapWhenReady(app.buttons["addbot-bold"]); sleep(1)
         if short { tapWhenReady(app.buttons["2,500"]); sleep(1) }
         tapWhenReady(app.buttons["start-game"])
