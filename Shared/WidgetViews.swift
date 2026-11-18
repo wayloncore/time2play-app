@@ -69,7 +69,7 @@ struct RejoinView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let r = last {
-                Text("YOUR LAST ROOM").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(WidgetColors.muted)
+                Text("LAST ROOM").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(WidgetColors.muted)
                 Text(r.code).font(.system(size: 26, weight: .heavy, design: .rounded)).foregroundStyle(WidgetColors.text)
                 Text(r.playable?.title ?? "A game").font(.system(size: 12)).foregroundStyle(WidgetColors.muted).lineLimit(1)
                 Spacer(minLength: 2)

@@ -18,6 +18,15 @@ public enum Game: String, CaseIterable, Codable, Sendable, Identifiable {
         case .closeEnough: return "Close Enough"
         }
     }
+    /// One line on how it plays (Start cards, the Library's app games, the widget before the Library loads).
+    public var blurb: String {
+        switch self {
+        case .overdraft: return "Match the suit or the number, and be first to empty your hand."
+        case .hotDice: return "Roll six dice, keep what scores, and know when to bank."
+        case .rollCall: return "Five dice, three rolls, thirteen boxes to fill."
+        case .closeEnough: return "Give a range that holds the answer. Tighter scores more."
+        }
+    }
     /// The game the room's hello names (src/live/protocol.js): the same strings as the paths.
     public init?(serverName: String) { self.init(rawValue: serverName) }
 }

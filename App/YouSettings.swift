@@ -76,7 +76,7 @@ struct AppIconSection: View {
     var body: some View {
         Section {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                HStack(spacing: 10) {
                     ForEach(AppIcons.all) { c in
                         Button { pick(c.id) } label: {
                             VStack(spacing: 6) {
@@ -84,10 +84,10 @@ struct AppIconSection: View {
                                     if let img = UIImage(named: c.preview) { Image(uiImage: img).resizable() }
                                     else { RoundedRectangle(cornerRadius: 14).fill(T2P.panelHi) }
                                 }
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .frame(width: 54, height: 54)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(current == c.id ? T2P.gold : .clear, lineWidth: 3).padding(-4))
+                                    .stroke(current == c.id ? T2P.gold : .clear, lineWidth: 3).padding(-3))
                                 Text(c.name).font(.caption.weight(current == c.id ? .bold : .regular))
                                     .foregroundStyle(current == c.id ? T2P.text : T2P.muted)
                             }

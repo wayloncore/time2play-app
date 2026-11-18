@@ -166,14 +166,6 @@ extension Game {
         case .closeEnough: return "1–8 · solo too"
         }
     }
-    var blurb: String {
-        switch self {
-        case .overdraft: return "Match the suit or the number, and be first to empty your hand."
-        case .hotDice: return "Roll six dice, keep what scores, and know when to bank."
-        case .rollCall: return "Five dice, three rolls, thirteen boxes to fill."
-        case .closeEnough: return "Give a range that holds the answer. Tighter scores more."
-        }
-    }
     /// The bots the room owner can add: each game's own.
     var bots: [(level: String, name: String)] {
         switch self {

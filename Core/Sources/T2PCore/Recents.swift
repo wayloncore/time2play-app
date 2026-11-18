@@ -52,7 +52,7 @@ extension Library {
     /// The four games in the app, as Library cards: the widget's game of the day before the Library has loaded.
     public static var appOnly: Library {
         Library(categories: [], items: Game.allCases.map {
-            Item(key: $0.rawValue, title: $0.title, category: "", blurb: nil, thumb: nil, page: "/library/\($0.rawValue)",
+            Item(key: $0.rawValue, title: $0.title, category: "", blurb: $0.blurb, thumb: nil, page: "/library/\($0.rawValue)",
                  players: nil, phones: nil, game: $0)
         })
     }

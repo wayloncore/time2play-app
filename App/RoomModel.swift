@@ -68,7 +68,7 @@ final class RoomModel: ObservableObject, Identifiable {
     func react(_ r: Reaction) { session.send(Out.react(r)); Haptics.select() }
 
     func pause() { if offline { return }; retry?.cancel(); session.pause() }
-    func resume() { if offline { return }; retry?.cancel(); session.reconnect() }
+    func resume() { Music.shared.resumeIfStopped(); if offline { return }; retry?.cancel(); session.reconnect() }
     func leave() { retry?.cancel(); session.leave() }
     func close() { retry?.cancel(); transport.close(); Music.shared.stop() }
 

@@ -158,6 +158,12 @@ final class Music {
         engine = nil; node = nil; observer = nil; isPlaying = false
     }
 
+    /// Back from the background (or a call): the system may have stopped the engine.
+    func resumeIfStopped() {
+        guard isPlaying, engine?.isRunning != true else { return }
+        restart()
+    }
+
     private func restart() {
         guard isPlaying else { return }
         stop(); start()
