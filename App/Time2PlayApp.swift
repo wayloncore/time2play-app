@@ -66,6 +66,9 @@ struct Time2PlayApp: App {
             } else if let w = WidgetStill.fromArgs() {
                 // the home screen widget's screenshots, at its real sizes
                 WidgetStillView(still: w)
+            } else if SpinnerGallery.requested {
+                // #543's screenshots: the loading spinner at its sizes
+                SpinnerGallery()
             } else {
             RootView()
                 .overlay { IntroOverlay() }   // the intro at a fresh launch, over Play, which starts underneath (#562)
