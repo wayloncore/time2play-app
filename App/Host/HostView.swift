@@ -240,6 +240,7 @@ struct HostStage: View {
     let floor: JSON
     let game: Game
     let code: String
+    @AppStorage(Boards3D.flatCloseEnoughKey) private var flatBoard = false
 
     var body: some View {
         let phase = floor["phase"].string ?? "lobby"
@@ -355,7 +356,13 @@ struct HostStage: View {
             } else {
                 Text("The answer: \(q.answer.map { q.format($0) } ?? "")").font(.system(size: 34, weight: .heavy)).foregroundStyle(T2P.gold)
                     .accessibilityIdentifier("host-answer")
-                RangesChart(q: q, players: v.players.filter { q.results[$0.id] != nil }, me: "", landed: true)
+                if Boards3D.closeEnough3D(flat: flatBoard) {
+                    // #535's board, big: everyone's ranges and the answer dropping onto them
+                    CloseEnoughBoard3D(state: .make(q: q, players: v.players, me: "", lo: 0, hi: 0, seated: false))
+                        .frame(maxWidth: 900)
+                } else {
+                    RangesChart(q: q, players: v.players.filter { q.results[$0.id] != nil }, me: "", landed: true)
+                }
             }
             Spacer(minLength: 0)
         }

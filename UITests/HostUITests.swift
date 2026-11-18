@@ -63,6 +63,27 @@ final class HostUITests: XCTestCase {
         XCTAssertTrue(app.buttons["host-rollcall"].waitForExistence(timeout: 10), "back on Play")
     }
 
+    func testHostCloseEnoughWithBots() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "hosting is the iPad's")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = launch()
+        host(app, "closeenough")
+        _ = code(app)
+        tapWhenReady(app.buttons["host-addbot-easy"]); sleep(1)
+        tapWhenReady(app.buttons["host-addbot-hard"]); sleep(1)
+        tapWhenReady(app.buttons["30s"]); sleep(1)
+        tapWhenReady(app.buttons["host-start"])
+        sleep(4)
+        screen("537-host-5-close-enough-asking")
+        // the bots lock in; the answer drops onto the 3D board
+        XCTAssertTrue(app.staticTexts["host-answer"].waitForExistence(timeout: 45), "the answer is revealed on the iPad")
+        sleep(3)
+        screen("537-host-6-close-enough-answer")
+        tapWhenReady(app.buttons["host-end"])
+        tapWhenReady(app.buttons["End the room"])
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     func testHostHotDiceWithBots() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "hosting is the iPad's")
         XCUIDevice.shared.orientation = .landscapeLeft
