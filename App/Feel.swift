@@ -72,7 +72,6 @@ enum Feel {
 
 /// The sound effects: small files made by scripts/sounds.py (synthesized, original), in App/Sounds.
 /// The audio session is "ambient": the silent switch silences them, and they mix with whatever else is playing.
-/// Used on the main thread only.
 final class Sounds: ObservableObject {
     static let shared = Sounds()
     enum Effect: String, CaseIterable {
@@ -94,20 +93,27 @@ final class Sounds: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 
+    /// Called on the main thread; the audio itself starts on its own queue, so a slow audio start-up (the first
+    /// sound wakes the audio session) never holds up the screen.
     func play(_ e: Effect, volume: Float = 1) {
         guard FeelSettings.sound else { return }
         let now = Date()
         // one of each at a time: three dice landing together are one clack, not three
         if let t = lastPlayed[e], now.timeIntervalSince(t) < 0.08 { return }
         lastPlayed[e] = now
-        if !sessionReady { Sounds.prepareSession(); sessionReady = true }
         if Sounds.logging { log.append(e.rawValue) }
-        guard let d = file(e), let p = try? AVAudioPlayer(data: d) else { return }
-        p.volume = volume
-        playing.removeAll { !$0.isPlaying }
-        playing.append(p)
-        p.play()
+        audio.async { [self] in
+            if !sessionReady { Sounds.prepareSession(); sessionReady = true }
+            guard let d = file(e), let p = try? AVAudioPlayer(data: d) else { return }
+            p.volume = volume
+            playing.removeAll { !$0.isPlaying }
+            playing.append(p)
+            p.play()
+        }
     }
+
+    /// The audio queue's: the loaded files, the players still sounding, whether the session is set up.
+    private let audio = DispatchQueue(label: "live.time2play.sounds", qos: .userInitiated)
 
     private func file(_ e: Effect) -> Data? {
         if let d = data[e] { return d }
