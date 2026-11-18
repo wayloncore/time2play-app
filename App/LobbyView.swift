@@ -215,7 +215,10 @@ struct LobbyView: View {
                 Text(room.offline ? "Offline: just you and the bots." : enough ? "No big screen needed. Anyone can put it on a TV."
                      : "Add a bot or invite someone: \(room.game.minPlayers) or more can play.")
                     .font(.footnote).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
-                Button("End the room") { confirmEnd = true }.font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)
+                HStack(spacing: 24) {
+                    SavePresetButton(room: room)   // #538
+                    Button("End the room") { confirmEnd = true }.font(.footnote.weight(.semibold)).foregroundStyle(T2P.faint)
+                }
             } else if room.phase == "lobby" {
                 Text(room.hostless ? "Waiting for \(room.ownerName ?? "the room’s owner") to start." : "The big screen starts the game.")
                     .font(.headline).foregroundStyle(T2P.muted).multilineTextAlignment(.center)
