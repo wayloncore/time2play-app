@@ -12,7 +12,9 @@ final class FeelUITests: XCTestCase {
 
     func testYouHasTheNewSettings() {
         let app = launch(["-t2p-default", "-t2p-name", "Sim"])
-        tapWhenReady(app.tabBars.buttons["You"])
+        // iPhone: the tab bar; iPad: the tabs at the top (or Play's own You button, which opens the same tab)
+        let tab = app.tabBars.buttons["You"]
+        tapWhenReady(tab.waitForExistence(timeout: 5) ? tab : app.buttons["You"].firstMatch)
         let classic = app.switches["toggle-classic-dice"]
         app.swipeUp()
         XCTAssertTrue(classic.waitForExistence(timeout: 10))
