@@ -21,9 +21,8 @@ struct Table3DView: View {
     @State private var hitNote: String?
     @State private var dealt: Int?
     @State private var showOver = false
-    @State private var wild: Overdraft.Card?
-    @State private var wildJump = false
-    @State private var confirmEnd = false
+    @State private var picking: WildPick?
+    @Environment(\.gameDialogs) private var dialogs
     @State private var headerBottom: CGFloat = 100
     @State private var bottomTop: CGFloat = 520
     @State private var tray: CGRect = .zero
@@ -58,6 +57,15 @@ struct Table3DView: View {
                 scrims.ignoresSafeArea().allowsHitTesting(false)
                 overTable.ignoresSafeArea()
                 hud
+                if let p = picking {
+                    // the painted suit chooser (Nov 18): over the table, the emblem lands on the pile
+                    SuitPicker(hand: view.hand, wild4: p.card.kind == "wild4",
+                               pile: stage.screen(T3Vec(0, 0.1, Table3D.pileAt.z)), sendAtTap: p.jump,
+                               onPick: { s in picking?.sent = true; send(p.card, suit: s, jump: p.jump) },
+                               onDone: { withAnimation(.easeOut(duration: 0.2)) { picking = nil } })
+                        .id(p.token)
+                        .transition(.opacity)
+                }
                 if showOver, let room { HandOver(room: room, view: view).transition(.opacity) }
             }
             .onAppear { appeared(g) }
@@ -70,19 +78,9 @@ struct Table3DView: View {
         .preferredColorScheme(.dark)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .animation(.easeInOut(duration: 0.3), value: showOver)
-        .confirmationDialog("Pick the suit", isPresented: Binding(get: { wild != nil }, set: { if !$0 { wild = nil } }), titleVisibility: .visible) {
-            ForEach(Overdraft.suits, id: \.self) { s in
-                Button(Overdraft.suitNames[s] ?? s) { if let c = wild { send(c, suit: s, jump: wildJump) }; wild = nil }
-            }
-            Button("Cancel", role: .cancel) { wild = nil }
-        }
-        .confirmationDialog("End the room for everyone?", isPresented: $confirmEnd, titleVisibility: .visible) {
-            Button("End the room", role: .destructive) { room?.send(Out.close) }
-            Button("Keep playing", role: .cancel) {}
-        }
-        .onChange(of: view.yourTurn) { _, mine in if mine { Haptics.yourTurn() } }
+        .onChange(of: view.yourTurn) { _, mine in if mine { Haptics.yourTurn() }; closePickerIfGone() }
         .onChange(of: view.table) { old, new in if let new { changed(from: old, to: new) } }
-        .onChange(of: view.hand) { old, new in handChanged(from: old, to: new) }
+        .onChange(of: view.hand) { old, new in handChanged(from: old, to: new); closePickerIfGone() }
         .onChange(of: stage.layout) { _, _ in sync(table) }
         .onChange(of: reduceMotion) { _, r in stage.world.post { [world = stage.world] in world.reduced = r } }
     }
@@ -207,16 +205,18 @@ struct Table3DView: View {
             Spacer(minLength: 4)
             if let room {
                 HowToButton(game: room.game, view: room.view)
-                Menu {
-                    if !room.offline { ShareLink(item: room.inviteLink) { Label("Invite people", systemImage: "square.and.arrow.up") } }
-                    Section("Send") { ForEach(Reaction.allCases) { r in Button(r == .gg ? "GG" : r.words) { room.react(r) } } }
-                    if room.isOwner { Button("End the room", role: .destructive) { confirmEnd = true } }
+                // the room's menu, painted like the game (Nov 18): invite, the reactions, end the room
+                Button {
+                    dialogs?.show(.roomMenu(room: room, reactions: true,
+                                            onEnd: { [dialogs] in dialogs?.show(.endRoom(end: { room.send(Out.close) })) },
+                                            onLeave: nil))
                 } label: {
                     Image(systemName: "ellipsis").font(.headline).foregroundStyle(T2P.text)
                         .frame(width: 44, height: 44).background(Color(hex: 0x14101C).opacity(0.7), in: Circle())
                         .overlay(Circle().stroke(.white.opacity(0.17)))
                 }
                 .accessibilityLabel("Room menu")
+                .accessibilityIdentifier("room-menu")
             }
             Button(action: onLeave) {
                 Text("Leave").font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(hex: 0xD9CFDC))
@@ -526,8 +526,15 @@ struct Table3DView: View {
         let jump = !view.yourTurn && view.jump.contains(c.id)
         guard (view.yourTurn && view.legal.contains(c.id) && (view.drawn == nil || view.drawn == c.id)) || jump else { Haptics.nope(); return }
         lastThrow = (Double(fan.minX + center.x), Double(fan.minY + center.y), roll, width)
-        if c.isWild { wild = c; wildJump = jump; return }
+        if c.isWild { withAnimation(.easeOut(duration: 0.15)) { picking = WildPick(card: c, jump: jump) }; return }
         send(c, suit: nil, jump: jump)
+    }
+
+    /// A wild that can't go any more (the turn's clock ran out, the jump was missed) closes its chooser.
+    private func closePickerIfGone() {
+        guard let p = picking, !p.sent else { return }
+        let canGo = p.jump ? view.jump.contains(p.card.id) : (view.yourTurn && view.legal.contains(p.card.id))
+        if !canGo { withAnimation(.easeOut(duration: 0.2)) { picking = nil } }
     }
 
     private func send(_ c: Overdraft.Card, suit: String?, jump: Bool) {

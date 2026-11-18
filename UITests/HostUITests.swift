@@ -50,7 +50,12 @@ final class HostUITests: XCTestCase {
         // the phone leaves before the start, so only bots play (a person's turns would wait for them)
         phone.cancel(with: .normalClosure, reason: nil)
         let pat = app.descendants(matching: .any)["host-player-p1"]
-        if pat.waitForExistence(timeout: 3) { pat.buttons.firstMatch.tap(); tapWhenReady(app.buttons["Remove"]) }
+        if pat.waitForExistence(timeout: 3) {
+            pat.buttons.firstMatch.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["dialog-remove"].waitForExistence(timeout: 5), "the painted Take out (Nov 18)")
+            sleep(1); screen("nov18-ipad-host-dialog-remove")
+            tapWhenReady(app.buttons["Remove"])
+        }
         sleep(1)
         tapWhenReady(app.buttons["host-start"])
         sleep(6)
@@ -98,6 +103,8 @@ final class HostUITests: XCTestCase {
         screen("537-host-4-hot-dice")
         XCTAssertTrue(app.descendants(matching: .any)["host-stage"].exists)
         tapWhenReady(app.buttons["host-end"])
+        XCTAssertTrue(app.descendants(matching: .any)["dialog-end-room"].waitForExistence(timeout: 5), "the painted End the room (Nov 18)")
+        sleep(1); screen("nov18-ipad-host-dialog-end-room")
         tapWhenReady(app.buttons["End the room"])
         XCUIDevice.shared.orientation = .portrait
     }

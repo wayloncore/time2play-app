@@ -155,7 +155,7 @@ final class Table3DUITests: XCTestCase {
             let cards = app.buttons.matching(legal)
             if cards.count > 0 {
                 cards.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).tap()
-                let wave = app.buttons["Wave"]
+                let wave = app.buttons["suit-wave"]   // the painted suit chooser (Nov 18)
                 if wave.waitForExistence(timeout: 1) { wave.tap() }
                 plays += 1
                 if !shotThrow { usleep(150_000); shot(app, "496-\(device)3d-play\(n)-3-throw"); shotThrow = true }

@@ -54,7 +54,7 @@ final class OverdraftUITests: XCTestCase {
                 // tap the card's visible edge (the next card overlaps the rest of it)
                 cards.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).tap()
                 // a Change Suit or a +4 asks for the suit
-                let wave = app.buttons["Wave"]
+                let wave = app.buttons["suit-wave"]   // the painted suit chooser (Nov 18)
                 if wave.waitForExistence(timeout: 1) { wave.tap() }
                 plays += 1
                 // your last card: the table says so before the winner screen covers it
