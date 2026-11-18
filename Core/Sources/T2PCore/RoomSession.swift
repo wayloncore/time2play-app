@@ -104,6 +104,8 @@ public final class RoomSession {
     /// The account the room sees this phone as (nil: a guest).
     public private(set) var account: String?
     public private(set) var game_: String?
+    /// #539: watching the room, with no seat (no hand, no turns).
+    public private(set) var watching = false
 
     /// Called after anything changes (status, seat, view).
     public var onChange: (() -> Void)?
@@ -119,6 +121,7 @@ public final class RoomSession {
     private let transport: RoomTransport
     private let store: SeatStore
     private var wantJoin: (name: String, face: Int?)?
+    private var wantWatch: String??
     private var open = false
     private var attempt = 0
     private var resuming = false
@@ -140,6 +143,12 @@ public final class RoomSession {
     public func join(name: String, face: Int?) {
         wantJoin = (name, face)
         if open, seat == nil { status = .joining; send(Out.join(name: name, face: face)); changed() }
+    }
+
+    /// Watches the room without playing (#539): no seat, no hand, no turns. Comes back as a watcher after a drop.
+    public func watch(name: String?) {
+        wantWatch = .some(name); watching = true
+        if open, seat == nil { status = .joining; send(Out.watch(name: name)); changed() }
     }
 
     /// The app went to the background: close the socket. The room holds the seat; `resume()` comes back to it.
@@ -228,6 +237,9 @@ public final class RoomSession {
             if let s = seat {
                 resuming = true
                 send(Out.resume(id: s.id, token: s.token))
+            } else if let w = wantWatch {
+                status = .joining
+                send(Out.watch(name: w))
             } else if let w = wantJoin {
                 status = .joining
                 send(Out.join(name: w.name, face: w.face))
@@ -248,10 +260,13 @@ public final class RoomSession {
             changed()
         case let .view(v):
             view = v
-            if status != .inRoom, seat != nil { status = .inRoom }
+            if v["spectator"].bool == true { watching = true }
+            if status != .inRoom, seat != nil || watching { status = .inRoom; attempt = 0 }
             if resuming { resuming = false; noteBack(v) }
             changed()
-        case .floor: break
+        case let .floor(f):
+            // a watcher may be sent the room's public view (the floor) rather than a phone's
+            if watching { view = f; if status != .inRoom { status = .inRoom; attempt = 0 }; changed() }
         case let .react(id, r):
             if let r = Reaction(rawValue: r) { onNotice?(.reaction(playerId: id, r)) }
         case let .error(message, code):
