@@ -38,6 +38,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     /// Build 45: the camera has eased in on your roll (true) or is on the whole tray (false).
     var onEased: ((Bool) -> Void)?
     private var easedSaid = false
+    /// UI tests (-t2p-arena-debug): the scene's own state in one line, about twice a second.
+    var onDebug: ((String) -> Void)?
+    private var debugAt = 0.0
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
@@ -128,6 +131,14 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         clock += dt
         if dt > 0 || first { step() }
         if dt > 0 || first || rigDirty { aimCamera(dt) }
+        if let cb = onDebug, clock - debugAt >= 0.5 { debugAt = clock; let line = debugLine(); DispatchQueue.main.async { cb(line) } }
+    }
+
+    private func debugLine() -> String {
+        func at(_ w: Where) -> String { switch w { case .cup: return "c"; case .felt: return "f"; case .air: return "a"; case let .keep(k): return "k\(k)" } }
+        let ds = (0..<6).compactMap { id in dice[id].map { "\(id)\(at($0.at))\($0.tween == nil ? "" : "~")" } }.joined(separator: " ")
+        let p = play.map { "\($0.key)\($0.done ? "done" : "live")\($0.awaitingTweens ? "+tw" : "")" } ?? "-"
+        return "want=\(want?.roll ?? "-")\(want?.shaking == true ? "/shake" : "") thrown=\(thrown ?? "-") landed=\(landedKey ?? "-") play=\(p) cup=\(cupRun.phase)\(cupRun.tween == nil ? "" : "~") tip=\(cupRun.tipAt > 0 ? "y" : "n") dice=\(ds)"
     }
 
     private func moment(_ m: Moment) {

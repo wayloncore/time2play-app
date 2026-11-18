@@ -515,14 +515,18 @@ struct HotDiceView: View {
         switch t.state {
         case "start": return mine ? "Roll all six to start your turn" : "\(name(t.id)) is about to roll"
         case "rolling": return view.common.hostless ? (theirs ? "\(name(t.id)) is rolling…" : "Rolling…") : "Watch the big screen"
-        case "hot": return mine ? "Hot dice! Roll all six again, or bank" : "Hot dice for \(name(t.id))!"
+        case "hot":
+            if !mine { return "Hot dice for \(name(t.id))!" }
+            if boardWait { return "You need \(t.need.formatted()) to get on the board" }
+            return "Hot dice! Bank \(((view.me?.score ?? 0) + t.pts).formatted()), or roll all six again"
         default:
             if !mine { return t.selPts > 0 ? "\(name(t.id)) is keeping \(t.selName.isEmpty ? "dice" : t.selName)" : "\(name(t.id)) is choosing" }
             if !t.note.isEmpty && t.sel.isEmpty { return t.note }
-            if t.sel.isEmpty { return "Tap the dice you want to keep" }
-            let total = t.pts + t.selPts
-            if t.need > 0 && total < t.need { return "You need \(t.need) to get on the board" }
-            return "Bank it for \(total.formatted()), or roll \(rollCount) dice"
+            if t.sel.isEmpty || t.selPts <= 0 { return "Tap the dice you want to keep" }
+            if boardWait { return "You need \(t.need.formatted()) to get on the board" }
+            // as the website's phone says it: what your score will be once it's banked
+            let banked = (view.me?.score ?? 0) + bankPoints
+            return "Bank it for \(banked.formatted()), or roll \(rollCount) \(rollCount == 1 ? "die" : "dice")"
         }
     }
 
@@ -542,10 +546,23 @@ struct HotDiceView: View {
         guard mine, let t else { return false }
         return t.state == "start" || t.state == "hot" || (t.state == "choose" && !t.sel.isEmpty && t.selPts > 0)
     }
+    /// What Bank banks: the dice set aside, plus the scoring dice tapped this roll (the website's bankPts).
+    private var bankPoints: Int {
+        guard let t else { return 0 }
+        return t.pts + (t.state == "choose" ? t.selPts : 0)
+    }
+    /// Something could be banked, but this player isn't on the board yet and the turn is under 500 (the website's
+    /// boardWait): Bank stays off and says why.
+    private var boardWait: Bool {
+        guard mine, let t else { return false }
+        let something = t.state == "hot" || (t.state == "choose" && !t.sel.isEmpty && t.selPts > 0)
+        return something && bankPoints < t.need
+    }
+    /// The website's phone's rule, exactly: hot dice, or a scoring keep this roll, and not waiting to get on the board.
     private var canBank: Bool {
         guard mine, let t else { return false }
-        if t.state == "hot" { return t.pts >= t.need }
-        return t.state == "choose" && t.selPts > 0 && t.pts + t.selPts >= t.need
+        let something = t.state == "hot" || (t.state == "choose" && !t.sel.isEmpty && t.selPts > 0)
+        return something && bankPoints > 0 && !boardWait
     }
 
     /// The faces in this roll that can score, by the website's own scoring (its phone dims the rest the same way).
@@ -694,6 +711,10 @@ struct HotDiceView: View {
             }
             .animation(.easeOut(duration: 0.2), value: arenaStage.moved)
             keepLine(t).frame(minHeight: 22)
+            if DiceArenaStage.debugOn {
+                Text("room=\(self.t.map { "\($0.state) \($0.n).\($0.seq) live=\($0.live.count) sel=\($0.sel.count)" } ?? "-") shown=\(t.state) \(t.n).\(t.seq) settled=\(settled) farkleHeld=\(farkle != nil)")
+                    .font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("hd-debug")
+            }
             }
         } else {
             Text("Waiting for the first roll").foregroundStyle(T2P.muted).frame(maxHeight: .infinity)
@@ -761,11 +782,12 @@ struct HotDiceView: View {
         if mine {
             HStack(spacing: 12) {
                 Button { room.move("roll"); Haptics.play() } label: {
-                    VStack(spacing: 0) { Text("Roll"); Text("\(rollCount) dice").font(.caption) }
+                    VStack(spacing: 0) { Text("Roll"); Text("\(rollCount) \(rollCount == 1 ? "die" : "dice")").font(.caption) }
                 }
                 .buttonStyle(GoldButtonStyle()).disabled(!canRoll).accessibilityIdentifier("roll")
                 Button { room.move("bank"); Haptics.yourTurn() } label: {
-                    VStack(spacing: 0) { Text("Bank"); Text("+\(((t?.pts ?? 0) + (t?.state == "choose" ? t?.selPts ?? 0 : 0)).formatted())").font(.caption) }
+                    // the website's +points; while you need 500 to get on the board, the button itself says so
+                    VStack(spacing: 0) { Text("Bank"); Text(boardWait ? "need \((t?.need ?? 0).formatted())" : "+\(bankPoints.formatted())").font(.caption) }
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(QuietButtonStyle()).disabled(!canBank).accessibilityIdentifier("bank")

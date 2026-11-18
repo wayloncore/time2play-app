@@ -19,7 +19,11 @@ final class RoomModel: ObservableObject, Identifiable {
     @Published private(set) var status: RoomSession.Status = .connecting
     @Published private(set) var view: JSON?
     @Published var taken: [Int]
-    @Published var toast: String?
+    /// A short line at the top of the room (a problem, a saved preset, an achievement). Every one goes away on its own
+    /// after about 3 seconds (Tyler, build 48: an achievement's never did), and a tap or a swipe up clears it sooner.
+    @Published var toast: String? { didSet { if toast != nil && toast != oldValue { toastEnds() } } }
+    private var toastTimer: DispatchWorkItem?
+    static let toastSeconds = 3.0
     @Published var reactions: [ShownReaction] = []
     @Published var back: String?
     /// #538: a preset to set this room up with, once its owner is in the lobby
@@ -64,6 +68,16 @@ final class RoomModel: ObservableObject, Identifiable {
     }
 
     func join(name: String, face: Int?) { session.join(name: name, face: face) }
+
+    private func toastEnds() {
+        toastTimer?.cancel()
+        let shown = toast
+        let w = DispatchWorkItem { [weak self] in if let self, self.toast == shown { self.toast = nil } }
+        toastTimer = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + RoomModel.toastSeconds, execute: w)
+    }
+    /// A tap or a swipe up on the line at the top.
+    func dismissToast() { toastTimer?.cancel(); toast = nil }
     func send(_ m: JSON) { session.send(m) }
     func move(_ t: String, _ fields: [String: JSON] = [:]) { session.move(t, fields) }
     /// The website's own Farkle scoring, for marking the dice that can score (#488).
@@ -103,8 +117,7 @@ final class RoomModel: ObservableObject, Identifiable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.reactions.removeAll { $0.id == shown.id } }
             UIAccessibility.post(notification: .announcement, argument: "\(who): \(r.words)")
         case let .problem(msg):
-            toast = msg; Haptics.nope()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in if self?.toast == msg { self?.toast = nil } }
+            toast = msg; Haptics.nope()   // it goes on its own (toastEnds)
         case let .back(msg):
             back = msg
             UIAccessibility.post(notification: .announcement, argument: msg)

@@ -32,6 +32,9 @@ final class DiceArenaStage: ObservableObject {
     @Published private(set) var moved = false
     /// Build 45: the camera has eased in on your roll and is holding there.
     @Published private(set) var eased = false
+    /// UI tests only (-t2p-arena-debug): the scene's state in one line.
+    @Published private(set) var debug = ""
+    static var debugOn: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-arena-debug") }
     private(set) var world: DiceArenaWorld?
     private var scnView: SCNView?
     private var last: ArenaState?
@@ -59,6 +62,7 @@ final class DiceArenaStage: ObservableObject {
         w.onFrozen = { [weak self] in self?.frozen = true }
         w.onMoved = { [weak self] m in self?.moved = m }
         w.onEased = { [weak self] e in self?.eased = e }
+        if Self.debugOn { w.onDebug = { [weak self] l in self?.debug = l } }
         let v = SCNView(frame: .zero)
         v.scene = w.scene
         v.pointOfView = w.cameraNode
@@ -160,6 +164,10 @@ struct DiceArenaView: View {
                 // for UI tests: whether the camera is eased in on your roll (build 45)
                 Text(stage.eased ? "eased" : "fitted").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier("dice3d-camera")
+                if DiceArenaStage.debugOn {
+                    Text("\(stage.debug) stage.landed=\(stage.landed ?? "-")").font(.system(size: 2)).opacity(0.02)
+                        .accessibilityIdentifier("dice3d-debug")
+                }
             }
             .onAppear { stage.fit(width: g.size.width, height: g.size.height, top: top); stage.update(state, reduced: reduceMotion) }
             .onChange(of: g.size) { _, s in stage.fit(width: s.width, height: s.height, top: top) }
