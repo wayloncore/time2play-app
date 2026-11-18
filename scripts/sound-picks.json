@@ -1,0 +1,11 @@
+{
+  "_note": "The recorded effects (scripts/recorded-sounds.py pick). Each: file (pack folder from scripts/sound-packs.txt, then the path in its zip), and optionally start, length and fade (seconds), peak and gain (dB), and filter (ffmpeg audio filters). Chosen from the survey of Nov 17 2026.",
+  "card-play": { "file": "casino/Audio/card-place-1.ogg", "length": 0.35, "fade": 0.08 },
+  "draw": { "file": "casino/Audio/card-slide-4.ogg", "length": 0.35, "fade": 0.08 },
+  "dice-roll": { "file": "casino/Audio/dice-shake-3.ogg", "length": 0.8, "fade": 0.25 },
+  "dice-land": { "file": "casino/Audio/dice-throw-3.ogg", "length": 0.55, "fade": 0.12 },
+  "farkle": { "file": "rpg/OGG/dropLeather.ogg", "filter": "lowpass=f=1200", "fade": 0.12 },
+  "bolt": { "file": "digital/zapThreeToneDown.mp3", "length": 0.8, "fade": 0.2 },
+  "your-turn": { "file": "interface/Audio/confirmation_001.ogg", "fade": 0.08 },
+  "win": { "file": "jingles/OGG/jingles_STEEL/jingles_STEEL10.ogg", "fade": 0.2 }
+}

@@ -89,6 +89,12 @@ final class FeelUITests: XCTestCase {
         XCTAssertTrue(log.waitForExistence(timeout: 5))
         XCTAssertTrue(log.label.contains("dice-roll"), "the roll's sound played: \(log.label)")
         XCTAssertTrue(log.label.contains("dice-land") || log.label.contains("farkle"), "and its landing: \(log.label)")
+        // every effect's file (recorded .caf or synthesized .wav) opens, and none of the sounds played failed to load
+        let files = app.descendants(matching: .any)["sound-files"]
+        XCTAssertEqual(files.label, "ok", "these sound files don't open: \(files.label)")
+        let failed = app.descendants(matching: .any)["sound-failed"].label
+        print("SOUNDS played: \(log.label); failed: \(failed)")
+        XCTAssertFalse(failed.contains("load:"), "a sound didn't load: \(failed)")
         shot(app, "feel-hot-dice-sounds")
     }
 
