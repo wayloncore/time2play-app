@@ -32,7 +32,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: live.time2play.app
             CFBundleURLSchemes: [time2play]
-        # The launch screen is the intro clip's first-frame navy (#030A22, LaunchNavy in the asset catalog), so launch
+        # The launch screen is the intro clip's first-frame navy (#00071F, LaunchNavy in the asset catalog), so launch
         # to intro has no flash (wayloncore/tyleralocke#562). It's written here, so the generated one is off below.
         UILaunchScreen:
           UIColorName: LaunchNavy

@@ -14,16 +14,17 @@ enum IntroSettings {
 /// a launch from a link, a QR scan, an invite, an alert or the widget skips it, and anything that opens a room ends it.
 /// The app underneath starts as usual while it plays (its connections and loading don't wait for it).
 ///
-/// The clip: trimmed 3 frames of empty navy from the start of Tyler's 3.0 s video, the motion sped up 1.25x (every
-/// frame kept, 30 fps), and the finished mark held 0.3 s at the end: 2.33 s in all, about 2 s of motion.
+/// The clip: Tyler's 3.0 s video with 3 frames of empty navy trimmed from the start and the 7 still frames from the end,
+/// the motion (the 2's bouncy pop included) sped up 1.25x (every frame kept, 30 fps), then the finished mark held
+/// 0.25 s: 2.37 s in all, 2.1 s of motion. No sound (the video's audio track is stripped).
 /// Tests: the UI tests turn it off unless they ask for it (-t2p-intro); -t2p-intro-freeze <seconds> stops it at a moment
 /// for screenshots; -t2p-reduce-motion acts as if Reduce Motion is on.
 final class Intro: ObservableObject {
     static let shared = Intro()
 
-    /// The clip's first-frame navy (#030A22), the launch screen's color too (LaunchNavy). The app's own navy is
+    /// The clip's first-frame navy (#00071F), the launch screen's color too (LaunchNavy). The app's own navy is
     /// #0B1121, a shade lighter; the clip's is used here so launch, the clip and its letterbox bars are one color.
-    static let navy = UIColor(named: "LaunchNavy") ?? UIColor(red: 3 / 255, green: 10 / 255, blue: 34 / 255, alpha: 1)
+    static let navy = UIColor(named: "LaunchNavy") ?? UIColor(red: 0, green: 7 / 255, blue: 31 / 255, alpha: 1)
 
     @Published private(set) var showing: Bool
     /// How the intro leaves: the cross-fade's length, or nil for at once (a link).
