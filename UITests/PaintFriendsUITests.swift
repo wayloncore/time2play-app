@@ -10,6 +10,11 @@ final class PaintFriendsUITests: XCTestCase {
     override func tearDown() { XCUIDevice.shared.appearance = .light }
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad-" : "" }
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
+    /// A tab: in the tab bar on iPhone, along the top on iPad.
+    private func tab(_ app: XCUIApplication, _ name: String) {
+        let t = app.tabBars.buttons[name]
+        tapWhenReady(t.waitForExistence(timeout: 5) ? t : app.buttons[name].firstMatch)
+    }
 
     /// The code the lobby shows ("Room code K 7 Q P").
     private func shownCode(_ app: XCUIApplication) -> String {
@@ -210,7 +215,7 @@ final class PaintFriendsUITests: XCTestCase {
 
     func testFriendsScreen() {
         let app = launch(["-t2p-social-demo"])
-        tapWhenReady(app.tabBars.buttons["Friends"])
+        tab(app, "Friends")
         XCTAssertTrue(app.buttons["friend-link"].waitForExistence(timeout: 10))
         sleep(1)
         shot(app, "nov18p-\(device)friends-top")
@@ -257,13 +262,13 @@ final class PaintFriendsUITests: XCTestCase {
     /// The Friends screen with the phone in light mode (it stays painted), and signed out.
     func testFriendsLightAndSignedOut() {
         let app = launch(["-t2p-social-demo", "-t2p-light"])
-        tapWhenReady(app.tabBars.buttons["Friends"])
+        tab(app, "Friends")
         XCTAssertTrue(app.buttons["friend-link"].waitForExistence(timeout: 10))
         sleep(1)
         shot(app, "nov18p-\(device)friends-light")
         app.terminate()
         let guest = launch()
-        tapWhenReady(guest.tabBars.buttons["Friends"])
+        tab(guest, "Friends")
         XCTAssertTrue(guest.buttons["sign-in"].waitForExistence(timeout: 10))
         sleep(1)
         shot(guest, "nov18p-\(device)friends-signed-out")
@@ -273,7 +278,7 @@ final class PaintFriendsUITests: XCTestCase {
 
     func testAppDialogsAndFriendLinks() {
         let app = launch(["-t2p-social-demo"])
-        tapWhenReady(app.tabBars.buttons["You"])
+        tab(app, "You")
         tapWhenReady(app.buttons["delete-account"])
         XCTAssertTrue(any(app, "dialog-delete-account").waitForExistence(timeout: 5), "Delete account, painted")
         XCTAssertEqual(app.sheets.count, 0)
