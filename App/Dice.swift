@@ -381,7 +381,7 @@ struct HotDiceView: View {
             // #521: what a roll means waits for its dice to land
             guard arena, let key, let t = shown, key == "\(t.n).\(t.seq)" else { return }
             if t.state == "farkle" {
-                if t.id == me { Haptics.nope() }
+                Feel.farkle(mine: t.id == me)
                 // the hold starts when the Farkle can be seen
                 let k = "\(t.n):\(t.seq)"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + (t.three ? 1.5 : 0)) {
@@ -392,8 +392,9 @@ struct HotDiceView: View {
         }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
         .onChange(of: t?.state) { was, s in
-            // your dice land: a light tap, or the warning buzz for a Farkle (the 3D dice tap when they hit the felt)
-            if !arena && mine && was == "rolling" && s != "rolling" { s == "farkle" ? Haptics.nope() : Haptics.play() }
+            // dice land: the clack (a light tap for yours), or a Farkle's sound (and a jolt for yours); the 3D dice
+            // do this when they hit the felt
+            if !arena && was == "rolling" && s != "rolling" { s == "farkle" ? Feel.farkle(mine: mine) : Feel.landed(mine: mine) }
         }
         .onChange(of: t.map { $0.state == "farkle" ? "\($0.n):\($0.seq)" : "" }) { _, key in
             guard let key, !key.isEmpty, let t else { return }
@@ -403,7 +404,7 @@ struct HotDiceView: View {
                 if let f = farkle, "\(f.n):\(f.seq)" == key { farkle = nil }
             }
         }
-        .onAppear { arenaStage.onFirstHit = { Haptics.play() } }
+        .onAppear { arenaStage.onFirstHit = { Feel.landed() } }
         .onChange(of: t?.state) { _, s in   // the next roll is up (with the 3D dice, only yours cuts a Farkle short)
             if s != "start" && s != "farkle" && (!arena || mine) { farkle = nil }
         }
@@ -616,7 +617,7 @@ struct HotDiceView: View {
             ForEach(live) { d in
                 let sel = t.sel.contains(d.id)
                 let canScore = scores.map { s in d.v.map { s.contains($0) } ?? false }
-                Button { if tappable { room.move("tap", ["die": .number(Double(d.id))]); Haptics.select() } } label: {
+                Button { if tappable { room.move("tap", ["die": .number(Double(d.id))]); Feel.kept() } } label: {
                     VStack(spacing: 3) {
                         if t.state == "rolling" || d.v == nil {
                             if view.common.hostless && !still { TumblingDie(size: size, seed: d.id) } else { DieView(value: nil, size: size, blank: true) }
@@ -654,7 +655,7 @@ struct HotDiceView: View {
             // why) sit over the top of it, where the cup comes in
             ZStack(alignment: .top) {
                 DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
-                    if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Haptics.select() }
+                    if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Feel.kept() }
                 }, top: 96, zoomable: true)
                 .frame(maxHeight: .infinity)
                 Group {

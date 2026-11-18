@@ -11,9 +11,15 @@ targets:
   Time2Play:
     type: application
     platform: iOS
-    sources: [App]
+    # App/Sounds: the sound effects and the music (scripts/sounds.py; LICENSES.md says where each comes from).
+    # Shared: compiled into the app and the widget (the widget's views, the last room they share).
+    sources:
+      - path: App
+        excludes: ["Sounds/LICENSES.md"]
+      - Shared
     dependencies:
       - package: T2PCore
+      - target: Time2PlayWidget
     info:
       path: App/Info.plist
       properties:
@@ -33,6 +39,9 @@ targets:
         com.apple.developer.associated-domains: ["applinks:time2play.live"]
         aps-environment: development
         com.apple.developer.applesignin: [Default]
+        # the app's own group first (where its sign-in already lives), then the one the widget shares (the last room).
+        # An App Store profile allows any group under the team, so this needs nothing set up in the portal.
+        keychain-access-groups: ["$(AppIdentifierPrefix)live.time2play.app", "$(AppIdentifierPrefix)live.time2play.shared"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app
@@ -49,6 +58,8 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # You → App icon (scripts/icons.py): the mark on other backgrounds
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Midnight AppIcon-Felt AppIcon-Plum AppIcon-Gold"
         DEVELOPMENT_TEAM: 6WK983RXJT
       # Release is the signed App Store build (.github/workflows/testflight.yml, #406). It signs by hand with the
       # distribution certificate and the App Store profile the workflow fetches (scripts/asc.py); T2P_PROFILE is the
@@ -59,6 +70,48 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: $(T2P_PROFILE)
+  # The home screen widget (Widget/): the game of the day and one-tap rejoin. Signed with its own App Store profile
+  # (scripts/asc.py registers live.time2play.app.widget if it's missing).
+  Time2PlayWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget
+      - Shared
+    dependencies:
+      - package: T2PCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Time2Play
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/Time2PlayWidget.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)live.time2play.shared"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app.widget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Time2Play
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        DEVELOPMENT_TEAM: 6WK983RXJT
+        SKIP_INSTALL: YES
+      configs:
+        Release:
+          CODE_SIGNING_ALLOWED: YES
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: $(T2P_WIDGET_PROFILE)
   Time2PlayUITests:
     type: bundle.ui-testing
     platform: iOS

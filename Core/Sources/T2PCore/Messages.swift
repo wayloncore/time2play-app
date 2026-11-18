@@ -36,6 +36,9 @@ public enum RoomCode {
             for name in ["room", "code", "watch"] { if let v = q.first(where: { $0.name == name })?.value, let c = normalize(v) { return c } }
         }
         if host.hasSuffix("time2play.live") { return normalize(url.lastPathComponent) }
+        // the website's own join paths, which send phones to time2play.live: tyleralocke.com/j/K7QP, /join/K7QP
+        let parts = url.pathComponents.filter { $0 != "/" }
+        if parts.count == 2, ["j", "join"].contains(parts[0].lowercased()) { return normalize(parts[1]) }
         return nil
     }
 

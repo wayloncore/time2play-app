@@ -2,11 +2,19 @@ import SwiftUI
 import SceneKit
 import T2PCore
 
-/// The switch for the 3D dice (#521): off by default until Tyler approves it on TestFlight. You → "3D dice (preview)"
-/// turns it on; UI tests pass the launch argument -t2p-dice3d. The flat dice stay as they are when it's off.
+/// Which dice Hot Dice and Roll Call roll (#521). Since Nov 17 (Tyler: 3D dice on for everyone, like the Overdraft
+/// table) the 3D dice are the default; You → "Classic dice" goes back to the flat ones. UI tests force either with
+/// -t2p-dice3d or -t2p-classic-dice.
 enum Dice3DSwitch {
+    /// The old "3D dice (preview)" switch: kept under its name (the version before reads it), and written to match
+    /// "Classic dice" so a step back to that version keeps the same dice.
     static let key = "t2p.dice3d"
+    /// "Classic dice": on rolls the flat dice. Never touched (false) rolls the 3D dice.
+    static let classicKey = "t2p.classicDice"
     static var forced: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-dice3d") }
+    static var forcedClassic: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-classic-dice") }
+    /// The 3D dice unless "Classic dice" is on (or a test asks for the flat ones).
+    static func use3D(classic: Bool) -> Bool { forced || (!forcedClassic && !classic) }
 }
 
 /// The arena's bridge between SwiftUI and SceneKit: it owns the scene (made the first time it's drawn, so a game with

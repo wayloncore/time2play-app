@@ -14,6 +14,7 @@ final class RoomModel: ObservableObject, Identifiable {
     private let transport: RoomTransport
     private weak var app: AppModel?
     private var retry: DispatchWorkItem?
+    private var recorded = false
 
     @Published private(set) var status: RoomSession.Status = .connecting
     @Published private(set) var view: JSON?
@@ -55,6 +56,7 @@ final class RoomModel: ObservableObject, Identifiable {
             session.join(name: p.name, face: p.face)
         }
         session.start()
+        Music.shared.start()   // only when You → Music is on
     }
 
     func join(name: String, face: Int?) { session.join(name: name, face: face) }
@@ -68,13 +70,18 @@ final class RoomModel: ObservableObject, Identifiable {
     func pause() { if offline { return }; retry?.cancel(); session.pause() }
     func resume() { if offline { return }; retry?.cancel(); session.reconnect() }
     func leave() { retry?.cancel(); session.leave() }
-    func close() { retry?.cancel(); transport.close() }
+    func close() { retry?.cancel(); transport.close(); Music.shared.stop() }
 
     private func sync() {
         status = session.status
+        let before = view
         view = session.view
         if preset != nil { applyPreset() }
         StatsKeeper.shared.observe(self)   // #540: a finished game, recorded once
+        // the game's feel (sounds, the Bolt's jolt): what this view means next to the one before it
+        if let now = view, now != before { Feel.events(FeelEvents.between(before, now, game: game)) }
+        // a room you're in goes on Play's recent rooms (and the widget's rejoin); practice rooms don't
+        if !offline, !recorded, case .inRoom = status { recorded = true; app?.remember(code: code, game: game) }
         if case .reconnecting = session.status {
             retry?.cancel()
             let w = DispatchWorkItem { [weak self] in self?.session.reconnect() }

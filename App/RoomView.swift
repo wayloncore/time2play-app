@@ -7,7 +7,7 @@ struct RoomView: View {
     @EnvironmentObject var app: AppModel
     @State private var confirmLeave = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
-    @AppStorage(Dice3DSwitch.key) private var dice3D = false
+    @AppStorage(Dice3DSwitch.classicKey) private var classicDice = false
 
     var body: some View {
         ZStack {
@@ -16,6 +16,7 @@ struct RoomView: View {
         }
         .overlay(alignment: .top) { banners }
         .overlay(alignment: .bottom) { reactionsShown }
+        .overlay(alignment: .bottomLeading) { if Sounds.logging { SoundLog() } }
         .preferredColorScheme((room.game == .overdraft || room.game == .hotDice) && room.phase != "lobby" && room.view != nil ? .dark : nil)   // the card table and the felt are dark either way
         .confirmationDialog(leaveTitle, isPresented: $confirmLeave, titleVisibility: .visible) {
             Button(room.phase == "playing" ? "Leave the game" : "Leave the room", role: .destructive) { room.leave(); app.closeRoom() }
@@ -67,9 +68,9 @@ struct RoomView: View {
                     else { OverdraftTableView(room: room, view: Overdraft.View(v), onLeave: { confirmLeave = true }) }
                 }
                 else { LobbyView(room: room, onLeave: { confirmLeave = true }) }
-            // #521: the 3D dice, behind their switch (off by default until Tyler approves them)
-            case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true }, arena: dice3D || Dice3DSwitch.forced)
-            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true }, arena: dice3D || Dice3DSwitch.forced)
+            // #521: the 3D dice for everyone (Nov 17); You → "Classic dice" rolls the flat ones
+            case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true }, arena: Dice3DSwitch.use3D(classic: classicDice))
+            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true }, arena: Dice3DSwitch.use3D(classic: classicDice))
             case .closeEnough: CloseEnoughView(room: room, view: CloseEnough.View(v), onLeave: { confirmLeave = true })
             }
         }

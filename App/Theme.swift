@@ -130,11 +130,13 @@ struct SectionLabel: View {
 }
 
 /// Haptics: a light tap for a play, a firmer one when it's your turn, a warning for a card that can't go.
+/// All of them stay quiet when You → "Haptics" is off (App/Feel.swift has the strong jolt and the light tap).
 enum Haptics {
-    static func play() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func yourTurn() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func nope() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
-    static func select() { UISelectionFeedbackGenerator().selectionChanged() }
+    static var on: Bool { FeelSettings.haptics }
+    static func play() { if on { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+    static func yourTurn() { if on { UINotificationFeedbackGenerator().notificationOccurred(.success) } }
+    static func nope() { if on { UINotificationFeedbackGenerator().notificationOccurred(.warning) } }
+    static func select() { if on { UISelectionFeedbackGenerator().selectionChanged() } }
 }
 
 extension Game {

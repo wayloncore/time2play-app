@@ -57,7 +57,7 @@ struct RollCallView: View {
         .onChange(of: view) { old, new in changed(from: old, to: new) }
         .onChange(of: mine) { _, m in if m { Haptics.yourTurn() } }
         .onAppear {
-            arenaStage.onFirstHit = { Haptics.play() }
+            arenaStage.onFirstHit = { Feel.landed() }
             seen = view.rollKey
             // a table opened mid-game: the last box scored, so the screen doesn't start blank
             if feed.isEmpty, let l = view.last { feed = [MomentLine(text: scoredWords(l.id, l.key, l.points, l.extra), dice: l.dice)] }
@@ -66,10 +66,10 @@ struct RollCallView: View {
             guard let key, key != seen else { return }
             seen = key
             if arena { return }   // the 3D dice tap as they land
-            if still { if mine { Haptics.play() }; return }
+            if still { if mine { Haptics.play() }; return }   // a screenshot: no sound
             tumbling = key
             DispatchQueue.main.asyncAfter(deadline: .now() + (mine ? 0.6 : 0.45)) {
-                if tumbling == key { tumbling = nil; if mine { Haptics.play() } }
+                if tumbling == key { tumbling = nil; Feel.landed(mine: mine) }
             }
         }
     }
@@ -177,7 +177,7 @@ struct RollCallView: View {
                                       label: !view.diceShown ? "Die, not rolled yet" : rolling && !held ? "Die, rolling" : "Die showing \(i < t.dice.count ? t.dice[i] : 0)",
                                       value: held ? "held" : "", enabled: canHold, tag: held && view.diceShown ? "HOLD" : nil)
             }, onTap: { i in
-                if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() }
+                if canHold { room.move("hold", ["die": .number(Double(i))]); Feel.kept() }
             })
             .frame(height: hsize == .regular ? 240 : 150)
         } else if let t = view.turn {
@@ -187,7 +187,7 @@ struct RollCallView: View {
                     let held = i < t.held.count && t.held[i]
                     let canHold = mine && t.rolls > 0 && t.rolls < RollCall.maxRolls
                     let air = tumbling != nil && !held
-                    Button { if canHold { room.move("hold", ["die": .number(Double(i))]); Haptics.select() } } label: {
+                    Button { if canHold { room.move("hold", ["die": .number(Double(i))]); Feel.kept() } } label: {
                         VStack(spacing: 3) {
                             Text(held ? "HOLD" : " ").font(.caption2.weight(.heavy)).tracking(1).foregroundStyle(T2P.gold)
                             if air {

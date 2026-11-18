@@ -46,6 +46,13 @@ struct LibraryView: View {
             .searchable(text: $search, prompt: "Search the Library")
             .refreshable { await app.loadLibrary() }
             .task { await app.loadLibrary() }
+            // the widget's game of the day: its card, found by searching for it
+            .onReceive(app.keep.$focus) { key in
+                guard let key else { return }
+                if let i = app.library.items.first(where: { $0.key == key }) { search = i.title }
+                else if let g = Game(rawValue: key) { search = g.title }
+                app.keep.focus = nil
+            }
         }
         .fullScreenCover(isPresented: $wheel) { WheelOfNamesView() }
     }

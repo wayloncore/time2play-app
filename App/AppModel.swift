@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     let endpoints: Endpoints
     let api: API
     let seats = DefaultsSeatStore()
+    /// Recent rooms and starred games (Play), kept on this phone.
+    let keep = Keepsakes()
 
     @Published var profile: Profile { didSet { save(profile, "t2p.profile") } }
     @Published var room: RoomModel?
@@ -50,7 +52,9 @@ final class AppModel: ObservableObject {
     init() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-uitest-reset") {
-            for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account", Table3DSwitch.classicKey] { UserDefaults.standard.removeObject(forKey: k) }
+            for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account", Table3DSwitch.classicKey, Dice3DSwitch.classicKey,
+                      Keepsakes.recentKey, Keepsakes.favoritesKey, TurnAlerts.key] + FeelSettings.all { UserDefaults.standard.removeObject(forKey: k) }
+            SharedRoom.clear()
             Keychain.delete()
         }
         // A test (or a check against staging) can point the app elsewhere: -t2p-base https://…
