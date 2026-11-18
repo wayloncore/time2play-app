@@ -529,6 +529,32 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         Pose(p: Self.f(tray.slot(id, of: want?.slots ?? 5)), q: Self.q(DiceArena.neat(face ?? 1)))
     }
 
+    /// The room revealed roll `key` a while ago and the scene still hasn't landed it (build 48: Tyler couldn't keep dice,
+    /// so couldn't bank): its dice go straight to where they rest and it lands now. Returns the scene's state from just
+    /// before (for the UI tests), or "" when there was nothing to do (the scene moved on, or the roll has landed).
+    func settleNow(_ key: String) -> String {
+        guard let s = want, s.roll == key, landedKey != key else { return "" }
+        let before = debugLine()
+        let ids = s.dice.filter { $0.place == .tray }.map(\.id)
+        if !ids.isEmpty {
+            let th = DiceSim.run(count: ids.count, seed: seed(key))
+            let fixes = th.fixes(for: ids.map { s.die($0)?.face ?? 1 }).map(Self.q)
+            for (k, id) in ids.enumerated() {
+                let rest = row ? slotPose(id, face: s.die(id)?.face) : Pose(p: Self.f(th.rest[k].p), q: Self.q(th.rest[k].q) * fixes[k])
+                dice[id]?.rest = rest; dice[id]?.pose = rest; dice[id]?.at = .felt; dice[id]?.tween = nil
+                dieNodes[id]?.opacity = 1
+                apply(rest, to: dieNodes[id])
+            }
+        }
+        play = nil
+        thrown = key
+        cupRun.tipAt = 0
+        if tray.shelf && !reduced && cupRun.phase != .away { moveCup(to: .away, dur: 0.3, now: clock) }
+        landed(key, ids: ids, now: clock)
+        rigDirty = true
+        return before
+    }
+
     /// Everything where it belongs with no animation: the screen opened mid-game.
     private func placeAtOnce(_ s: ArenaState) {
         if let key = s.roll {

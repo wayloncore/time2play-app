@@ -20,9 +20,12 @@ final class HotDiceBankUITests: XCTestCase {
 
     /// A roll of yours that didn't land within 15 seconds: what the room, the screen and the 3D scene said.
     private var stalls: [String] = []
+    /// A tap on Roll or Bank the room never got (tapped again, and listed at the end).
+    private var dropped: [String] = []
     /// The achievement line, the first time a look saw it (it lasts about 3 seconds, so every wait looks for it).
     private var toastSeen: (at: Date, words: String, clear: Bool)?
     private var watchToast = false
+    private var rescueSeen = false
 
     private func playAGame(_ args: [String], name: String, achievement: Bool = false, long: Bool = false) {
         let app = launch(args)
@@ -38,14 +41,28 @@ final class HotDiceBankUITests: XCTestCase {
             guard roll.exists && roll.isEnabled && said(status).contains("Roll all six") else { peekToast(app); usleep(300_000); continue }
             let before = myScore(app)
             var keeps = 0, turnRolls = 0
+            // the 3D scene has landed every roll so far by itself (the safety net settled none)
+            let line = debug(app)
+            if let r = line.range(of: "rescued="), !line[r.upperBound...].hasPrefix("0"), !rescueSeen {
+                rescueSeen = true
+                XCTFail("\(name): the 3D scene didn't land a roll by itself (the safety net settled it): \(line)")
+            }
             roll.tap(); turnRolls += 1
             turn: while turnRolls < 20 {
                 // the roll lands: dice to choose from, or a Farkle
-                let end = Date().addingTimeInterval(15)
-                var landed = ""
+                var end = Date().addingTimeInterval(15)
+                let tapped = Date()
+                var landed = "", retapped = false
                 while Date() < end && landed.isEmpty {
                     if banner.exists { landed = "farkle" }
                     else if said(status).contains("Tap the dice") { landed = "choose" }
+                    else if !retapped && Date().timeIntervalSince(tapped) > 3 && roll.exists && roll.isEnabled && said(status).contains("Roll all six") {
+                        // the room never got the roll: say so, and tap again
+                        dropped.append("Roll at turn start: \(debug(app))")
+                        retapped = true
+                        roll.tap()
+                        end = Date().addingTimeInterval(15)
+                    }
                     else { usleep(150_000) }
                 }
                 if landed.isEmpty {
@@ -87,7 +104,12 @@ final class HotDiceBankUITests: XCTestCase {
                     shot(app, "bank-\(device)\(name)-before-bank")
                     bank.tap()
                     let want = before + total
-                    let ok = waitFor(8) { self.myScore(app) == want }
+                    var ok = waitFor(8) { self.myScore(app) == want }
+                    if !ok && bank.exists && bank.isEnabled {
+                        dropped.append("Bank: \(debug(app))")
+                        bank.tap()
+                        ok = waitFor(8) { self.myScore(app) == want }
+                    }
                     if !ok { shot(app, "bank-\(device)\(name)-bank-failed") }
                     XCTAssertTrue(ok, "\(name): Bank adds the turn to your score: \(before) + \(total) should be \(want), shows \(myScore(app)); status: \(said(status))")
                     banked += 1
@@ -107,6 +129,8 @@ final class HotDiceBankUITests: XCTestCase {
             }
         }
         XCTAssertTrue(stalls.isEmpty, "\(name): every roll of yours lands within 15 seconds: \(stalls.joined(separator: " || "))")
+        XCTAssertTrue(dropped.isEmpty, "\(name): every tap on Roll and Bank reaches the room: \(dropped.joined(separator: " || "))")
+
         XCTAssertGreaterThan(banked, 0, "\(name): you banked")
         if long { return }
         XCTAssertTrue(twoKeepBank, "\(name): a whole turn of roll, keep, roll, keep, bank")
@@ -142,11 +166,12 @@ final class HotDiceBankUITests: XCTestCase {
     private func peekToast(_ app: XCUIApplication) {
         guard watchToast, toastSeen == nil else { return }
         let toast = app.descendants(matching: .any)["toast"].firstMatch
-        guard toast.exists else { return }
-        let f = toast.frame
+        // one snapshot: the line can go between two questions about it
+        guard toast.exists, let snap = try? toast.snapshot() else { return }
+        let f = snap.frame
         let covers = ["roll", "bank", "play-again", "back-to-library"].contains { app.buttons[$0].exists && app.buttons[$0].frame.intersects(f) }
             || app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex.contains { $0.frame.intersects(f) }
-        toastSeen = (Date(), toast.label, f.maxY < app.frame.height * 0.2 && !covers)
+        toastSeen = (Date(), snap.label, f.maxY < app.frame.height * 0.2 && !covers)
         shot(app, "bank-\(device)achievement-shown")
     }
 

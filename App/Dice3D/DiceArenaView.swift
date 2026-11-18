@@ -20,9 +20,20 @@ enum Dice3DSwitch {
 /// The arena's bridge between SwiftUI and SceneKit: it owns the scene (made the first time it's drawn, so a game with
 /// the switch off never builds it), fits the camera to the space it's given, and publishes where the dice are and
 /// which roll has landed.
+/// Where each die is on screen, published as the dice move (up to every frame). Kept apart from the stage so only the
+/// dice's own buttons redraw that often: a whole table redrawn every frame dropped taps on Roll and Bank (build 48).
+@MainActor
+final class DiceArenaSpots: ObservableObject {
+    @Published fileprivate(set) var spots: [Int: DiceSpot] = [:]
+    /// UI tests only (-t2p-arena-debug): the scene's state in one line.
+    @Published fileprivate(set) var debug = ""
+}
+
 @MainActor
 final class DiceArenaStage: ObservableObject {
-    @Published private(set) var spots: [Int: DiceSpot] = [:]
+    /// The dice's places on screen (their own object: see DiceArenaSpots).
+    let live = DiceArenaSpots()
+    var spots: [Int: DiceSpot] { live.spots }
     /// The roll ("n.seq", or Roll Call's roll key) whose dice have all come to rest.
     @Published private(set) var landed: String?
     @Published private(set) var camera: Table3DCamera?
@@ -32,9 +43,10 @@ final class DiceArenaStage: ObservableObject {
     @Published private(set) var moved = false
     /// Build 45: the camera has eased in on your roll and is holding there.
     @Published private(set) var eased = false
-    /// UI tests only (-t2p-arena-debug): the scene's state in one line.
-    @Published private(set) var debug = ""
     static var debugOn: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-arena-debug") }
+    /// Rolls the scene was told to settle at once, because it hadn't landed them long after the room revealed them
+    /// (build 48): what the scene said just before, for the UI tests.
+    @Published private(set) var rescues: [String] = []
     private(set) var world: DiceArenaWorld?
     private var scnView: SCNView?
     private var last: ArenaState?
@@ -56,13 +68,13 @@ final class DiceArenaStage: ObservableObject {
         let w = DiceArenaWorld(tray: tray)
         w.reduced = reduced
         w.freezeOn = freezeOn ?? Self.stillFreeze
-        w.onSpots = { [weak self] s in self?.spots = s }
+        w.onSpots = { [weak self] s in self?.live.spots = s }
         w.onLanded = { [weak self] k in self?.landed = k }
         w.onFirstHit = { [weak self] in self?.onFirstHit?() }
         w.onFrozen = { [weak self] in self?.frozen = true }
         w.onMoved = { [weak self] m in self?.moved = m }
         w.onEased = { [weak self] e in self?.eased = e }
-        if Self.debugOn { w.onDebug = { [weak self] l in self?.debug = l } }
+        if Self.debugOn { w.onDebug = { [weak self] l in self?.live.debug = l } }
         let v = SCNView(frame: .zero)
         v.scene = w.scene
         v.pointOfView = w.cameraNode
@@ -88,6 +100,16 @@ final class DiceArenaStage: ObservableObject {
     func orbit(_ d: CGSize) { if let w = world { w.post { w.orbit(dx: Float(d.width), dy: Float(d.height)) } } }
     func pan(_ d: CGSize) { if let w = world { w.post { w.pan(dx: Float(d.width), dy: Float(d.height)) } } }
     func resetView() { if let w = world { w.post { w.resetView() } } }
+
+    /// The room revealed roll `key` a while ago and the scene still hasn't landed it: its dice go straight to where they
+    /// rest and it lands now, so the player can always pick (a no-op if the scene has moved on or landed it).
+    func settle(_ key: String) {
+        guard let w = world else { landed = key; return }
+        w.post { [weak self] in
+            let before = w.settleNow(key)
+            if !before.isEmpty { DispatchQueue.main.async { self?.rescues.append("\(key): \(before)") } }
+        }
+    }
 
     func update(_ s: ArenaState, reduced r: Bool) {
         if r != reduced { reduced = r; if let w = world { w.post { w.reduced = r } } }
@@ -158,16 +180,13 @@ struct DiceArenaView: View {
                         .onTapGesture(count: 2) { stage.resetView(); Haptics.select() }
                         .accessibilityHidden(true)
                 }
-                overlay
+                DieButtons(live: stage.live, on: stage.camera != nil, state: state, button: button, onTap: onTap)
                 Text(stage.frozen ? "ready" : "").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier(stage.frozen ? "dice3d-ready" : "dice3d-wait")
                 // for UI tests: whether the camera is eased in on your roll (build 45)
                 Text(stage.eased ? "eased" : "fitted").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier("dice3d-camera")
-                if DiceArenaStage.debugOn {
-                    Text("\(stage.debug) stage.landed=\(stage.landed ?? "-")").font(.system(size: 2)).opacity(0.02)
-                        .accessibilityIdentifier("dice3d-debug")
-                }
+                if DiceArenaStage.debugOn { DebugLine(live: stage.live, landed: stage.landed, rescues: stage.rescues) }
             }
             .onAppear { stage.fit(width: g.size.width, height: g.size.height, top: top); stage.update(state, reduced: reduceMotion) }
             .onChange(of: g.size) { _, s in stage.fit(width: s.width, height: s.height, top: top) }
@@ -202,11 +221,32 @@ struct DiceArenaView: View {
             }
             .onEnded { _ in lastDrag = .zero }
     }
+}
 
-    @ViewBuilder private var overlay: some View {
-        if stage.camera != nil {
+/// The UI tests' line (-t2p-arena-debug): the scene's state, the roll it last landed, and any rolls it was told to settle.
+private struct DebugLine: View {
+    @ObservedObject var live: DiceArenaSpots
+    let landed: String?
+    let rescues: [String]
+    var body: some View {
+        Text("\(live.debug) stage.landed=\(landed ?? "-") rescued=\(rescues.count)\(rescues.isEmpty ? "" : " [\(rescues.joined(separator: " ; "))]")")
+            .font(.system(size: 2)).opacity(0.02)
+            .accessibilityIdentifier("dice3d-debug")
+    }
+}
+
+/// A clear button over each die (taps and VoiceOver): the only part of the arena redrawn as the dice move.
+private struct DieButtons: View {
+    @ObservedObject var live: DiceArenaSpots
+    let on: Bool
+    let state: ArenaState
+    var button: (ArenaDie) -> ArenaDieButton?
+    var onTap: (Int) -> Void
+
+    var body: some View {
+        if on {
             ForEach(state.dice, id: \.id) { d in
-                if let b = button(d), let spot = stage.spots[d.id] {
+                if let b = button(d), let spot = live.spots[d.id] {
                     let side = CGFloat(spot.size)
                     Group {
                         if b.button {

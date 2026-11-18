@@ -405,6 +405,12 @@ struct HotDiceView: View {
             }
         }
         .onAppear { arenaStage.onFirstHit = { Feel.landed() } }
+        // build 48: a roll the room has revealed always lands. The 3D throw takes about 2.5 seconds; if the scene still
+        // hasn't landed it 4.5 seconds after the room showed it, it settles at once, so the dice can be kept and banked
+        .onChange(of: unlanded) { _, key in
+            guard let key else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { arenaStage.settle(key) }
+        }
         .onChange(of: t?.state) { _, s in   // the next roll is up (with the 3D dice, only yours cuts a Farkle short)
             if s != "start" && s != "farkle" && (!arena || mine) { farkle = nil }
         }
@@ -419,6 +425,12 @@ struct HotDiceView: View {
 
     /// #521: the shown roll's dice are down (always, for the flat dice): until then the 3D arena keeps what it means
     /// (the Farkle, the status) back.
+    /// The shown roll, revealed by the room but not yet landed by the 3D scene (nil when there's none).
+    private var unlanded: String? {
+        guard arena, let t = shown, t.state == "choose" || t.state == "farkle", !settled else { return nil }
+        return "\(t.n).\(t.seq)"
+    }
+
     private var settled: Bool {
         guard arena, let t = shown, t.state == "choose" || t.state == "farkle" else { return true }
         return arenaStage.landed == "\(t.n).\(t.seq)"
