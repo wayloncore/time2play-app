@@ -15,6 +15,7 @@ struct PlayView: View {
                     header
                     joinPanel
                     ForEach(app.challenges) { c in Panel { ChallengeRow(c: c) } }
+                    PresetsSection()   // #538
                     startRooms
                     offline
                 }

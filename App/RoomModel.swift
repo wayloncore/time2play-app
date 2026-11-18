@@ -21,6 +21,8 @@ final class RoomModel: ObservableObject, Identifiable {
     @Published var toast: String?
     @Published var reactions: [ShownReaction] = []
     @Published var back: String?
+    /// #538: a preset to set this room up with, once its owner is in the lobby
+    var preset: Preset? { didSet { if preset != nil { applyPreset() } } }
 
     struct ShownReaction: Identifiable, Equatable { let id = UUID(); let who: String; let words: String }
 
@@ -71,6 +73,7 @@ final class RoomModel: ObservableObject, Identifiable {
     private func sync() {
         status = session.status
         view = session.view
+        if preset != nil { applyPreset() }
         if case .reconnecting = session.status {
             retry?.cancel()
             let w = DispatchWorkItem { [weak self] in self?.session.reconnect() }
