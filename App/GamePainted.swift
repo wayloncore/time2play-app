@@ -317,7 +317,7 @@ extension GameDialog {
     }
 
     /// The room menu over a table: invite, the reactions (the 3D table has no reaction bar), end the room, leave.
-    static func roomMenu(room: RoomModel, reactions: Bool, onEnd: @escaping () -> Void, onLeave: (() -> Void)?) -> GameDialog {
+    @MainActor static func roomMenu(room: RoomModel, reactions: Bool, onEnd: @escaping () -> Void, onLeave: (() -> Void)?) -> GameDialog {
         var choices: [GameChoice] = []
         if !room.offline { choices.append(GameChoice(label: "Invite people", icon: "square.and.arrow.up", identifier: "menu-invite", share: room.inviteLink)) }
         if room.isOwner { choices.append(GameChoice(label: "End the room", kind: .danger, identifier: "menu-end-room", action: onEnd)) }
