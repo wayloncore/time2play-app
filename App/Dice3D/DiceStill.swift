@@ -5,12 +5,16 @@ import T2PCore
 /// the real game screen, the scene stopped at an exact moment, so a roll mid-tumble, the dice settled, two kept and
 /// a Farkle are shot the same way every run. UI tests launch the app with
 ///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle)
+/// and optionally after=<seconds> to stop that long after the moment instead (build 45: the camera still eased in
+/// three seconds after the dice land).
 /// Nothing here talks to a room.
 struct DiceStill {
     var game = "hot"
     var moment = "settled"
     /// #523: the view zoomed this much (and turned a little), as a pinch would leave it.
     var zoom: Double?
+    /// Seconds after the moment to stop (nil: the moment's own time).
+    var after: Double?
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> DiceStill? {
         guard let i = args.firstIndex(of: "-t2p-dice-still") else { return nil }
@@ -21,12 +25,18 @@ struct DiceStill {
             if kv[0] == "game" { s.game = kv[1] }
             if kv[0] == "moment" { s.moment = kv[1] }
             if kv[0] == "zoom" { s.zoom = Double(kv[1]) }
+            if kv[0] == "after" { s.after = Double(kv[1]) }
         }
         return s
     }
 
     /// When the scene stops: a moment of the arena, and how long after it.
     var freeze: (DiceArenaWorld.Moment, Double) {
+        let f = momentFreeze
+        return (f.0, after ?? f.1)
+    }
+
+    private var momentFreeze: (DiceArenaWorld.Moment, Double) {
         switch moment {
         case "tumble": return (.pour, 0.42)
         case "kept": return (.kept, 0.3)

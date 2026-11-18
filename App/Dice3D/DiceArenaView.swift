@@ -30,6 +30,8 @@ final class DiceArenaStage: ObservableObject {
     @Published private(set) var frozen = false
     /// #523: the player has zoomed, turned or slid the view (a reset button shows).
     @Published private(set) var moved = false
+    /// Build 45: the camera has eased in on your roll and is holding there.
+    @Published private(set) var eased = false
     private(set) var world: DiceArenaWorld?
     private var scnView: SCNView?
     private var last: ArenaState?
@@ -56,6 +58,7 @@ final class DiceArenaStage: ObservableObject {
         w.onFirstHit = { [weak self] in self?.onFirstHit?() }
         w.onFrozen = { [weak self] in self?.frozen = true }
         w.onMoved = { [weak self] m in self?.moved = m }
+        w.onEased = { [weak self] e in self?.eased = e }
         let v = SCNView(frame: .zero)
         v.scene = w.scene
         v.pointOfView = w.cameraNode
@@ -71,7 +74,7 @@ final class DiceArenaStage: ObservableObject {
         v.accessibilityElementsHidden = true   // the dice speak through the buttons over them
         world = w; scnView = v
         if let s = last { w.post { w.apply(s) } }
-        if let c = camera { w.post { w.setBase(c) } }
+        if let c = camera { let t = top; w.post { w.setBase(c, top: t) } }
         if let z = Self.stillZoom, tray.shelf { w.post { w.zoom(by: Float(z)); w.orbit(dx: -50, dy: 20) } }
         return v
     }
@@ -93,9 +96,10 @@ final class DiceArenaStage: ObservableObject {
     func fit(width: Double, height: Double, top: Double = 0) {
         guard width > 50, height > 50 else { return }
         let cam = DiceArena.camera(width: width, height: height, tray: tray, top: top)
-        if cam == camera { return }
+        if cam == camera && top == self.top { return }
         camera = cam
-        if let w = world { w.post { w.setBase(cam) } }
+        self.top = top
+        if let w = world { w.post { w.setBase(cam, top: top) } }
     }
 
     /// A world point on the screen.
@@ -153,6 +157,9 @@ struct DiceArenaView: View {
                 overlay
                 Text(stage.frozen ? "ready" : "").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier(stage.frozen ? "dice3d-ready" : "dice3d-wait")
+                // for UI tests: whether the camera is eased in on your roll (build 45)
+                Text(stage.eased ? "eased" : "fitted").font(.system(size: 2)).opacity(0.02)
+                    .accessibilityIdentifier("dice3d-camera")
             }
             .onAppear { stage.fit(width: g.size.width, height: g.size.height, top: top); stage.update(state, reduced: reduceMotion) }
             .onChange(of: g.size) { _, s in stage.fit(width: s.width, height: s.height, top: top) }

@@ -15,11 +15,14 @@ public enum DiceArena {
     public static let half = 0.5
     static let corner = 0.47
     /// The rolling floor's inner walls: left/right at ±trayX, the back wall, and the front wall (the keep shelf's edge).
-    public static let trayX = 4.3, zBack = -2.9, zFront = 1.9
+    /// Build 45 (Tyler, Nov 18: "Dice are too big"): a die is about a ninth of the felt's width (it was a seventh),
+    /// with a deeper floor, so the dice look like real dice in a real tray and have room to tumble and spread out.
+    /// The website's Hot Dice table is 7 dice wide on a phone and 15 to 19 on a wide screen (src/games/farkle/table-dims.js).
+    public static let trayX = 5.6, zBack = -4.2, zFront = 2.4
     /// The wooden rim's width and height above the felt.
-    public static let rimW = 0.55, rimH = 1.0
+    public static let rimW = 0.6, rimH = 1.0
     /// The keep shelf in front of the floor: its top, where the keep row sits, and its front edge.
-    public static let shelfY = 0.62, keepZ = 2.82, shelfZ1 = 3.95
+    public static let shelfY = 0.62, keepZ = zFront + 0.92, shelfZ1 = zFront + 2.05
 
     /// Where a kept die sits: slot `i` of `slots` along the keep row (its center).
     public static func keepSpot(_ i: Int, of slots: Int) -> T3Vec {
@@ -29,8 +32,8 @@ public enum DiceArena {
 
     /// The cup: its mouth while it shakes and pours (above the back of the tray), and where it rests on the felt
     /// holding the dice between turns (the center of its base).
-    public static let cupMouth = T3Vec(0, 2.75, -2.35)
-    public static let cupRest = T3Vec(-3.3, 0, -1.9)
+    public static let cupMouth = T3Vec(0, 2.75, zBack + 0.55)
+    public static let cupRest = T3Vec(-(trayX - 1.0), 0, zBack + 1.0)
     public static let cupHeight = 1.7, cupRadius = 0.92
 
     // MARK: faces
@@ -122,6 +125,92 @@ public enum DiceArena {
 
     /// Where the camera looks for a camera made by `camera(...)` (its eye minus the target is how far back it sits).
     public static func target(_ tray: DiceTray) -> T3Vec { tray.target }
+
+    /// How big a die's button is over the 3D dice (points), for a die drawn `pointsPerUnit` points across: never
+    /// under 44, so a die drawn small is still easy to tap.
+    public static func tapSide(pointsPerUnit: Double) -> Double { min(130, max(44, (pointsPerUnit * 1.15).rounded())) }
+
+    // MARK: the ease-in after your roll (build 45, Tyler Nov 18: "the zoom needs to be like the Farkle games on my website")
+
+    /// The website's Hot Dice (src/games/farkle/table.js easeIn and phoneEase; main.js roll): once your own roll comes
+    /// to rest, the camera eases in toward the dice (same angle, about half a second) and holds there while you pick;
+    /// it eases back to the whole table only when you roll again, bank, Farkle or the turn ends. Bots' and other
+    /// players' rolls never move it, and Reduce Motion never does.
+    public static let easeInSeconds = 0.52, easeHomeSeconds = 0.42
+
+    /// The ease's curve (the website's easeInOutQuad).
+    public static func easeInOut(_ x: Double) -> Double {
+        let p = min(1, max(0, x))
+        return p < 0.5 ? 2 * p * p : 1 - pow(-2 * p + 2, 2) / 2
+    }
+
+    /// Where the camera eases in to after your roll lands: the point it looks at and how far back it sits (a share
+    /// of the fitted distance, 1 being the fitted view). `base` is the fitted camera, `dice` the dice that just
+    /// landed (their centers), `top` the band of words over the top of the view.
+    /// A phone (a view taller than wide) gets the nearest view where the dice read at least 44 points (50 when they
+    /// lie close together) that still shows the side rails where the dice are, keeps every die clear of the words at
+    /// the top and the bottom edge, and keeps the whole keep row in view (a tapped die goes there). A wider view gets
+    /// the website's slight move: in to 82 to 90% of the distance, looking a little toward the dice.
+    public static func easeIn(camera base: Table3DCamera, tray: DiceTray, dice: [T3Vec], slots: Int, top: Double) -> (look: T3Vec, k: Double) {
+        let home = tray.target
+        guard !dice.isEmpty else { return (home, 1) }
+        let w = base.width, h = base.height
+        let off = base.eye - home, dist = off.length
+        guard dist > 0 else { return (home, 1) }
+        let dir = off * (1 / dist)
+        var c = T3Vec(0, 0, 0)
+        for d in dice { c = c + d }
+        c = c * (1 / Double(dice.count))
+        let spread = max(1, dice.map { T3Vec($0.x - c.x, 0, $0.z - c.z).length }.max() ?? 1)
+        let keep = tray.shelf ? (0..<slots).map { keepSpot($0, of: slots) } : []
+        func cam(_ look: T3Vec, _ k: Double) -> Table3DCamera {
+            Table3DCamera.lookAt(eye: look + dir * (dist * k), target: look, fovY: base.fovY, width: w, height: h)
+        }
+        // every die clear of the words and the bottom edge, and the keep row in view
+        func clear(_ cm: Table3DCamera) -> Bool {
+            for p in dice {
+                let a = cm.project(p)
+                if a.y < top + 20 || a.y > h - 20 || a.x < 10 || a.x > w - 10 { return false }
+            }
+            for p in keep {
+                let a = cm.project(p)
+                if a.y > h - 14 || a.y < top || a.x < 6 || a.x > w - 6 { return false }
+            }
+            return true
+        }
+        if w / h >= 0.8 {
+            // a slight move: close together, in to about 82% of the distance; spread wide, only to about 90%
+            let look = T3Vec(home.x + (c.x - home.x) * 0.55, home.y, home.z + (c.z - home.z) * 0.55)
+            var k = min(0.9, max(0.82, 0.74 + spread / min(2 * tray.x, tray.zFront - tray.zBack) * 0.4))
+            while k < 1 && !clear(cam(look, k)) { k += 0.01 }
+            return k >= 1 ? (home, 1) : (look, k)
+        }
+        let wide = min(1, max(0, (spread - 2) / 3))
+        let want = 50 + (44 - 50) * wide
+        let look = T3Vec(home.x, home.y, min(tray.zFront - 1, max(tray.zBack + 2, c.z)))
+        let nearZ = min(tray.zFront, (dice.map(\.z).max() ?? 0) + 1.5)
+        func size(_ k: Double) -> Double? {
+            let cm = cam(look, k)
+            // the rails at the dice's near end, where the tray is widest on screen
+            let l = cm.project(T3Vec(-tray.x - 0.2, tray.rimH * 0.6, nearZ)), r = cm.project(T3Vec(tray.x + 0.2, tray.rimH * 0.6, nearZ))
+            if l.x < 0 || r.x > w || !clear(cm) { return nil }
+            var s = 0.0
+            for p in dice {
+                let e = cm.project(p + T3Vec(0.5, 0, 0)), f = cm.project(p - T3Vec(0.5, 0, 0))
+                s += ((e.x - f.x) * (e.x - f.x) + (e.y - f.y) * (e.y - f.y)).squareRoot() / Double(dice.count)
+            }
+            return s
+        }
+        var best = 1.0
+        var k = 1.0
+        while k >= 0.5 {
+            guard let s = size(k) else { break }
+            best = k
+            if s >= want { break }
+            k -= 0.01
+        }
+        return best >= 1 ? (home, 1) : (look, best)
+    }
 }
 
 /// A tray's shape (#521, #523): Hot Dice's deep tray with the keep shelf in front and the cup behind, or Roll Call's
@@ -135,13 +224,15 @@ public struct DiceTray: Equatable, Sendable {
     }
     public static let classic = DiceTray(x: DiceArena.trayX, zBack: DiceArena.zBack, zFront: DiceArena.zFront,
                                          rimW: DiceArena.rimW, rimH: DiceArena.rimH, shelf: true)
-    public static let row = DiceTray(x: 3.4, zBack: -1.7, zFront: 1.7, rimW: 0.4, rimH: 0.75, shelf: false)
+    /// Build 45: Roll Call's tray is wider and deeper for the same five dice (a die was a seventh of its width, now
+    /// about a ninth), so a roll has room to tumble before the dice settle into their places.
+    public static let row = DiceTray(x: 4.4, zBack: -2.2, zFront: 2.2, rimW: 0.45, rimH: 0.75, shelf: false)
     /// The front edge of the whole tray (the shelf's, or the front rim's).
     public var outerZ1: Double { shelf ? DiceArena.shelfZ1 : zFront + rimW }
-    public var target: T3Vec { shelf ? T3Vec(0, 0.2, 0.45) : T3Vec(0, 0, 0.15) }
+    public var target: T3Vec { shelf ? T3Vec(0, 0.2, 0.1) : T3Vec(0, 0, 0.15) }
     /// Roll Call's fixed slots: die `i` of `n`, left to right across the middle of the tray.
     public func slot(_ i: Int, of n: Int) -> T3Vec {
-        T3Vec((Double(i) - Double(n - 1) / 2) * 1.34, DiceArena.half, 0.1)
+        T3Vec((Double(i) - Double(n - 1) / 2) * 1.5, DiceArena.half, 0.1)
     }
     /// Where a kept or held die sits.
     public func keep(_ i: Int, of n: Int) -> T3Vec { shelf ? DiceArena.keepSpot(i, of: n) : slot(i, of: n) }
@@ -272,17 +363,20 @@ public enum DiceSim {
         let n = max(1, min(6, count))
         var r = Rand(seed)
         var dice: [Body] = []
-        let spread = min(2.4, tray.x * 0.62)
+        // the throw scales with the tray's depth (build 45's trays are deeper), so the dice reach as far across it
+        let k = (tray.zFront - tray.zBack) / (tray.shelf ? 4.8 : 3.4)
         for i in 0..<n {
             let lane = n == 1 ? 0 : Double(i) / Double(n - 1) - 0.5
             let p: T3Vec, v: T3Vec
             if tray.shelf {
-                p = T3Vec(lane * spread + (r.next() - 0.5) * 0.3, 2.3 + r.next() * 0.6, -2.2 + (r.next() - 0.5) * 0.4)
-                v = T3Vec(lane * 2.6 + (r.next() - 0.5) * 1.6, -1 - r.next() * 1.5, 3.8 + r.next() * 1.8)
+                let spread = min(3.4, tray.x * 0.6)
+                p = T3Vec(lane * spread + (r.next() - 0.5) * 0.4, 2.3 + r.next() * 0.6, tray.zBack + 0.7 + (r.next() - 0.5) * 0.4)
+                v = T3Vec((lane * 2.6 + (r.next() - 0.5) * 1.6) * k, -1 - r.next() * 1.5, (3.8 + r.next() * 1.8) * k)
             } else {
                 // a toss from just behind the back rim, across the shallow tray
+                let spread = min(3.0, tray.x * 0.62)
                 p = T3Vec(lane * spread + (r.next() - 0.5) * 0.3, 1.9 + r.next() * 0.5, tray.zBack + 0.75 + (r.next() - 0.5) * 0.2)
-                v = T3Vec(lane * 1.8 + (r.next() - 0.5) * 1.4, -0.6 - r.next() * 1.0, 1.8 + r.next() * 1.4)
+                v = T3Vec((lane * 1.8 + (r.next() - 0.5) * 1.4) * k, -0.6 - r.next() * 1.0, (1.8 + r.next() * 1.4) * k)
             }
             let q = DQuat(r.next() - 0.5, r.next() - 0.5, r.next() - 0.5, r.next() - 0.5).normalized
             let w = T3Vec((r.next() - 0.5) * 30, (r.next() - 0.5) * 16, (r.next() - 0.5) * 30)

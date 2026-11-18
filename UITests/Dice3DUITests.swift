@@ -15,7 +15,7 @@ final class Dice3DUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["dice3d-ready"].waitForExistence(timeout: 60), "\(name): the still never stopped")
         usleep(300_000)
-        shot(app, "521-\(device)\(name)")
+        shot(app, name.hasPrefix("561-") ? name : "521-\(device)\(name)")
         XCTAssertFalse(app.staticTexts["SCORES"].exists, "\(name): no SCORES labels on the dice")
         check(app)
         app.terminate()
@@ -27,6 +27,13 @@ final class Dice3DUITests: XCTestCase {
         still("game=hot moment=settled", "hot-2-settled") { app in
             XCTAssertEqual(app.buttons["die-0"].value as? String, "scores", "the 5 could score (said to VoiceOver, not drawn on the die)")
             XCTAssertEqual(app.buttons["die-2"].value as? String, "doesn’t score")
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "your roll landed: the camera eased in")
+            self.checkTapTargets(app, "die-")
+        }
+        // build 45 (Tyler: "the zoom goes in and right out that is wrong"): three seconds on, it's still eased in
+        // (the old push-in was back out by 2.3 s), like the website's Hot Dice
+        still("game=hot moment=settled after=3", "561-\(device)hot-held-3s") { app in
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "the camera holds on the dice")
         }
         still("game=hot moment=kept", "hot-3-two-kept") { app in
             XCTAssertEqual(app.buttons["die-0"].value as? String, "kept")
@@ -34,6 +41,7 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["keep-line"].label.contains("150"), "what you're keeping: \(app.staticTexts["keep-line"].label)")
         }
         still("game=hot moment=farkle", "hot-4-farkle") { app in
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "fitted", "a Farkle never eases in")
             let banner = app.descendants(matching: .any)["farkle-banner"]
             XCTAssertTrue(banner.exists, "a Farkle shows why")
             XCTAssertTrue(banner.label.contains("No 1s, no 5s"), banner.label)
@@ -43,7 +51,10 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertEqual(app.buttons["die-0"].value as? String, "scores")
             XCTAssertTrue(app.buttons["dice-reset-view"].exists, "a moved view offers its reset")
         }
-        still("game=rollcall moment=settled", "rc-1-settled")
+        still("game=rollcall moment=settled", "rc-1-settled") { app in
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "fitted", "Roll Call's row never moves the camera")
+            self.checkTapTargets(app, "rc-die-")
+        }
         still("game=rollcall moment=kept", "rc-2-two-held") { app in
             XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held")
             XCTAssertEqual(app.buttons["rc-die-1"].value as? String, "held")
@@ -59,7 +70,7 @@ final class Dice3DUITests: XCTestCase {
         let roll = app.buttons["roll"]
         let banner = app.descendants(matching: .any)["farkle-banner"]
         let status = app.descendants(matching: .any)["dice-status"].firstMatch
-        var shotAir = false, shotKept = false, putBack = false
+        var shotAir = false, shotKept = false, putBack = false, eased = 0
         for _ in 0..<16 {
             XCTAssertTrue(waitEnabled(roll, 90), "your roll")
             roll.tap()
@@ -80,6 +91,7 @@ final class Dice3DUITests: XCTestCase {
                 shot(app, "521-\(device)play-4-farkle")
                 XCTAssertTrue(banner.label.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(banner.label)")
                 XCTAssertTrue(shotKept, "a die went to the keep row before the Farkle")
+                XCTAssertGreaterThan(eased, 0, "your rolls eased the camera in (build 45)")
                 return
             }
             let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'die-'")).allElementsBoundByIndex
@@ -87,9 +99,12 @@ final class Dice3DUITests: XCTestCase {
                 XCTFail("a roll you choose from has a die that scores: \(dice.map { "\($0.label) \(String(describing: $0.value))" })")
                 return
             }
+            let camera = app.staticTexts["dice3d-camera"].label
+            if camera == "eased" { eased += 1 }
             let id = pick.identifier
             pick.tap()
             XCTAssertTrue(waitValue(app.buttons[id], "kept", 4), "a tapped die goes to the keep row")
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, camera, "picking a die leaves the camera where it is")
             if !shotKept { usleep(500_000); shot(app, "521-\(device)play-2-kept"); shotKept = true }
             if !putBack {
                 app.buttons[id].tap()
@@ -168,6 +183,16 @@ final class Dice3DUITests: XCTestCase {
         box.tap()
         sleep(3)
         shot(app, "521-\(device)rc-play-3-bot-rolls")
+    }
+
+    /// Build 45: the dice are drawn smaller, and every die's button is still at least 44 points.
+    private func checkTapTargets(_ app: XCUIApplication, _ prefix: String) {
+        let dice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix)).allElementsBoundByIndex
+        XCTAssertFalse(dice.isEmpty, "the dice have buttons")
+        for d in dice where d.isHittable {
+            XCTAssertGreaterThanOrEqual(d.frame.width, 43.5, "\(d.identifier) is easy to tap: \(d.frame)")
+            XCTAssertGreaterThanOrEqual(d.frame.height, 43.5, "\(d.identifier) is easy to tap: \(d.frame)")
+        }
     }
 
     private func waitValue(_ e: XCUIElement, _ v: String, _ timeout: TimeInterval) -> Bool {

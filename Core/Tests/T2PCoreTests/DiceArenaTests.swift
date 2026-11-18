@@ -102,7 +102,8 @@ final class DiceArenaTests: XCTestCase {
                 let s = cam.project(DiceTray.row.slot(i, of: 5))
                 XCTAssertTrue(s.x > 0 && s.x < w && s.y > 0 && s.y < h, "\(w)x\(h) slot \(i)")
             }
-            XCTAssertGreaterThan(cam.pointsPerUnit(at: DiceTray.row.slot(2, of: 5)), 34, "\(w)x\(h): the dice are a good size")
+            // build 45: drawn smaller than before (34 points and up), still a clear size; the button over each is 44+
+            XCTAssertGreaterThan(cam.pointsPerUnit(at: DiceTray.row.slot(2, of: 5)), 26, "\(w)x\(h): the dice are a good size")
         }
         // Hot Dice with the turn's words over the top of the scene: the tray stays below them
         let cam = DiceArena.camera(width: 390, height: 560, top: 110)
@@ -125,9 +126,70 @@ final class DiceArenaTests: XCTestCase {
                 let s = cam.project(p)
                 XCTAssertTrue(s.x > 0 && s.x < w && s.y > 0 && s.y < h, "\(w)x\(h): \(p) at \(s)")
             }
-            // a die on the felt is big enough to tap
-            XCTAssertGreaterThan(cam.pointsPerUnit(at: T3Vec(0, 0.5, 0)), 26, "\(w)x\(h): dice are tappable")
+            // a die on the felt is drawn a fair size, and its button is at least 44 points whatever its size
+            let ppu = cam.pointsPerUnit(at: T3Vec(0, 0.5, 0))
+            XCTAssertGreaterThan(ppu, 20, "\(w)x\(h): dice are a fair size")
+            XCTAssertGreaterThanOrEqual(DiceArena.tapSide(pointsPerUnit: ppu), 44, "\(w)x\(h): dice are easy to tap")
         }
+    }
+
+    /// Build 45 (Tyler, Nov 18: "Dice are too big"): a die is about a ninth of the felt's width on screen in Hot
+    /// Dice (it was about a seventh) and a little more in Roll Call's row (five dice in their places), measured across
+    /// the middle of the felt on phones and iPads. The website's table is 7 dice wide on a phone, 15 to 19 on a wide
+    /// screen (src/games/farkle/table-dims.js).
+    func testTheDiceAreRealDiceInARealTray() {
+        func ratio(_ tray: DiceTray, _ w: Double, _ h: Double, top: Double) -> Double {
+            let cam = DiceArena.camera(width: w, height: h, tray: tray, top: top)
+            let z = (tray.zBack + tray.zFront) / 2
+            let l = cam.project(T3Vec(-tray.x, 0, z)), r = cam.project(T3Vec(tray.x, 0, z))
+            return cam.pointsPerUnit(at: T3Vec(0, 0.5, z)) / (r.x - l.x)
+        }
+        for (w, h) in [(402.0, 520.0), (375.0, 430.0), (820.0, 700.0), (1024.0, 760.0)] {
+            let hot = ratio(.classic, w, h, top: 96)
+            XCTAssertLessThan(hot, 0.1, "Hot Dice \(w)x\(h): a die is \(hot) of the felt")
+            XCTAssertGreaterThan(hot, 0.07, "Hot Dice \(w)x\(h): not lost in the tray")
+        }
+        for (w, h) in [(370.0, 150.0), (343.0, 150.0), (760.0, 240.0)] {
+            let rc = ratio(.row, w, h, top: 0)
+            XCTAssertLessThan(rc, 0.125, "Roll Call \(w)x\(h): a die is \(rc) of the felt")
+        }
+        XCTAssertEqual(DiceArena.tapSide(pointsPerUnit: 12), 44, "a die drawn small keeps a 44-point button")
+        XCTAssertEqual(DiceArena.tapSide(pointsPerUnit: 300), 130)
+    }
+
+    /// Build 45 (Tyler: "the zoom goes in and right out that is wrong"): like the website's Hot Dice, the camera eases
+    /// in once and holds; the eased-in view keeps the landed dice clear of the words and the keep row in view.
+    func testTheEaseInHoldsTheDiceAndTheKeepRow() {
+        XCTAssertEqual(DiceArena.easeInOut(0), 0)
+        XCTAssertEqual(DiceArena.easeInOut(1), 1)
+        XCTAssertEqual(DiceArena.easeInOut(0.5), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(DiceArena.easeInOut(2), 1, "it stays where it eased to")
+        for (w, h) in [(402.0, 520.0), (375.0, 450.0), (820.0, 700.0), (1180.0, 600.0)] {
+            let base = DiceArena.camera(width: w, height: h, top: 96)
+            var moved = 0
+            for seed in 1...12 {
+                let th = DiceSim.run(count: 1 + seed % 6, seed: UInt32(seed) &* 7919)
+                let dice = th.rest.map(\.p)
+                let e = DiceArena.easeIn(camera: base, tray: .classic, dice: dice, slots: 6, top: 96)
+                XCTAssertGreaterThanOrEqual(e.k, 0.5, "\(w)x\(h) seed \(seed)")
+                XCTAssertLessThanOrEqual(e.k, 1)
+                if e.k < 1 { moved += 1 }
+                if w / h >= 0.8 && e.k < 1 { XCTAssertGreaterThanOrEqual(e.k, 0.82, "a wide view only moves a little") }
+                let off = base.eye - DiceArena.target(.classic)
+                let cam = Table3DCamera.lookAt(eye: e.look + off * e.k, target: e.look, fovY: base.fovY, width: w, height: h)
+                for p in dice {
+                    let s = cam.project(p)
+                    XCTAssertTrue(s.y > 96 && s.y < h && s.x > 0 && s.x < w, "\(w)x\(h) seed \(seed): a die at \(s)")
+                }
+                for i in 0..<6 {
+                    let s = cam.project(DiceArena.keepSpot(i, of: 6))
+                    XCTAssertTrue(s.y < h && s.x > 0 && s.x < w, "\(w)x\(h) seed \(seed): keep slot \(i) at \(s)")
+                }
+            }
+            XCTAssertGreaterThan(moved, 6, "\(w)x\(h): most rolls ease in")
+        }
+        let none = DiceArena.easeIn(camera: DiceArena.camera(width: 402, height: 520, top: 96), tray: .classic, dice: [], slots: 6, top: 96)
+        XCTAssertEqual(none.k, 1, "no dice: the whole tray")
     }
 
     private func hot(_ turn: String) throws -> HotDice.Turn {

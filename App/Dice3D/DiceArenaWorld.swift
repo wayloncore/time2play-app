@@ -35,6 +35,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     /// The player has moved the view away from the fitted one (or put it back).
     var onMoved: ((Bool) -> Void)?
     private var movedSaid = false
+    /// Build 45: the camera has eased in on your roll (true) or is on the whole tray (false).
+    var onEased: ((Bool) -> Void)?
+    private var easedSaid = false
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
@@ -158,8 +161,9 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         key.shadowRadius = 5
         key.shadowMapSize = CGSize(width: 1536, height: 1536)
         key.shadowColor = UIColor(white: 0, alpha: 0.55)
-        key.zNear = 2; key.zFar = 40
-        let kn = SCNNode(); kn.light = key; kn.simdPosition = [1.6, 12.5, 3.2]; kn.simdLook(at: [0, 0, 0.2])
+        key.zNear = 2; key.zFar = 48
+        // high enough that its pool of light covers build 45's bigger tray
+        let kn = SCNNode(); kn.light = key; kn.simdPosition = [1.9, 15, 3.6]; kn.simdLook(at: [0, 0, 0.1])
         scene.rootNode.addChildNode(kn)
         let fill = SCNLight(); fill.type = .directional; fill.intensity = 160
         fill.color = UIColor(red: 0.85, green: 0.9, blue: 1, alpha: 1)
@@ -186,10 +190,12 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         let X = tray.x, zb = tray.zBack, zf = tray.zFront, rw = tray.rimW, rh = tray.rimH
         let sy = DiceArena.shelfY, z1 = tray.outerZ1
         let wood = Self.material(Self.woodImage(), specular: 0.22, shine: 0.3, scale: 1)
-        let felt = Self.material(Self.feltImage(), specular: 0, shine: 0.05, scale: 3)
+        // the felt's weave keeps its size next to the dice whatever the tray's size (3 repeats across the first tray)
+        let weave = Float(3 * 2 * X / 8.6)
+        let felt = Self.material(Self.feltImage(), specular: 0, shine: 0.05, scale: weave)
         felt.normal.contents = Self.feltNormal(); felt.normal.intensity = 0.5
         felt.normal.wrapS = .repeat; felt.normal.wrapT = .repeat
-        felt.normal.contentsTransform = SCNMatrix4MakeScale(3, 3, 1)
+        felt.normal.contentsTransform = SCNMatrix4MakeScale(weave, weave, 1)
 
         // the base under everything, then the felt floor
         _ = box(2 * (X + rw), 0.3, z1 - (zb - rw), chamfer: 0.06, wood, at: [0, -0.2, Float((z1 + zb - rw) / 2)])
@@ -408,6 +414,17 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
         advance(now)
         if tray.shelf { drawCup(now) }
+        easeHomeIfDone(s, now: now)
+    }
+
+    /// The website eases back to the whole tray when you roll again, bank, Farkle or the turn ends: here, as soon as
+    /// the roll the camera eased in on is no longer the one on the felt, or the cup is shaking for the next one.
+    private func easeHomeIfDone(_ s: ArenaState, now: Double) {
+        guard let k = easedKey, ease.to > 0 else { return }
+        if s.roll != k || s.shaking || s.farkle || !s.mine || reduced {
+            easeTo(0, dur: DiceArena.easeHomeSeconds, now: now)
+            easedKey = nil
+        }
     }
 
     private func isInThrow(_ id: Int) -> Bool { guard let p = play else { return false }; return p.ids.contains(id) && !p.left.contains(id) }
@@ -627,13 +644,16 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
 
     private func landed(_ key: String, ids: [Int], now: Double) {
         landedKey = key
-        // the camera leans in on where the dice came to rest, then eases back (Hot Dice, when the view is as fitted)
-        if !reduced && !row && user == Rig() {
-            let ps = ids.compactMap { dice[$0]?.pose.p }
-            if !ps.isEmpty {
-                let c = ps.reduce(SIMD3<Float>(0, 0, 0), +) / Float(ps.count)
-                push = (t0: now, focus: SIMD2<Float>(c.x, c.z))
-                rigDirty = true
+        // build 45: like the website's Hot Dice, your own roll eases the camera in toward where the dice came to rest,
+        // and it holds there while you pick (no bounce back); see easeHomeIfDone. Never for someone else's roll, a
+        // Farkle, Roll Call's row, Reduce Motion, or a view the player has moved themselves.
+        if !reduced && !row && user == Rig(), let s = want, s.roll == key, s.mine, !s.farkle, let b = base {
+            let ps = ids.compactMap { dice[$0]?.pose.p }.map(Self.t3)
+            let cam = Table3DCamera.lookAt(eye: Self.t3(b.eye), target: Self.t3(b.target), fovY: b.fov, width: b.w, height: b.h)
+            let e = DiceArena.easeIn(camera: cam, tray: tray, dice: ps, slots: s.slots, top: baseTop)
+            if e.k < 1 {
+                easeTo(1, dur: DiceArena.easeInSeconds, now: now)
+                easeLook = Self.f(e.look); easeK = Float(e.k); easedKey = key
             }
         }
         let cb = onLanded
@@ -715,7 +735,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             let at = cam.project(top)
             // whole points: the overlay only moves when a die moves on screen
             spots[d.id] = DiceSpot(p: p, shown: shown, screen: CGPoint(x: at.x.rounded(), y: at.y.rounded()),
-                                   size: min(130, max(44, (cam.pointsPerUnit(at: top) * 1.15).rounded())))
+                                   size: DiceArena.tapSide(pointsPerUnit: cam.pointsPerUnit(at: top)))
         }
         spotFrame += 1
         if spots != lastSpots && (spotFrame % 2 == 0 || !rigDirty) {
@@ -733,16 +753,39 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
     }
     private var base: (eye: SIMD3<Float>, target: SIMD3<Float>, fov: Double, w: Double, h: Double)?
     private var user = Rig(), shownRig = Rig()
-    private var push: (t0: Double, focus: SIMD2<Float>)?
+    /// Build 45: the ease-in after your roll (0 is the fitted view, 1 eased in on `easeLook` at `easeK` of the
+    /// fitted distance), as a tween from `from` to `to`.
+    private var ease = (from: 0.0, to: 0.0, t0: 0.0, dur: 0.5)
+    private var easeLook = SIMD3<Float>(0, 0, 0), easeK: Float = 1
+    private var easedKey: String?
+    /// The band of words over the top of the view (the dice stay below it when the camera eases in).
+    private var baseTop = 0.0
     private(set) var rigDirty = true
     private var liveCam: Table3DCamera?
     private var spotFrame = 0
     static let zoomRange: ClosedRange<Float> = 1...2.8
 
-    /// The fitted camera for the view's size (render thread).
-    func setBase(_ cam: Table3DCamera) {
+    /// The fitted camera for the view's size (render thread). `top` is the band of words over the top of it.
+    func setBase(_ cam: Table3DCamera, top: Double = 0) {
         base = (Self.f(cam.eye), Self.f(tray.target), cam.fovY, cam.width, cam.height)
+        baseTop = top
+        // a new size: the eased-in view was worked out for the old one, so go back to the whole tray
+        if ease.to > 0 { easeTo(0, dur: 0.01, now: clock); easedKey = nil }
         rigDirty = true
+    }
+
+    /// How far eased in the camera is now (0 to 1).
+    private func easeAmount(_ now: Double) -> Double {
+        let k = ease.dur <= 0 ? 1 : (now - ease.t0) / ease.dur
+        return ease.from + (ease.to - ease.from) * DiceArena.easeInOut(k)
+    }
+
+    private func easeTo(_ to: Double, dur: Double, now: Double) {
+        let at = easeAmount(now)
+        ease = (at, to, now, reduced ? 0 : dur)
+        rigDirty = true
+        let on = to > 0
+        if on != easedSaid { easedSaid = on; let cb = onEased; DispatchQueue.main.async { cb?(on) } }
     }
     func zoom(by k: Float) {
         user.zoom = min(Self.zoomRange.upperBound, max(Self.zoomRange.lowerBound, user.zoom * k))
@@ -768,9 +811,11 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         rigDirty = true
         noteMoved()
     }
+    /// Double-tap or the reset button: back to the whole tray (the ease-in too).
     func resetView() {
         user = Rig()
         if reduced { shownRig = user }
+        if ease.to > 0 { easeTo(0, dur: DiceArena.easeHomeSeconds, now: clock); easedKey = nil }
         rigDirty = true
         noteMoved()
     }
@@ -790,19 +835,15 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         shownRig.yaw += (user.yaw - shownRig.yaw) * k
         shownRig.tilt += (user.tilt - shownRig.tilt) * k
         shownRig.pan += (user.pan - shownRig.pan) * k
-        var a: Float = 0
-        if let p = push {
-            let t = Float(clock - p.t0)
-            func ease(_ x: Float) -> Float { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
-            a = t < 0.6 ? ease(t / 0.6) : t < 1.4 ? 1 : 1 - ease((t - 1.4) / 0.9)
-            if t > 2.3 || user != Rig() { push = nil; a = 0 }
-        }
+        // the ease-in after your roll: same angle, toward easeLook, easeK of the distance (the player's own pinch,
+        // turn and slide sit on top of it)
+        let easing = clock < ease.t0 + ease.dur
+        let a = Float(easeAmount(clock))
         let o = b.eye - b.target, d = simd_length(o)
         let pitch0 = asin(o.y / d), yaw0 = atan2(o.x, o.z)
-        var target = b.target + SIMD3<Float>(shownRig.pan.x, 0, shownRig.pan.y)
-        if let p = push { target += SIMD3<Float>(p.focus.x - b.target.x, 0, p.focus.y - b.target.z) * 0.35 * a }
+        let target = b.target + SIMD3<Float>(shownRig.pan.x, 0, shownRig.pan.y) + (easeLook - b.target) * a
         let pitch = min(1.5, max(0.42, pitch0 + shownRig.tilt)), yaw = yaw0 + shownRig.yaw
-        let dist = d / (shownRig.zoom * (1 + 0.14 * a))
+        let dist = d * (1 + (easeK - 1) * a) / shownRig.zoom
         let eye = target + dist * SIMD3<Float>(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw))
         cameraNode.simdPosition = eye
         cameraNode.simdLook(at: target)
@@ -811,7 +852,7 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
         let settled = abs(shownRig.zoom - user.zoom) < 0.001 && abs(shownRig.yaw - user.yaw) < 0.0005
             && abs(shownRig.tilt - user.tilt) < 0.0005 && simd_length(shownRig.pan - user.pan) < 0.001
         if settled { shownRig = user }
-        rigDirty = !settled || push != nil
+        rigDirty = !settled || easing
         publishSpots()
     }
 
