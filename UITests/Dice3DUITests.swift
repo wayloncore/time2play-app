@@ -84,7 +84,7 @@ final class Dice3DUITests: XCTestCase {
             var result = "", said = "", farkleSaid = ""
             while Date() < end && result.isEmpty {
                 said = status.exists ? status.label : "(no status)"
-                if banner.exists { result = "farkle"; farkleSaid = banner.label }
+                if banner.exists, let b = try? banner.snapshot() { result = "farkle"; farkleSaid = b.label }   // one look: it can go
                 else if said.contains("Tap the dice") { result = "choose" }
                 else if said.contains("Hot dice") { result = "hot" }
                 else { usleep(150_000) }

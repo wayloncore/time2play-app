@@ -96,19 +96,11 @@ final class DiceArenaStage: ObservableObject {
         return v
     }
 
-    /// The scene's frames (build 48): a display link on the main thread, about 60 a second, while the view is in a
-    /// window. It stops by itself once the stage is gone.
+    /// The scene's frames (build 48): a display link on a thread of its own, about 60 a second, so nothing the main
+    /// thread is doing can slow a roll down. It ends once the stage (and with it the world) is gone.
     private func startTicking() {
-        let link = CADisplayLink(target: Ticker { [weak self] in
-            guard let self else { return false }
-            if let v = self.scnView, v.window != nil, let w = self.world {
-                w.tick(CACurrentMediaTime())
-                if !v.isPlaying { v.isPlaying = true }
-            }
-            return true
-        }, selector: #selector(Ticker.fire(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
-        link.add(to: .main, forMode: .common)
+        guard let w = world else { return }
+        Ticker.start(w)
     }
 
     // #523: what the player does to the view (Hot Dice): pinch, one finger to look round, two to slide, double-tap
@@ -152,12 +144,34 @@ final class DiceArenaStage: ObservableObject {
     }
 }
 
-/// The display link's target: it holds the stage weakly (a display link holds its target), and ends the link once
-/// the stage is gone.
+/// The dice scene's clock (build 48): a thread with its own run loop and display link that moves the world a frame at
+/// a time, as SceneKit's render callback used to (that callback sometimes stopped after the first frame). It holds
+/// the world weakly and ends, thread and all, once the world is gone.
 private final class Ticker: NSObject {
-    let step: () -> Bool
-    init(_ step: @escaping () -> Bool) { self.step = step }
-    @objc func fire(_ link: CADisplayLink) { if !step() { link.invalidate() } }
+    private weak var world: DiceArenaWorld?
+    private init(_ w: DiceArenaWorld) { world = w }
+
+    static func start(_ w: DiceArenaWorld) {
+        let ticker = Ticker(w)
+        let thread = Thread {
+            let link = CADisplayLink(target: ticker, selector: #selector(Ticker.fire(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            link.add(to: .current, forMode: .default)
+            RunLoop.current.run()   // returns once the link is gone
+        }
+        thread.name = "dice-arena"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+    }
+
+    @objc func fire(_ link: CADisplayLink) {
+        guard let w = world else { link.invalidate(); return }
+        // one frame's changes reach the screen together
+        SCNTransaction.begin()
+        SCNTransaction.disableActions = true
+        w.tick(CACurrentMediaTime())
+        SCNTransaction.commit()
+    }
 }
 
 /// SceneKit's view.
