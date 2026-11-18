@@ -318,7 +318,13 @@ struct Table3DView: View {
     private func stillFlight(_ st: Table3DStill) {
         guard st.playAt != nil || st.drawAt != nil, let c = st.playAt != nil ? view.hand.first : view.hand.last else { return }
         arriving.insert(c.id)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+        stillFlightStart(st, c, after: 1.4)
+    }
+
+    /// Starts the still's flight once the table and your hand are laid out (a slow simulator can take a while).
+    private func stillFlightStart(_ st: Table3DStill, _ c: Overdraft.Card, after: Double, tries: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+            if (fan == .zero || stage.layout == nil) && tries < 40 { stillFlightStart(st, c, after: 0.25, tries: tries + 1); return }
             let places = HandFan3D(view: view, dealt: nil, arriving: [], scale: handScale, onTap: { _, _, _, _ in }).places(width: fan.width)
             guard let pl = places[c.id] else { return }
             let spot = (x: Double(fan.minX + pl.center.x), y: Double(fan.minY + pl.center.y), w: Double(pl.width), roll: pl.roll)
