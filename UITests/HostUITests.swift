@@ -6,6 +6,16 @@ import XCTest
 final class HostUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
+    /// The whole screen as the device shows it (an app screenshot comes out turned wrong in landscape on iPad).
+    private func screen(_ name: String) {
+        let s = XCUIScreen.main.screenshot()
+        let a = XCTAttachment(screenshot: s); a.name = name; a.lifetime = .keepAlways; add(a)
+        let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] ?? NSTemporaryDirectory()
+        let dir = URL(fileURLWithPath: home).appendingPathComponent("t2p-shots")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? s.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"))
+    }
+
     private func code(_ app: XCUIApplication) -> String {
         let e = app.staticTexts["host-code"]
         XCTAssertTrue(e.waitForExistence(timeout: 30), "the hosted room opens")
@@ -36,7 +46,7 @@ final class HostUITests: XCTestCase {
         let phone = phoneJoins("rollcall", c, name: "Pat")
         XCTAssertTrue(app.staticTexts["Pat"].waitForExistence(timeout: 20), "the phone shows up on the iPad")
         tapWhenReady(app.buttons["host-addbot-medium"]); sleep(1)
-        shot(app, "537-host-1-lobby-landscape")
+        screen("537-host-1-lobby-landscape")
         // the phone leaves before the start, so only bots play (a person's turns would wait for them)
         phone.cancel(with: .normalClosure, reason: nil)
         let pat = app.descendants(matching: .any)["host-player-p1"]
@@ -44,7 +54,7 @@ final class HostUITests: XCTestCase {
         sleep(1)
         tapWhenReady(app.buttons["host-start"])
         sleep(6)
-        shot(app, "537-host-2-rollcall-playing")
+        screen("537-host-2-rollcall-playing")
         XCUIDevice.shared.orientation = .portrait
         sleep(2)
         shot(app, "537-host-3-rollcall-portrait")
@@ -64,7 +74,7 @@ final class HostUITests: XCTestCase {
         tapWhenReady(app.buttons["host-start"])
         // the iPad shows each roll and tells the room, so the bots keep playing
         sleep(10)
-        shot(app, "537-host-4-hot-dice")
+        screen("537-host-4-hot-dice")
         XCTAssertTrue(app.descendants(matching: .any)["host-stage"].exists)
         tapWhenReady(app.buttons["host-end"])
         tapWhenReady(app.buttons["End the room"])

@@ -97,7 +97,6 @@ struct HostView: View {
             Button("Keep", role: .cancel) { removing = nil }
         }
         .sheet(isPresented: $tv) { ShowOnTV() }
-        .accessibilityIdentifier("host-screen")
     }
 
     private var endedWhy: String? { if case let .ended(w) = host.status { return w }; return nil }
@@ -230,6 +229,7 @@ struct HostView: View {
         if let f = host.floor {
             HostStage(floor: f, game: host.game, code: host.room.code)
                 .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 22))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("host-stage")
         }
     }
