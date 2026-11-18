@@ -187,6 +187,7 @@ struct YouView: View {
                 FeelSection()
                 AlertsSection()
                 AppIconSection()
+                IntroSection()   // #562
 
                 BoardSettingsSection()   // #535
 

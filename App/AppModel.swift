@@ -53,7 +53,7 @@ final class AppModel: ObservableObject {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-uitest-reset") {
             for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account", Table3DSwitch.classicKey, Dice3DSwitch.classicKey,
-                      Keepsakes.recentKey, Keepsakes.favoritesKey, TurnAlerts.key] + FeelSettings.all { UserDefaults.standard.removeObject(forKey: k) }
+                      Keepsakes.recentKey, Keepsakes.favoritesKey, TurnAlerts.key, IntroSettings.key] + FeelSettings.all { UserDefaults.standard.removeObject(forKey: k) }
             SharedRoom.clear()
             Keychain.delete()
         }
@@ -110,6 +110,7 @@ final class AppModel: ObservableObject {
     }
 
     func open(_ g: Game, code: String, taken: [Int], starting: Bool = false, canWatch: Bool = false) {
+        Intro.shared.skip()   // the intro never stands between a player and a game (#562)
         room?.close()
         let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting, session: api.session)
         r.canWatch = canWatch
@@ -133,6 +134,7 @@ final class AppModel: ObservableObject {
     /// An offline practice room with bots: the same screens, the same rules, no server. Nothing here counts.
     func startOffline(_ g: Game) {
         guard let rules = offlineRules else { problem = "Offline play isn’t available right now."; return }
+        Intro.shared.skip()
         room?.close()
         let r = RoomModel(game: g, code: "SOLO", app: self, taken: [], starting: true, offline: rules)
         room = r
