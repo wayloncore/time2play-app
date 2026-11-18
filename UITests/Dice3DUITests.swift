@@ -76,10 +76,10 @@ final class Dice3DUITests: XCTestCase {
             roll.tap()
             if !shotAir { usleep(1_500_000); shot(app, "521-\(device)play-1-rolling"); shotAir = true }
             let end = Date().addingTimeInterval(15)
-            var result = "", said = ""
+            var result = "", said = "", farkleSaid = ""
             while Date() < end && result.isEmpty {
                 said = status.exists ? status.label : "(no status)"
-                if banner.exists { result = "farkle" }
+                if banner.exists { result = "farkle"; farkleSaid = banner.label }
                 else if said.contains("Tap the dice") { result = "choose" }
                 else if said.contains("Hot dice") { result = "hot" }
                 else { usleep(150_000) }
@@ -87,9 +87,10 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertFalse(result.isEmpty, "the roll lands; the status says: \(said)")
             if result == "hot" { continue }
             if result == "farkle" {
-                usleep(500_000)
+                // the banner shows for 2.4 s after the dice land: read it as soon as it's seen (a busy simulator's
+                // queries can take most of that), then shoot
                 shot(app, "521-\(device)play-4-farkle")
-                XCTAssertTrue(banner.label.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(banner.label)")
+                XCTAssertTrue(farkleSaid.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(farkleSaid)")
                 XCTAssertTrue(shotKept, "a die went to the keep row before the Farkle")
                 XCTAssertGreaterThan(eased, 0, "your rolls eased the camera in (build 45)")
                 return

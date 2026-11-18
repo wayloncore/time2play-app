@@ -536,6 +536,8 @@ final class DiceArenaWorld: NSObject, SCNSceneRendererDelegate {
             landedKey = key
             let cb = onLanded
             DispatchQueue.main.async { cb?(key) }
+            // still mode: a scene that first draws after the roll arrived (a slow launch) still stops on "landed"
+            moment(.landed)
         }
         for d in s.dice {
             if case let .keep(slot, _) = d.place {
