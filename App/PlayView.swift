@@ -18,6 +18,7 @@ struct PlayView: View {
                     RecentRoomsPanel(keep: app.keep)
                     PresetsSection()   // #538
                     startRooms
+                    HostRoomsSection()   // #537: iPad only
                     offline
                 }
                 .padding(.horizontal, 20)
