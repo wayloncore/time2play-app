@@ -16,6 +16,15 @@ final class TVModel: ObservableObject {
     @Published var previewing = false  // the phone is showing what the TV would (Show on TV → See what the TV shows)
     private var task: URLSessionWebSocketTask?
     private var watching: (Game, String, Endpoints)?
+    /// #537: an iPad hosting a room feeds the TV its floor (a hosted room's screen socket needs the host token).
+    @Published private(set) var hosted = false
+
+    func host(_ g: Game, code: String) {
+        task?.cancel(with: .normalClosure, reason: nil); task = nil
+        watching = nil; hosted = true; game = g; self.code = code; floor = nil
+    }
+    func feed(_ f: JSON) { if hosted { floor = f } }
+    func unhost() { hosted = false; game = nil; code = nil; floor = nil }
 
     /// Follow a room on the TV (called when a room opens; a no-op without a TV).
     func watch(_ g: Game?, code: String?, endpoints: Endpoints) {
@@ -25,6 +34,7 @@ final class TVModel: ObservableObject {
     }
 
     func reconnect() {
+        if hosted { return }
         task?.cancel(with: .normalClosure, reason: nil); task = nil
         guard connected || previewing, let (g, c, e) = watching, c != "SOLO" else { return }
         let t = URLSession.shared.webSocketTask(with: e.screen(g, code: c))
@@ -72,7 +82,14 @@ struct TVTableView: View {
                 // the lobby on a TV: how to join, big enough to read across a room, and who's in
                 VStack(spacing: 28) {
                     Text("Join at time2play.live").font(.system(size: 44, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
-                    Text(c).font(.system(size: 120, weight: .bold, design: .rounded)).tracking(16).foregroundStyle(.white)
+                    HStack(spacing: 48) {
+                        Text(c).font(.system(size: 120, weight: .bold, design: .rounded)).tracking(16).foregroundStyle(.white)
+                        // #537: scan to join from across the room
+                        if let q = QR.image("https://time2play.live/\(c)", scale: 12) {
+                            Image(uiImage: q).interpolation(.none).resizable().frame(width: 200, height: 200)
+                                .padding(14).background(.white, in: RoundedRectangle(cornerRadius: 18))
+                        }
+                    }
                     HStack(spacing: -12) {
                         ForEach(Array((f["roster"].array.isEmpty ? f["players"].array : f["roster"].array).prefix(12).enumerated()), id: \.offset) { _, p in
                             FaceView(face: p["face"].int ?? 0, size: 84)

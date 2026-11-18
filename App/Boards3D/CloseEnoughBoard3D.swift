@@ -112,7 +112,10 @@ final class CloseEnoughBoardWorld {
         }
         for (k, text) in s.labels.enumerated() {
             let lab = Scene3D.plane(Scene3D.label(text, size: 40, color: UIColor(hex: 0xEEF1F7)), height: 0.5)
-            lab.position = SCNVector3(Float(k) / 2 * Self.length - Self.length / 2, 0.06, Float(depth) / 2 + 0.32)
+            // the end numbers sit inside the scale's ends, so a long one ("20,000 meters") never runs off the board
+            let w = Float((lab.geometry as! SCNPlane).width)
+            let x = k == 0 ? -Self.length / 2 + w / 2 - 0.2 : k == 2 ? Self.length / 2 - w / 2 + 0.2 : 0
+            lab.position = SCNVector3(x, 0.06, Float(depth) / 2 + 0.32)
             lab.eulerAngles.x = -.pi / 2.6
             board.addChildNode(lab)
         }
