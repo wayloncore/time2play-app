@@ -74,6 +74,7 @@ final class RoomModel: ObservableObject, Identifiable {
         status = session.status
         view = session.view
         if preset != nil { applyPreset() }
+        StatsKeeper.shared.observe(self)   // #540: a finished game, recorded once
         if case .reconnecting = session.status {
             retry?.cancel()
             let w = DispatchWorkItem { [weak self] in self?.session.reconnect() }

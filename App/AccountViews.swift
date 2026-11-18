@@ -163,6 +163,8 @@ struct YouView: View {
                     Section { SignInPanel() }.listRowBackground(T2P.panel)
                 }
 
+                StatsSections()   // #540
+
                 Section {
                     Toggle("Classic table", isOn: $classicTable)
                         .tint(T2P.gold)
