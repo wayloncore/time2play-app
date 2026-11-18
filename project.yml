@@ -11,7 +11,8 @@ targets:
   Time2Play:
     type: application
     platform: iOS
-    # App/Sounds: the sound effects and the music (scripts/sounds.py; LICENSES.md says where each comes from).
+    # App/Sounds: the sound effects and the music (recorded .caf files from scripts/recorded-sounds.py, synthesized ones
+    # from scripts/sounds.py; LICENSES.md says where each comes from).
     # Shared: compiled into the app and the widget (the widget's views, the last room they share).
     sources:
       - path: App

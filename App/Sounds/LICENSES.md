@@ -1,22 +1,35 @@
 # Where the app's sounds come from
 
-All of these are original, made in code for Time2Play by `scripts/sounds.py` (sine tones, filtered noise and plucked
-strings, synthesized from scratch). Nothing is sampled, recorded from anywhere else, or taken from a TV show.
+The sound effects are real recordings from Kenney's free packs (Kenney Vleugels, kenney.nl), all CC0 1.0 Universal
+(public domain, https://creativecommons.org/publicdomain/zero/1.0/): free to use, no credit required. Kenney asks for
+an optional "Kenney.nl" credit, given here. The music loop is still Time2Play's own, made in code. Nothing here is from
+a TV show, and there's no theme music.
 
-| File | What it is |
-| --- | --- |
-| card-play.wav | A card landing on the pile |
-| draw.wav | A card sliding off the deck |
-| your-turn.wav | Your turn: two notes going up |
-| dice-roll.wav | Dice shaken and thrown |
-| dice-land.wav | Dice coming to rest |
-| farkle.wav | A Farkle: two muted notes stepping down |
-| win.wav | A win: a rising arpeggio |
-| bolt.wav | A Bolt (+2 or +4) aimed at you |
-| music.m4a | The background music: a quiet loop, off unless turned on in You |
+| File | What it is | Source file | Pack | License |
+| --- | --- | --- | --- | --- |
+| card-play.caf | A card landing on the pile | `Audio/card-place-1.ogg` | Casino Audio | CC0 1.0 |
+| draw.caf | A card sliding off the deck | `Audio/card-slide-4.ogg` | Casino Audio | CC0 1.0 |
+| dice-roll.caf | Dice shaken in the hand | `Audio/dice-shake-3.ogg` | Casino Audio | CC0 1.0 |
+| dice-land.caf | Dice thrown onto the table | `Audio/dice-throw-3.ogg` | Casino Audio | CC0 1.0 |
+| farkle.caf | A Farkle: a dull thud (a leather bag dropped, muffled) | `OGG/dropLeather.ogg` | RPG Audio | CC0 1.0 |
+| bolt.caf | A Bolt (+2 or +4) aimed at you: a zap stepping down | `zapThreeToneDown.mp3` | Digital Audio | CC0 1.0 |
+| your-turn.caf | Your turn: a short rising chime | `Audio/confirmation_001.ogg` | Interface Sounds | CC0 1.0 |
+| win.caf | A win: a short rising steel-drum jingle | `OGG/jingles_STEEL/jingles_STEEL10.ogg` | Music Jingles | CC0 1.0 |
+| music.m4a | The background music: a quiet loop, off unless turned on in You | made by `scripts/sounds.py` | Time2Play's own | Time2Play's own |
 
-Run `python3 scripts/sounds.py` to make them again (needs numpy and ffmpeg).
+The packs, as Kenney posted them on OpenGameArt (each page says License: CC0, Author: Kenney):
 
-Recorded CC0 sounds (Kenney's "Casino Audio", https://kenney.nl/assets/casino-audio, CC0) were the first choice on
-Nov 17, but kenney.nl turned away the download from GitHub's runner, so the synthesized set shipped. If recorded
-sounds replace any of these later, list the pack, its license and its link here.
+- Casino Audio: https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips (also https://kenney.nl/assets/casino-audio)
+- RPG Audio: https://opengameart.org/content/50-rpg-sound-effects (also https://kenney.nl/assets/rpg-audio)
+- Digital Audio: https://opengameart.org/content/63-digital-sound-effects-lasers-phasers-space-etc (also https://kenney.nl/assets/digital-audio)
+- Interface Sounds: https://opengameart.org/content/interface-sounds (also https://kenney.nl/assets/interface-sounds)
+- Music Jingles: https://opengameart.org/node/22000 ("85 Short music jingles"; also https://kenney.nl/assets/music-jingles)
+
+How they're made: `.github/workflows/sounds.yml` downloads the packs on a GitHub runner (kenney.nl refuses automated
+downloads, so it uses Kenney's OpenGameArt posts), checks each page's license, and runs `scripts/recorded-sounds.py`:
+it trims the silence, cuts each to length, fades the end, levels it, and saves it as a small mono .caf (IMA4, 44.1 kHz).
+`scripts/sound-picks.json` names each file and its settings. Only the picked files are kept, never the packs.
+
+The synthesized versions (`scripts/sounds.py`, sine tones, filtered noise and plucked strings) shipped in build 39. The
+app plays an effect's `.caf` when there is one and its `.wav` otherwise, so to bring one back, run
+`python3 scripts/sounds.py` and delete that effect's `.caf` (and keep only the `.wav` files you want).

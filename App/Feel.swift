@@ -70,7 +70,8 @@ enum Feel {
     static func kept() { Haptics.light() }
 }
 
-/// The sound effects: small files made by scripts/sounds.py (synthesized, original), in App/Sounds.
+/// The sound effects, small files in App/Sounds: recorded ones (.caf, from free CC0 packs, scripts/recorded-sounds.py)
+/// and any still synthesized (.wav, scripts/sounds.py). App/Sounds/LICENSES.md says where each comes from.
 /// The audio session is "ambient": the silent switch silences them, and they mix with whatever else is playing.
 final class Sounds: ObservableObject {
     static let shared = Sounds()
@@ -104,20 +105,41 @@ final class Sounds: ObservableObject {
         if Sounds.logging { log.append(e.rawValue) }
         audio.async { [self] in
             if !sessionReady { Sounds.prepareSession(); sessionReady = true }
-            guard let d = file(e), let p = try? AVAudioPlayer(data: d) else { return }
+            guard let d = file(e), let p = try? AVAudioPlayer(data: d) else { report("load:\(e.rawValue)"); return }
             p.volume = volume
             playing.removeAll { !$0.isPlaying }
             playing.append(p)
-            p.play()
+            if !p.play() { report("play:\(e.rawValue)") }
         }
     }
+
+    /// UI tests: a sound that wouldn't open or start (-t2p-sound-log only).
+    @Published private(set) var failed: [String] = []
+    private func report(_ s: String) {
+        guard Sounds.logging else { return }
+        DispatchQueue.main.async { self.failed.append(s) }
+    }
+
+    /// A recorded effect is a .caf (scripts/recorded-sounds.py); one still synthesized is a .wav (scripts/sounds.py).
+    static func url(_ e: Effect) -> URL? {
+        Bundle.main.url(forResource: e.rawValue, withExtension: "caf") ?? Bundle.main.url(forResource: e.rawValue, withExtension: "wav")
+    }
+
+    /// UI tests: whether every effect's file is there and opens ("ok", or the ones that don't), checked once.
+    static let fileCheck: String = {
+        let bad = Effect.allCases.filter { e in
+            guard let u = url(e), let d = try? Data(contentsOf: u), let p = try? AVAudioPlayer(data: d) else { return true }
+            return !p.prepareToPlay() || p.duration < 0.02
+        }
+        return bad.isEmpty ? "ok" : bad.map(\.rawValue).joined(separator: ",")
+    }()
 
     /// The audio queue's: the loaded files, the players still sounding, whether the session is set up.
     private let audio = DispatchQueue(label: "live.time2play.sounds", qos: .userInitiated)
 
     private func file(_ e: Effect) -> Data? {
         if let d = data[e] { return d }
-        guard let url = Bundle.main.url(forResource: e.rawValue, withExtension: "wav"), let d = try? Data(contentsOf: url) else { return nil }
+        guard let url = Sounds.url(e), let d = try? Data(contentsOf: url) else { return nil }
         data[e] = d
         return d
     }
@@ -180,10 +202,19 @@ final class Music {
 struct SoundLog: View {
     @ObservedObject var sounds = Sounds.shared
     var body: some View {
-        Text(sounds.log.joined(separator: ","))
-            .font(.system(size: 1)).opacity(0.02)
-            .accessibilityIdentifier("sound-log")
-            .accessibilityLabel(sounds.log.isEmpty ? "none" : sounds.log.joined(separator: ","))
-            .allowsHitTesting(false)
+        VStack(spacing: 0) {
+            Text(sounds.log.joined(separator: ","))
+                .accessibilityIdentifier("sound-log")
+                .accessibilityLabel(sounds.log.isEmpty ? "none" : sounds.log.joined(separator: ","))
+            // every effect's file opens, and any sound that wouldn't open or start
+            Text("files")
+                .accessibilityIdentifier("sound-files")
+                .accessibilityLabel(Sounds.fileCheck)
+            Text("failed")
+                .accessibilityIdentifier("sound-failed")
+                .accessibilityLabel(sounds.failed.isEmpty ? "none" : sounds.failed.joined(separator: ","))
+        }
+        .font(.system(size: 1)).opacity(0.02)
+        .allowsHitTesting(false)
     }
 }

@@ -4,6 +4,9 @@ plucked strings). Nothing is sampled or copied, and nothing is from a TV show. R
 
     python3 scripts/sounds.py            # writes App/Sounds/*.wav and App/Sounds/music.m4a (needs numpy and ffmpeg)
 
+Since Nov 17 the effects are recorded (App/Sounds/*.caf, scripts/recorded-sounds.py), and the app plays an effect's
+.caf when there is one, so this skips any effect that has a .caf (--all makes them all). The music is still made here.
+
 The same seed makes the same files, so a run with no changes leaves git clean (except the m4a's encoder stamp)."""
 import os, subprocess, sys, wave
 import numpy as np
@@ -249,6 +252,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     for name, fn in [("card-play", card_play), ("draw", draw), ("your-turn", your_turn), ("dice-roll", dice_roll),
                      ("dice-land", dice_land), ("farkle", farkle), ("win", win), ("bolt", bolt)]:
+        # a recorded effect (App/Sounds/<name>.caf, scripts/recorded-sounds.py) wins: its synthesized .wav is only
+        # made when there's no .caf, or with --all
+        if os.path.exists(os.path.join(OUT, f"{name}.caf")) and "--all" not in sys.argv:
+            continue
         write_wav(f"{name}.wav", fn())
     m = music()
     tmp = os.path.join(OUT, "music-tmp.wav")
