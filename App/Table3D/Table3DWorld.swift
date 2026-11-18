@@ -847,14 +847,28 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
             onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
     }
 
+    /// Where a card in your hand on the screen is in the world: on the camera's ray through it, at the depth where
+    /// it's `cardPoints` wide, but never below the glass (build 45: on an iPad's camera that depth is under the table,
+    /// so your card started, and a drawn card ended, hidden under it). Brought nearer, it's drawn smaller to match:
+    /// `s` is its scale.
+    private func handPoint(_ l: Table3DLayout, x: Double, y: Double, cardPoints: Double) -> (p: SIMD3<Float>, s: Float) {
+        let c = l.camera
+        let want = Table3D.cardW * c.focal / max(1, cardPoints)
+        let ray = c.right * ((x - c.width / 2) / c.focal) + c.up * (-(y - c.height / 2) / c.focal) - c.back
+        var depth = want
+        if ray.y < -1e-6 { depth = min(want, max(0.5, (c.eye.y - 0.6) / -ray.y)) }
+        let p = c.eye + ray * depth
+        return ([Float(p.x), Float(p.y), Float(p.z)], Float(depth / want))
+    }
+
     /// You throw a card: from where it sat in your hand on the screen (`x`, `y`, `cardPoints` wide, turned `roll`°).
     func throwFromScreen(x: Double, y: Double, cardPoints: Double, roll: Double, art: String, k: Int) {
         guard let l = layout else { return }
         let n = card(art), tg = pileTarget(k)
         flyingK.insert(k); syncPile()
-        let p = l.camera.fromScreen(x: x, y: y, cardPoints: cardPoints)
-        fly(n, p0: [Float(p.x), Float(p.y), Float(p.z)], q0: facingCamera(roll: Float(roll * .pi / 180)), p1: tg.p, q1: tg.q, dur: 0.7, arc: 0.9,
-            slide: 0.2, liftDir: cameraUp,
+        let h = handPoint(l, x: x, y: y, cardPoints: cardPoints)
+        fly(n, p0: h.p, q0: facingCamera(roll: Float(roll * .pi / 180)), p1: tg.p, q1: tg.q, dur: 0.7, arc: 0.9,
+            s0: h.s, slide: 0.2, liftDir: cameraUp,
             onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
     }
 
@@ -903,10 +917,10 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         guard let l = layout else { return }
         for (j, art) in arts.enumerated() where spots.indices.contains(j) {
             let sp = spots[j]
-            let p = l.camera.fromScreen(x: sp.x, y: sp.y, cardPoints: sp.w)
+            let h = handPoint(l, x: sp.x, y: sp.y, cardPoints: sp.w)
             let from = deckTop()
-            fly(card(art), p0: from.p, q0: from.q, p1: [Float(p.x), Float(p.y), Float(p.z)], q1: facingCamera(roll: Float(sp.roll * .pi / 180)),
-                dur: 0.6, arc: 0.7, delay: Float(delay + Double(j) * 0.16), lift: 0.06,
+            fly(card(art), p0: from.p, q0: from.q, p1: h.p, q1: facingCamera(roll: Float(sp.roll * .pi / 180)),
+                dur: 0.6, arc: 0.7, s1: h.s, delay: Float(delay + Double(j) * 0.16), lift: 0.06,
                 onDone: { DispatchQueue.main.async { landed(j) } })
         }
     }
