@@ -29,7 +29,7 @@ struct PlayView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(T2P.navy.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
-            .overlay { if app.busy { ProgressView().controlSize(.large).padding(24).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
+            .overlay { if app.busy { T2PSpinner(size: 48).padding(24).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16)) } }   // #543
         }
         .sheet(isPresented: $scanning) {
             ScannerSheet { found in

@@ -42,11 +42,18 @@ struct LobbyView: View {
             topBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(room.game.title).font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
-                        Text(room.offline ? "Practice with bots, on this device · nothing here counts"
-                             : room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
-                            .foregroundStyle(T2P.muted)
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(room.game.title).font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
+                            Text(room.offline ? "Practice with bots, on this device · nothing here counts"
+                                 : room.hostless ? "Private room · only people with the code or link" : "Hosted by the room’s big screen")
+                                .foregroundStyle(T2P.muted)
+                        }
+                        // #543: Tyler's looping logo while the room waits for players (not offline: nobody's coming)
+                        if !room.offline && room.phase == "lobby" {
+                            Spacer(minLength: 0)
+                            WaitingLogo(phase: room.phase).frame(height: 124)
+                        }
                     }
                     if !room.offline { codePanel }
                     if room.phase == "playing" || room.phase == "done" {

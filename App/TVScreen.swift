@@ -79,23 +79,30 @@ struct TVTableView: View {
             if let f = model.floor, let g = model.game, f["phase"].string != "lobby" {
                 content(f, g)
             } else if let f = model.floor, let c = model.code {
-                // the lobby on a TV: how to join, big enough to read across a room, and who's in
-                VStack(spacing: 28) {
-                    Text("Join at time2play.live").font(.system(size: 44, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
-                    HStack(spacing: 48) {
-                        Text(c).font(.system(size: 120, weight: .bold, design: .rounded)).tracking(16).foregroundStyle(.white)
-                        // #537: scan to join from across the room
-                        if let q = QR.image("https://time2play.live/\(c)", scale: 12) {
-                            Image(uiImage: q).interpolation(.none).resizable().frame(width: 200, height: 200)
-                                .padding(14).background(.white, in: RoundedRectangle(cornerRadius: 18))
+                // the lobby on a TV: how to join, big enough to read across a room, and who's in; Tyler's looping logo
+                // beside it (#543), never under the code or the QR
+                HStack(spacing: 64) {
+                    WaitingLogo(phase: f["phase"].string)
+                        .frame(maxWidth: 520, maxHeight: 700)
+                    VStack(spacing: 28) {
+                        Text("Join at time2play.live").font(.system(size: 44, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                        HStack(spacing: 48) {
+                            Text(c).font(.system(size: 120, weight: .bold, design: .rounded)).tracking(16).foregroundStyle(.white)
+                            // #537: scan to join from across the room
+                            if let q = QR.image("https://time2play.live/\(c)", scale: 12) {
+                                Image(uiImage: q).interpolation(.none).resizable().frame(width: 200, height: 200)
+                                    .padding(14).background(.white, in: RoundedRectangle(cornerRadius: 18))
+                            }
+                        }
+                        HStack(spacing: -12) {
+                            ForEach(Array((f["roster"].array.isEmpty ? f["players"].array : f["roster"].array).prefix(12).enumerated()), id: \.offset) { _, p in
+                                FaceView(face: p["face"].int ?? 0, size: 84)
+                            }
                         }
                     }
-                    HStack(spacing: -12) {
-                        ForEach(Array((f["roster"].array.isEmpty ? f["players"].array : f["roster"].array).prefix(12).enumerated()), id: \.offset) { _, p in
-                            FaceView(face: p["face"].int ?? 0, size: 84)
-                        }
-                    }
+                    .layoutPriority(1)   // the code and the QR get their full size first; the logo takes what's left
                 }
+                .padding(48)
             } else {
                 VStack(spacing: 24) {
                     if let logo = Art.image("t2p-logo") { Image(uiImage: logo).resizable().scaledToFit().frame(height: 120) }

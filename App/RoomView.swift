@@ -126,7 +126,7 @@ struct Waiting: View {
     var onCancel: () -> Void
     var body: some View {
         VStack(spacing: 16) {
-            ProgressView().controlSize(.large).tint(T2P.gold)
+            T2PSpinner(size: 56, label: text)   // #543
             Text(text).font(.headline).foregroundStyle(T2P.text)
             Button("Cancel", action: onCancel).foregroundStyle(T2P.goldText)
         }

@@ -10,7 +10,10 @@ struct HostRoomsSection: View {
     var body: some View {
         if AppModel.canHost {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Host on this iPad").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
+                HStack(spacing: 10) {
+                    Text("Host on this iPad").font(.title3.bold()).foregroundStyle(T2P.text).accessibilityAddTraits(.isHeader)
+                    if busy { T2PSpinner(size: 22, label: "Opening a room") }   // #543: the room is being started
+                }
                 Text("This iPad runs the room: the table, the code and the controls. Everyone plays on their own phone, and a TV can show the table.")
                     .font(.subheadline).foregroundStyle(T2P.muted)
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -59,7 +62,12 @@ struct HostView: View {
                 if let why = endedWhy {
                     EndedHost(why: why, onDone: onDone)
                 } else if host.floor == nil {
-                    Spacer(); ProgressView("Opening room \(host.room.code)…").tint(T2P.gold).foregroundStyle(T2P.text); Spacer()
+                    Spacer()
+                    VStack(spacing: 16) {
+                        T2PSpinner(size: 64, label: "Opening room \(host.room.code)")   // #543
+                        Text("Opening room \(host.room.code)…").font(.headline).foregroundStyle(T2P.text)
+                    }
+                    Spacer()
                 } else if wide {
                     HStack(alignment: .top, spacing: 20) {
                         side.frame(width: min(380, g.size.width * 0.36))
@@ -246,17 +254,27 @@ struct HostStage: View {
         let phase = floor["phase"].string ?? "lobby"
         VStack(spacing: 18) {
             if phase == "lobby" {
-                Spacer()
-                Text("Join at time2play.live").font(.system(size: 30, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
-                Text(code).font(.system(size: 110, weight: .heavy, design: .rounded)).tracking(12).foregroundStyle(.white)
-                    .minimumScaleFactor(0.5).lineLimit(1)
-                if let q = QR.image("https://time2play.live/\(code)", scale: 12) {
-                    Image(uiImage: q).interpolation(.none).resizable().frame(width: 200, height: 200)
-                        .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 16))
-                        .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                // #543: Tyler's looping logo beside how to join (never under the code or the QR, which stay big and sharp)
+                HStack(spacing: 28) {
+                    WaitingLogo(phase: phase)
+                        .frame(maxWidth: 320, maxHeight: 440)
+                    VStack(spacing: 18) {
+                        Text("Join at time2play.live").font(.system(size: 30, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+                        Text(code).font(.system(size: 110, weight: .heavy, design: .rounded)).tracking(12).foregroundStyle(.white)
+                            .minimumScaleFactor(0.5).lineLimit(1)
+                        if let q = QR.image("https://time2play.live/\(code)", scale: 12) {
+                            Image(uiImage: q).interpolation(.none).resizable().frame(width: 200, height: 200)
+                                .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 16))
+                                .accessibilityHidden(true)
+                        }
+                        Text(game.blurb).font(.title3).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: 440)
+                    .layoutPriority(1)
                 }
-                Text(game.blurb).font(.title3).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
-                Spacer()
+                Spacer(minLength: 0)
             } else {
                 switch game {
                 case .overdraft: overdraft

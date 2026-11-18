@@ -182,17 +182,21 @@ private struct IntroPlayer: UIViewRepresentable {
     }
 }
 
-/// You → Intro at launch.
+/// You → Intro at launch, and Logo on the waiting screen (#543).
 struct IntroSection: View {
     @AppStorage(IntroSettings.key) private var on = true
+    @AppStorage(WaitingLoopSettings.key) private var loop = true
 
     var body: some View {
         Section {
             Toggle("Intro at launch", isOn: $on)
                 .tint(T2P.gold)
                 .accessibilityIdentifier("toggle-intro")
+            Toggle("Logo on the waiting screen", isOn: $loop)
+                .tint(T2P.gold)
+                .accessibilityIdentifier("toggle-waiting-loop")
         } footer: {
-            Text("The Time2Play mark when the app opens. It never plays when you open a game’s link, an invite or an alert.")
+            Text("The Time2Play mark when the app opens. It never plays when you open a game’s link, an invite or an alert. The waiting screen’s logo plays beside the room code until the game starts; with Reduce Motion or Low Power Mode on, it holds still.")
                 .foregroundStyle(T2P.muted)
         }
         .listRowBackground(T2P.panel)
