@@ -407,7 +407,7 @@ struct HotDiceView: View {
                 if let f = farkle, "\(f.n):\(f.seq)" == key { farkle = nil }
             }
         }
-        .onAppear { arenaStage.onFirstHit = { Feel.landed() } }
+        .onAppear { arenaStage.onFirstHit = { Feel.landed() }; if DiceArenaStage.debugOn { HangWatch.shared.start() } }
         // build 48: a roll the room has revealed always lands. The 3D throw takes about 2.5 seconds; if the scene still
         // hasn't landed it 4.5 seconds after the room showed it, it settles at once, so the dice can be kept and banked
         .onChange(of: unlanded) { _, key in
@@ -727,7 +727,7 @@ struct HotDiceView: View {
             .animation(.easeOut(duration: 0.2), value: arenaStage.moved)
             keepLine(t).frame(minHeight: 22)
             if DiceArenaStage.debugOn {
-                Text("room=\(self.t.map { "\($0.state) \($0.n).\($0.seq) live=\($0.live.count) sel=\($0.sel.count)" } ?? "-") shown=\(t.state) \(t.n).\(t.seq) settled=\(settled) farkleHeld=\(farkle != nil)")
+                Text(debugLine(t))
                     .font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("hd-debug")
             }
             }
@@ -793,14 +793,29 @@ struct HotDiceView: View {
         .onTapGesture { skipFarkle() }
     }
 
+    /// UI tests' debug line: how many times Roll's and Bank's actions ran.
+    @MainActor static var taps = (roll: 0, bank: 0)
+
+    /// UI tests only (-t2p-arena-debug): the room's turn, the shown one, and what's over the table.
+    private func debugLine(_ shown: HotDice.Turn) -> String {
+        var room = "-"
+        if let r = t { room = "\(r.state) \(r.n).\(r.seq) live=\(r.live.count) sel=\(r.sel.count)" }
+        let parts: [String] = [
+            "room=" + room, "mine=\(mine)", "shown=\(shown.state) \(shown.n).\(shown.seq)", "settled=\(settled)",
+            "farkleHeld=\(farkle != nil)", "celebrate=\(celebrate != nil)", "big=\(big != nil)",
+            "taps roll=\(HotDiceView.taps.roll) bank=\(HotDiceView.taps.bank)", self.room.debugLine,
+        ]
+        return parts.joined(separator: " ")
+    }
+
     @ViewBuilder private var buttons: some View {
         if mine {
             HStack(spacing: 12) {
-                Button { room.move("roll"); Haptics.play() } label: {
+                Button { HotDiceView.taps.roll += 1; room.move("roll"); Haptics.play() } label: {
                     VStack(spacing: 0) { Text("Roll"); Text("\(rollCount) \(rollCount == 1 ? "die" : "dice")").font(.caption) }
                 }
                 .buttonStyle(GoldButtonStyle()).disabled(!canRoll).accessibilityIdentifier("roll")
-                Button { room.move("bank"); Haptics.yourTurn() } label: {
+                Button { HotDiceView.taps.bank += 1; room.move("bank"); Haptics.yourTurn() } label: {
                     // the website's +points; while you need 500 to get on the board, the button itself says so
                     VStack(spacing: 0) { Text("Bank"); Text(boardWait ? "need \((t?.need ?? 0).formatted())" : "+\(bankPoints.formatted())").font(.caption) }
                         .frame(maxWidth: .infinity)
