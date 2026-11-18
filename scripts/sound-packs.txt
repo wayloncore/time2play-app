@@ -1,0 +1,10 @@
+# The OpenGameArt pages .github/workflows/sounds.yml downloads: a short name (the folder, and the start of each file
+# path in scripts/sound-picks.json), then the page. Kenney's free packs (kenney.nl), as posted on OpenGameArt; the
+# workflow prints each page's license and author, and a pick from a page that isn't CC0 or CC-BY is refused.
+# kenney.nl itself refuses automated downloads, so it isn't used. A page that can't be reached is skipped.
+casino      https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips
+interface   https://opengameart.org/content/interface-sounds
+digital     https://opengameart.org/content/63-digital-sound-effects-lasers-phasers-space-etc
+jingles     https://opengameart.org/node/22000
+rpg         https://opengameart.org/content/50-rpg-sound-effects
+impact      https://opengameart.org/content/impact-sounds
