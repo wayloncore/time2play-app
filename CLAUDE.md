@@ -22,7 +22,7 @@ it applies here too.
   (tyleralocke.com/report) only when tapped; `App/FrameWatch.swift` keeps the last game's frame numbers on the phone
   for it; Apple's rating request asks after a finished game, once a version. UI tests never send a report.
 - `App/Assets.xcassets/AppIcon.appiconset`: the app icon (one 1024 × 1024 PNG, no transparency):
-  the website's Time2Play mark (the gold 2 in its ring).
+  the full Time 2 Play ring with the little character on Play, a still from the playful loop.
 
 ## Testing
 - **In a cloud session:** `bash scripts/install-swift.sh` (Swift from swift.org, signature checked), then
