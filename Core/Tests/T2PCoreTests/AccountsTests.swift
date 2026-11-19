@@ -51,4 +51,33 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(RoomCode.fromLink(URL(string: "time2play://join/k7qp")!), "K7QP")
         XCTAssertTrue(Game.allCases.allSatisfy(\.challengeable), "all four games take invites (Nov 18)")
     }
+
+    /// #575: the peek names who a link is from before it's used, and the owner edits a group.
+    func testPeekAndEditGroup() async throws {
+        let (a, rec) = api { req in
+            if req.url!.path.hasSuffix("/links/peek") {
+                let code = JSON.parse(req.httpBody!)!["code"].string
+                if code == "FRIEND12" { return (200, #"{"ok":true,"kind":"friend","friend":{"id":"a_2","name":"Sam","face":3},"already":false,"expires":9}"#) }
+                if code == "GROUP123" { return (200, #"{"ok":true,"kind":"group","group":{"id":"g_1","name":"Thursday crew","size":4},"already":true,"full":false,"expires":9}"#) }
+                return (404, #"{"ok":false,"error":"Not found."}"#)
+            }
+            return (200, #"{"ok":true,"group":{"id":"g_1","name":"Friday crew","mine":true,"members":[{"id":"a_1","name":"Me","face":1},{"id":"a_2","name":"Sam","face":3}]}}"#)
+        }
+        let f = try await a.peekLink("FRIEND12")
+        XCTAssertEqual(f.question, "Add Sam as a friend?"); XCTAssertFalse(f.already)
+        let g = try await a.peekLink("GROUP123")
+        XCTAssertEqual(g.question, "Join Thursday crew?"); XCTAssertTrue(g.already)
+        XCTAssertEqual(g.kind, .group(id: "g_1", name: "Thursday crew", size: 4))
+        // an older server has no peek: it throws, and the app opens the link as before
+        do { _ = try await a.peekLink("OLDSERVR"); XCTFail() } catch let e as API.Failure { XCTAssertEqual(e.status, 404) }
+        let edited = try await a.editGroup("g_1", name: "Friday crew", add: ["a_2"], remove: ["a_9"])
+        XCTAssertEqual(edited?.name, "Friday crew"); XCTAssertEqual(edited?.members.count, 2)
+        let body = JSON.parse(rec.requests.last!.httpBody!)!
+        XCTAssertEqual(rec.requests.last!.url!.path, "/live/players/groups/edit")
+        XCTAssertEqual(body["group"].string, "g_1"); XCTAssertEqual(body["name"].string, "Friday crew")
+        XCTAssertEqual(body["add"][0].string, "a_2"); XCTAssertEqual(body["remove"][0].string, "a_9")
+        // no name: the server keeps it
+        try await a.editGroup("g_1", remove: ["a_2"])
+        XCTAssertNil(JSON.parse(rec.requests.last!.httpBody!)!["name"].string)
+    }
 }
