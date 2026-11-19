@@ -8,11 +8,15 @@ final class ReportUITests: XCTestCase {
 
     func testReportSheet() {
         let app = launch(["-t2p-name", "Sim"])
-        tapWhenReady(app.tabBars.buttons["You"])
+        openTab(app, "You")
         let open = app.buttons["send-report"]
         for _ in 0..<12 where !(open.exists && open.isHittable) { app.swipeUp() }
         tapWhenReady(open)
-        let send = app.buttons["report-send"]
+        let slow = app.buttons["report-slow"]
+        if !slow.waitForExistence(timeout: 8) { shot(app, "594-\(device)-report-not-open") }
+        XCTAssertTrue(slow.exists, "the report sheet opens")
+        var send = app.buttons["report-send"]
+        if !send.waitForExistence(timeout: 3) { send = app.navigationBars.buttons["Send"] }   // a toolbar button's id can go missing
         XCTAssertTrue(send.waitForExistence(timeout: 5))
         XCTAssertFalse(send.isEnabled, "nothing to send until something's picked or written")
         tapWhenReady(app.buttons["report-slow"])

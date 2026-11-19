@@ -13,7 +13,7 @@ final class TipJarUITests: XCTestCase {
 
     func testTipJarAndThanks() {
         let app = launch(["-t2p-tips-demo", "-t2p-name", "Sim"])
-        tapWhenReady(app.tabBars.buttons["You"])
+        openTab(app, "You")
         let tip = app.buttons["tip-small"]
         scrollTo(app, tip)
         XCTAssertTrue(tip.waitForExistence(timeout: 10), "the Tip jar in You")
@@ -35,7 +35,7 @@ final class TipJarUITests: XCTestCase {
     /// Without the stand-in: whatever StoreKit itself answers (no products yet in the App Store, so no Tip jar).
     func testHiddenWithoutProducts() {
         let app = launch(["-t2p-name", "Sim"])
-        tapWhenReady(app.tabBars.buttons["You"])
+        openTab(app, "You")
         let report = app.buttons["send-report"]
         scrollTo(app, report)
         sleep(3)   // StoreKit had its chance to answer

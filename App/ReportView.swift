@@ -9,7 +9,8 @@ import T2PCore
 /// the morning digest files it as a to-do. No name, no account, no email, nothing tracked.
 /// The UI tests never send one (they run with -uitest-reset): the sheet says "Sent" without sending.
 struct ReportSection: View {
-    @State private var open = false
+    /// The sheet's switch, held by the screen around the list (a sheet on a row inside a Form doesn't present).
+    @Binding var open: Bool
     var body: some View {
         Section {
             Button { open = true } label: {
@@ -22,7 +23,6 @@ struct ReportSection: View {
                 .foregroundStyle(T2P.muted)
         }
         .listRowBackground(T2P.panel)
-        .sheet(isPresented: $open) { ReportSheet() }
     }
 }
 

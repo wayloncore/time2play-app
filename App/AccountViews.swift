@@ -131,6 +131,7 @@ struct YouView: View {
     @State private var picking = false
     @State private var taps = 0
     @State private var review = false
+    @State private var reporting = false
     @State private var name = ""
     @AppStorage(Table3DSwitch.key) private var table3D = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
@@ -206,7 +207,7 @@ struct YouView: View {
 
                 TipJarSection()   // #598: only when the App Store has the tips
                 SupporterSection()
-                ReportSection()   // #594
+                ReportSection(open: $reporting)   // #594
 
                 Section {
                     Link("Help and support", destination: URL(string: "https://tyleralocke.com/help#app-support")!)
@@ -231,6 +232,7 @@ struct YouView: View {
                 }))
             }
             .sheet(isPresented: $review) { ReviewSignIn() }
+            .sheet(isPresented: $reporting) { ReportSheet().environmentObject(app) }
         }
     }
 

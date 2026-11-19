@@ -76,3 +76,13 @@ extension XCTestCase {
         field.typeText(text)
     }
 }
+
+extension XCTestCase {
+    /// A tab of the app: the tab bar on an iPhone; on an iPad (iOS 18 and later) the tabs sit at the top, where the
+    /// tab bar query doesn't always find them.
+    func openTab(_ app: XCUIApplication, _ name: String) {
+        let bar = app.tabBars.buttons[name]
+        if bar.waitForExistence(timeout: 8) { bar.tap(); return }
+        tapWhenReady(app.buttons[name].firstMatch, 10)
+    }
+}
