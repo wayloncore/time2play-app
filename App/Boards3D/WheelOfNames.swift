@@ -180,7 +180,8 @@ struct WheelOfNamesView: View {
                 .gesture(DragGesture(minimumDistance: 24).onEnded { v in
                     if hypot(v.predictedEndTranslation.width, v.predictedEndTranslation.height) > 120 { model.spinNow(reduced: reduceMotion) }
                 })
-                .accessibilityElement(children: .ignore)
+                // UI tests (-t2p-arena-debug) reach the 3D wheel's state line inside it
+                .accessibilityElement(children: DiceArenaStage.debugOn ? .contain : .ignore)
                 .accessibilityLabel("The wheel, \(model.wheel.names.count) names")
                 .accessibilityIdentifier(use3D ? "wheel-3d" : "wheel-flat")
             }

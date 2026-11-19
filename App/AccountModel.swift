@@ -181,9 +181,10 @@ extension AppModel {
         await join(code: c.room)
     }
 
-    /// A friend or group link (time2play.live/f/CODE), opened from outside the app: a painted question first. The
-    /// server tells whose link it is only by opening it (links/open adds the friend or joins the group at once), so
-    /// the question can't name them yet; the answer does.
+    /// A friend or group link (time2play.live/f/CODE), opened from outside the app: a painted question first. Since
+    /// #575 the server's peek says whose link it is before it's used, so the question names them ("Add Sam as a
+    /// friend?", "Join Thursday crew?"). An older server without the peek gets the question as before, which can't
+    /// name them; the answer does.
     func openFriendLink(_ code: String) async {
         guard signedIn else {
             tab = .friends
@@ -192,6 +193,44 @@ extension AppModel {
                                   identifier: "dialog-link-sign-in")
             return
         }
+        let peek: LinkPeek?
+        if SocialDemo.on {
+            peek = code.hasPrefix("GRP") ? LinkPeek(kind: .group(id: "g_demo_board", name: "Board game night", size: 5))
+                : SocialDemo.oldServer ? nil : LinkPeek(kind: .friend(SocialDemo.sam))
+        } else {
+            peek = try? await api.peekLink(code)
+        }
+        guard let p = peek else { askToOpen(code); return }
+        switch p.kind {
+        case let .friend(f) where p.already:
+            tab = .friends
+            AppDialogs.shared.say("You and \(f.name) are already friends", "Invite them from your room’s lobby, or from here.", ok: "OK", identifier: "dialog-link-already")
+        case let .group(_, name, _) where p.already:
+            tab = .friends
+            AppDialogs.shared.say("You’re already in \(name)", "Invite the whole group from your room’s lobby, or from here.", ok: "OK", identifier: "dialog-link-already")
+        case let .group(_, name, _) where p.full:
+            AppDialogs.shared.say("\(name) is full", "Ask them to make room, or to start another group.", identifier: "dialog-link-failed")
+        case let .friend(f):
+            AppDialogs.shared.show(GameDialog(
+                title: p.question,
+                message: "You’ll be friends with \(f.name), so you can invite each other to games.",
+                choices: [GameChoice(label: "Add \(f.name)", kind: .gold, identifier: "link-open") { [weak self] in
+                    Task { await self?.acceptFriendLink(code, demoName: f.name) }
+                }],
+                cancel: "Not now", identifier: "dialog-friend-link"))
+        case let .group(_, name, size):
+            AppDialogs.shared.show(GameDialog(
+                title: p.question,
+                message: size == 1 ? "1 person is in it. You’ll get the group’s invites to games." : "\(size) people are in it. You’ll get the group’s invites to games.",
+                choices: [GameChoice(label: "Join the group", kind: .gold, identifier: "link-open") { [weak self] in
+                    Task { await self?.acceptFriendLink(code, demoName: name, demoGroup: true) }
+                }],
+                cancel: "Not now", identifier: "dialog-friend-link"))
+        }
+    }
+
+    /// The question before #575 (an older server): it can't say whose link it is.
+    private func askToOpen(_ code: String) {
         AppDialogs.shared.show(GameDialog(
             title: "Open this friend link?",
             message: "A friend link makes you friends with whoever sent it. A group link puts you in their group.",
@@ -201,9 +240,10 @@ extension AppModel {
             cancel: "Not now", identifier: "dialog-friend-link"))
     }
 
-    private func acceptFriendLink(_ code: String) async {
+    private func acceptFriendLink(_ code: String, demoName: String = "Sam", demoGroup: Bool = false) async {
         if SocialDemo.on {
-            AppDialogs.shared.say("You and Sam are friends", "Invite them from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done")
+            if demoGroup { AppDialogs.shared.say("You joined \(demoName)", "Invite the whole group from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done") }
+            else { AppDialogs.shared.say("You and \(demoName) are friends", "Invite them from your room’s lobby, or from here.", ok: "Nice", identifier: "dialog-link-done") }
             tab = .friends
             return
         }

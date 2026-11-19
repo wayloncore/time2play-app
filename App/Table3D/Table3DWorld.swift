@@ -43,8 +43,10 @@ enum T3DTier: Int, Comparable {
 
 /// The Overdraft table in SceneKit (#496): the glass table, the piles, the seats' hands, the turn flow, the element
 /// scene round it (sky, ground, particles, grass, lightning, an optional painted backdrop per suit), and cards in the
-/// air. Everything in the scene is changed on SceneKit's render thread: other threads `post` changes.
-final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
+/// air. Everything in the scene changes on the table's own clock thread (`tick`, from a SceneTicker; Nov 18,
+/// wayloncore/tyleralocke#571): SceneKit's render callback sometimes stopped after a frame and the table froze, cards
+/// in mid-air. Other threads `post` changes. The render callback now only times frames, for stepping down.
+final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     static let suits = ["ember", "wave", "bolt", "leaf"]   // the uniforms' element order
     let scene = SCNScene()
     let cameraNode = SCNNode()
@@ -52,6 +54,9 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     var reduced = false
 
     private var u = T3DUniforms()
+    /// The uniforms as the last frame left them, for the shaders (read on SceneKit's render thread).
+    private var uShown = T3DUniforms()
+    private let uLock = NSLock()
     private let lock = NSLock()
     private var pending: [() -> Void] = []
     private var lastTime: TimeInterval?
@@ -95,11 +100,21 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     private var stepDowns = 0
     var autoStepDown = true
     var onStepDown: ((Int) -> Void)?
+    /// The wall clock at the start of this frame (for the flights' safety net).
+    private var wall: Double = 0
+    /// How many cards the safety net put where they belong, and how many frames have run.
+    private var rescued = 0, frames = 0
+    /// A card still in the air this long after it should have landed is put where it belongs (Nov 18, #571).
+    static let safetyNet = 6.0
+    /// UI tests (-t2p-arena-debug): the table's own state in one line, about twice a second.
+    var onDebug: ((String) -> Void)?
+    private var debugAt = 0.0
 
     init(tier: T3DTier) {
         self.tier = tier
         super.init()
         build()
+        uShown = u
     }
 
     // MARK: talking to the render thread
@@ -113,14 +128,20 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
     /// Runs a change on the scene's clock, `after` seconds from now (still mode).
     func at(_ after: Double, _ f: @escaping () -> Void) { post { [weak self] in guard let s = self else { return }; s.timers.append((s.clock + after, f)) } }
 
+    /// SceneKit's render callback: it only times frames now (stepping down when they run long). The scene moves in tick.
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        watchFrames(time)
+    }
+
+    /// One frame (the SceneTicker's thread): what was posted, the timers, then the table.
+    func tick(_ time: TimeInterval) {
+        wall = time
         lock.lock(); let work = pending; pending = []; lock.unlock()
         work.forEach { $0() }
         // a still (screenshots) keeps real time even when a slow simulator draws few frames, so it settles on time
         var dt = min(freezeAt == nil ? 0.05 : 0.25, max(0, time - (lastTime ?? time)))
         if lastTime == nil { dt = 1.0 / 60 }
         lastTime = time
-        watchFrames(time)
         if let f = freezeAt {
             if clock >= f {
                 dt = 0
@@ -132,6 +153,13 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         timers.removeAll { $0.at <= clock }
         due.forEach { $0.run() }
         step(dt)
+        uLock.lock(); uShown = u; uLock.unlock()
+        frames += 1
+        if let cb = onDebug, time - debugAt >= 0.5 {
+            debugAt = time
+            let line = "frames=\(frames) flights=\(flights.count) rescued=\(rescued) clk=\(String(format: "%.1f", clock))"
+            DispatchQueue.main.async { cb(line) }
+        }
     }
 
     // MARK: building the scene
@@ -224,7 +252,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         p.fragmentFunctionName = f
         p.isOpaque = opaque
         p.handleBinding(ofBufferNamed: "u", frequency: .perFrame) { [weak self] stream, _, _, _ in
-            guard var u = self?.u else { return }
+            guard let self else { return }
+            self.uLock.lock(); var u = self.uShown; self.uLock.unlock()
             stream.writeBytes(&u, count: MemoryLayout<T3DUniforms>.stride)
         }
         let m = SCNMaterial()
@@ -698,6 +727,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         var bow: Float = 0, arrive: Float = 0, rock: Float = 0, kick: Float = 0
         var fade = false
         var onLand: (() -> Void)?, onDone: (() -> Void)?
+        /// When it should be down, on the wall clock (the safety net's reference).
+        var due: Double = 0
     }
     private var flights: [Flight] = []
 
@@ -739,6 +770,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
             f.landQ = simd_quatf(angle: f.kick, axis: [0, 1, 0]) * simd_quatf(angle: f.rock, axis: f.axis) * q1
         }
         f.onLand = onLand; f.onDone = onDone
+        f.due = wall + Double(delay + f.lift + f.dur + f.settle)
         node.isHidden = true
         node.renderingOrder = 6
         scene.rootNode.addChildNode(node)
@@ -755,6 +787,11 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         while i >= 0 {
             var f = flights[i]
             f.t += dt
+            // the safety net (Nov 18, #571): a card still flying well after it should be down goes where it belongs now
+            if freezeAt == nil, wall > f.due + Self.safetyNet {
+                f.t = max(f.t, f.lift + f.dur + f.settle)
+                rescued += 1
+            }
             if f.t < 0 { flights[i] = f; i -= 1; continue }
             f.node.isHidden = false
             var done = false
@@ -1082,13 +1119,17 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate {
         frameTimes.removeAll()
         guard span / 119 > 1.0 / 48 else { return }
         stepDowns += 1
-        if stepDowns == 1 && grassNode != nil {
-            grassNode?.removeFromParentNode(); grassNode = nil
-        } else {
-            tier = T3DTier(rawValue: max(0, tier.rawValue - 1)) ?? .low
-            buildParticles()
-        }
         let n = stepDowns
+        // the scene changes on its own clock thread
+        post { [weak self] in
+            guard let self else { return }
+            if n == 1 && self.grassNode != nil {
+                self.grassNode?.removeFromParentNode(); self.grassNode = nil
+            } else {
+                self.tier = T3DTier(rawValue: max(0, self.tier.rawValue - 1)) ?? .low
+                self.buildParticles()
+            }
+        }
         DispatchQueue.main.async { [weak self] in self?.onStepDown?(n) }
     }
 }

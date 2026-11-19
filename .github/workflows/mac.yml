@@ -100,7 +100,8 @@ jobs:
               if a.get("Name") == "LaunchNavy": print("LaunchNavy:", a.get("Color components"), a.get("Colorspace"))' || true
           ls -l "$A"/intro.mp4 "$A"/intro-end.jpg "$A"/waiting-loop.mp4 "$A"/waiting-still.jpg 2>&1 || true   # #543: the waiting loop too
       - name: The tour again on an iPad (#405)
-        if: github.event.inputs.ipad == 'true'
+        # runs even when an iPhone test failed, so one run still checks both
+        if: ${{ !cancelled() && github.event.inputs.ipad == 'true' }}
         env:
           IPAD_ONLY: ${{ github.event.inputs.ipad_only }}
         run: |

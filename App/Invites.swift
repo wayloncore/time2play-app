@@ -41,8 +41,10 @@ enum SocialDemo {
     static let failInvites = args.contains("-t2p-invite-fail")
     /// An invite banner a moment after launch.
     static let banner = args.contains("-t2p-demo-banner")
+    /// A server from before #575, with no link peek: the old question.
+    static let oldServer = args.contains("-t2p-old-server")
     #else
-    static let empty = false, on = false, failInvites = false, banner = false
+    static let empty = false, on = false, failInvites = false, banner = false, oldServer = false
     #endif
 
     static let me = PlayerCard(id: "a_demo_me", name: "Sim", face: 9)

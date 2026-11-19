@@ -36,6 +36,32 @@ public struct PlayerGroup: Equatable, Sendable, Identifiable {
     public init(id: String, name: String, mine: Bool, members: [PlayerCard]) { self.id = id; self.name = name; self.mine = mine; self.members = members }
 }
 
+/// What a friend or group link leads to, before it's opened (#575): who it's from, or the group's name and size.
+public struct LinkPeek: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable { case friend(PlayerCard), group(id: String, name: String, size: Int) }
+    public var kind: Kind
+    /// Already friends, or already in the group.
+    public var already: Bool
+    /// The group has no room left.
+    public var full: Bool
+    public init(kind: Kind, already: Bool = false, full: Bool = false) { self.kind = kind; self.already = already; self.full = full }
+    public init?(_ j: JSON) {
+        guard j["ok"].bool != false else { return nil }
+        if j["kind"].string == "friend", let f = PlayerCard(j["friend"]) { kind = .friend(f) }
+        else if j["kind"].string == "group", let id = j["group"]["id"].string {
+            kind = .group(id: id, name: j["group"]["name"].string ?? "", size: j["group"]["size"].int ?? 0)
+        } else { return nil }
+        already = j["already"].bool ?? false; full = j["full"].bool ?? false
+    }
+    /// The question asked before the link is used ("Add Sam as a friend?", "Join Thursday crew?").
+    public var question: String {
+        switch kind {
+        case let .friend(f): return "Add \(f.name) as a friend?"
+        case let .group(_, name, _): return "Join \(name)?"
+        }
+    }
+}
+
 /// A challenge: a ready-made room and an invite to it (#396). Lasts 2 hours.
 public struct Challenge: Equatable, Sendable, Identifiable {
     public var id: String; public var from: PlayerCard; public var game: Game?; public var room: String; public var created: Double
@@ -105,11 +131,27 @@ extension API {
         return ("group", j["group"]["name"].string ?? "")
     }
 
+    /// A look at a friend or group link before it's used (#575; the website's /links/peek, #574): adds no one. Throws
+    /// on a bad link, and on an older server that has no peek (the app then opens the link as before).
+    public func peekLink(_ code: String) async throws -> LinkPeek {
+        let j = try await players("links/peek", ["code": .string(code)])
+        guard let p = LinkPeek(j) else { throw Failure(status: 0, message: "No peek.", code: "nopeek") }
+        return p
+    }
+
     public func groups() async throws -> [PlayerGroup] { try await players("groups")["groups"].array.compactMap(PlayerGroup.init) }
     public func createGroup(name: String, members: [String]) async throws {
         _ = try await players("groups/create", ["name": .string(name), "members": .array(members.map { .string($0) })])
     }
     public func groupLink(_ group: String) async throws -> String { try await players("groups/link", ["group": .string(group)])["code"].string ?? "" }
+    /// The owner changes a group (#575; the website's /groups/edit, #574): a new name (nil keeps it), friends put in,
+    /// members taken out. Returns the group as it is now.
+    @discardableResult
+    public func editGroup(_ group: String, name: String? = nil, add: [String] = [], remove: [String] = []) async throws -> PlayerGroup? {
+        var body: [String: JSON] = ["group": .string(group), "add": .array(add.map { .string($0) }), "remove": .array(remove.map { .string($0) })]
+        if let name { body["name"] = .string(name) }
+        return PlayerGroup(try await players("groups/edit", .object(body))["group"])
+    }
     public func leaveGroup(_ group: String) async throws { _ = try await players("groups/leave", ["group": .string(group)]) }
 
     public func challenges() async throws -> [Challenge] { try await players("challenges")["challenges"].array.compactMap(Challenge.init) }

@@ -100,7 +100,7 @@ final class DiceArenaStage: ObservableObject {
     /// thread is doing can slow a roll down. It ends once the stage (and with it the world) is gone.
     private func startTicking() {
         guard let w = world else { return }
-        Ticker.start(w)
+        SceneTicker.start(w, name: "dice-arena")
     }
 
     // #523: what the player does to the view (Hot Dice): pinch, one finger to look round, two to slide, double-tap
@@ -144,22 +144,28 @@ final class DiceArenaStage: ObservableObject {
     }
 }
 
-/// The dice scene's clock (build 48): a thread with its own run loop and display link that moves the world a frame at
-/// a time, as SceneKit's render callback used to (that callback sometimes stopped after the first frame). It holds
-/// the world weakly and ends, thread and all, once the world is gone.
-private final class Ticker: NSObject {
-    private weak var world: DiceArenaWorld?
-    private init(_ w: DiceArenaWorld) { world = w }
+/// A 3D scene that moves a frame at a time from a SceneTicker.
+protocol SceneTicking: AnyObject {
+    func tick(_ time: TimeInterval)
+}
 
-    static func start(_ w: DiceArenaWorld) {
-        let ticker = Ticker(w)
+/// A 3D scene's clock (build 48; since Nov 18 for the Overdraft table and the 3D wheel too, wayloncore/tyleralocke#571):
+/// a thread with its own run loop and display link that moves the world a frame at a time, as SceneKit's render
+/// callback used to (that callback sometimes stopped after the first frame, and the scene froze). It holds the world
+/// weakly and ends, thread and all, once the world is gone.
+final class SceneTicker: NSObject {
+    private weak var world: SceneTicking?
+    private init(_ w: SceneTicking) { world = w }
+
+    static func start(_ w: SceneTicking, name: String) {
+        let ticker = SceneTicker(w)
         let thread = Thread {
-            let link = CADisplayLink(target: ticker, selector: #selector(Ticker.fire(_:)))
+            let link = CADisplayLink(target: ticker, selector: #selector(SceneTicker.fire(_:)))
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
             link.add(to: .current, forMode: .default)
             RunLoop.current.run()   // returns once the link is gone
         }
-        thread.name = "dice-arena"
+        thread.name = name
         thread.qualityOfService = .userInteractive
         thread.start()
     }

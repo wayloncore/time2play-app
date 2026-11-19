@@ -92,6 +92,8 @@ final class HotDiceBankUITests: XCTestCase {
                 if landed == "farkle" {
                     let words = said(banner)
                     XCTAssertTrue(words.contains("Farkle"), "\(name): a Farkle says so: \(words)")
+                    // #576: the grayed-out Bank shows no lost points after a Farkle
+                    if bank.exists { let b = said(bank); XCTAssertFalse(b.contains("+"), "\(name): Bank after a Farkle says just Bank: \(b)") }
                     if !farkled { shot(app, "bank-\(device)\(name)-farkle"); farkled = true }
                     // a Farkle banks nothing: your score stays (or loses 1,000 on a third in a row)
                     sleep(4)

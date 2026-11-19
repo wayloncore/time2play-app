@@ -7,10 +7,10 @@ import T2PCore
 /// and the dice. A throw plays a simulated tumble (DiceSim) turned so each die lands on the room's face; everything
 /// else is a short tween. Few nodes, no SceneKit physics: the tumble is worked out before it plays.
 /// Build 48: the scene moves a frame at a time on a thread of its own, from the stage's display link (`tick`, see
-/// Ticker), never from SceneKit's render callback. SceneKit sometimes stopped calling back after the first frame, so a
+/// SceneTicker), never from SceneKit's render callback. SceneKit sometimes stopped calling back after the first frame, so a
 /// roll never landed, its dice couldn't be kept and Bank never came on. Other threads `post` changes, run at the start
 /// of the next frame.
-final class DiceArenaWorld: NSObject {
+final class DiceArenaWorld: NSObject, SceneTicking {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     var reduced = false

@@ -259,6 +259,8 @@ struct FriendsView: View {
     @State private var inviting: PlayerCard?
     @State private var invitingGroup: PlayerGroup?
     @State private var newGroup = false
+    /// Your own group, being changed (#575).
+    @State private var editingGroup: PlayerGroup?
     @State private var share: ShareItem?
 
     var body: some View {
@@ -307,6 +309,7 @@ struct FriendsView: View {
                 GamePicker(title: "Invite \(g.name)") { game in Task { await app.challenge(game, to: [], group: g) } }.environmentObject(app)
             }
             .sheet(isPresented: $newGroup) { NewGroup().environmentObject(app) }
+            .sheet(item: $editingGroup) { g in NewGroup(editing: g).environmentObject(app) }
             .sheet(item: $share) { s in ShareSheet(items: [s.url]) }
         }
     }
@@ -395,12 +398,23 @@ struct FriendsView: View {
                             .accessibilityIdentifier("group-invite-\(g.id)")
                         PaintedIconButton(icon: "ellipsis", label: "More for \(g.name)", identifier: "group-more-\(g.id)") { groupMenu(g) }
                     }
-                    HStack(spacing: -8) {
-                        ForEach(g.members.prefix(8)) { m in
-                            FaceView(face: m.face, size: 30).overlay(Circle().stroke(Painted.faceBottom, lineWidth: 1.5))
+                    HStack(spacing: 8) {
+                        HStack(spacing: -8) {
+                            ForEach(g.members.prefix(8)) { m in
+                                FaceView(face: m.face, size: 30).overlay(Circle().stroke(Painted.faceBottom, lineWidth: 1.5))
+                            }
+                        }
+                        .accessibilityHidden(true)
+                        Spacer(minLength: 4)
+                        if g.mine {
+                            // #575: your own group: rename it, put friends in, take people out (on the faces' line, so
+                            // the name keeps its room)
+                            Button("Edit") { editingGroup = g }
+                                .buttonStyle(PaintedButtonStyle(kind: .quiet, wide: false, compact: true))
+                                .accessibilityLabel("Edit \(g.name)")
+                                .accessibilityIdentifier("group-edit-\(g.id)")
                         }
                     }
-                    .accessibilityHidden(true)
                     HStack(spacing: 6) {
                         if g.mine { PaintedTag(text: "Yours") }
                         Text(g.line(me: app.account?.account.id)).font(.caption).foregroundStyle(Painted.paperDim)
@@ -470,10 +484,12 @@ struct FriendsView: View {
     private func groupMenu(_ g: PlayerGroup) {
         let a = app
         let leave = g.mine ? "Delete the group" : "Leave the group"
+        var choices: [GameChoice] = [GameChoice(label: "Invite to a game", kind: .gold, identifier: "group-invite") { invitingGroup = g }]
+        if g.mine { choices.append(GameChoice(label: "Edit the group", icon: "pencil", identifier: "group-edit") { editingGroup = g }) }
+        choices.append(GameChoice(label: "Share the group’s link", icon: "link", identifier: "group-link") { Task { await shareGroup(g) } })
+        choices.append(GameChoice(label: leave, kind: .danger, identifier: "group-leave") { confirmLeave(g) })
         AppDialogs.shared.show(GameDialog(title: g.name, message: g.line(me: a.account?.account.id),
-            choices: [GameChoice(label: "Invite to a game", kind: .gold, identifier: "group-invite") { invitingGroup = g },
-                      GameChoice(label: "Share the group’s link", icon: "link", identifier: "group-link") { Task { await shareGroup(g) } },
-                      GameChoice(label: leave, kind: .danger, identifier: "group-leave") { confirmLeave(g) }],
+            choices: choices,
             cancel: "Back", identifier: "dialog-group"))
     }
 
@@ -564,24 +580,49 @@ struct GamePicker: View {
 }
 
 /// Make a group: a name and the friends in it (painted, Nov 18). Anyone else joins by the group's link.
+/// #575: the same sheet edits your own group: its name, friends put in, members taken out (one who joined by the
+/// link can be taken out, but only friends can be put in).
 struct NewGroup: View {
     @EnvironmentObject var app: AppModel
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var name = DialogField(placeholder: "Group name, like Thursday crew", identifier: "group-name")
-    @State private var picked: Set<String> = []
+    /// The group being changed (nil makes a new one).
+    var editing: PlayerGroup? = nil
+    @StateObject private var name: DialogField
+    @State private var picked: Set<String>
+
+    init(editing: PlayerGroup? = nil) {
+        self.editing = editing
+        _name = StateObject(wrappedValue: DialogField(editing?.name ?? "", placeholder: "Group name, like Thursday crew", identifier: "group-name"))
+        _picked = State(initialValue: Set((editing?.members ?? []).map(\.id)))
+    }
+
+    private var myId: String? { app.account?.account.id }
+    /// Who can be in it: the group's members (not you), then your friends who aren't.
+    private var people: [PlayerCard] {
+        let members = (editing?.members ?? []).filter { $0.id != myId }
+        let ids = Set(members.map(\.id))
+        return members + app.friends.friends.filter { !ids.contains($0.id) }
+    }
+    private var changes: (name: String?, add: [String], remove: [String]) {
+        guard let g = editing else { return (nil, [], []) }
+        let was = Set(g.members.map(\.id)).subtracting([myId ?? ""])
+        let now = picked.subtracting([myId ?? ""])
+        let n = name.trimmed
+        return (n == g.name ? nil : n, Array(now.subtracting(was)).sorted(), Array(was.subtracting(now)).sorted())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("MAKE A GROUP").font(Painted.display(19)).tracking(1.3).foregroundStyle(Painted.titleGold).accessibilityAddTraits(.isHeader)
+                Text(editing == nil ? "MAKE A GROUP" : "EDIT GROUP").font(Painted.display(19)).tracking(1.3).foregroundStyle(Painted.titleGold).accessibilityAddTraits(.isHeader)
                 Spacer()
                 PaintedIconButton(icon: "xmark", label: "Cancel", identifier: "group-cancel") { dismiss() }
             }
             DialogFieldView(field: name)
-            Text("FRIENDS IN IT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Painted.paperDim)
+            Text(editing == nil ? "FRIENDS IN IT" : "WHO’S IN IT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Painted.paperDim)
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(app.friends.friends) { p in
+                    ForEach(people) { p in
                         let on = picked.contains(p.id)
                         Button { if on { picked.remove(p.id) } else { picked.insert(p.id) }; Haptics.select() } label: {
                             HStack(spacing: 12) {
@@ -602,15 +643,38 @@ struct NewGroup: View {
                     }
                 }
             }
-            Button(picked.isEmpty ? "Make it" : "Make it with \(picked.count) \(picked.count == 1 ? "friend" : "friends")") {
-                let n = name.trimmed, m = Array(picked), a = app
-                Task { await a.social { try await a.api.createGroup(name: n, members: m) } }
-                dismiss()
+            if let g = editing {
+                let c = changes
+                Button("Save") {
+                    let a = app
+                    if SocialDemo.on {
+                        // the stand-in groups change in place, so the screen shows it
+                        if let i = a.groups.firstIndex(where: { $0.id == g.id }) {
+                            a.groups[i].name = c.name ?? g.name
+                            let everyone = g.members + a.friends.friends
+                            a.groups[i].members = g.members.filter { !c.remove.contains($0.id) } + c.add.compactMap { id in everyone.first { $0.id == id } }
+                        }
+                    } else {
+                        Task { await a.social { try await a.api.editGroup(g.id, name: c.name, add: c.add, remove: c.remove) } }
+                    }
+                    Haptics.select()
+                    dismiss()
+                }
+                .buttonStyle(PaintedButtonStyle(kind: .gold))
+                .disabled(name.trimmed.count < 2 || (c.name == nil && c.add.isEmpty && c.remove.isEmpty))
+                .accessibilityIdentifier("group-save")
+                Text("Only friends can be put in. Anyone else joins with the group’s link.").font(.caption).foregroundStyle(Painted.paperDim)
+            } else {
+                Button(picked.isEmpty ? "Make it" : "Make it with \(picked.count) \(picked.count == 1 ? "friend" : "friends")") {
+                    let n = name.trimmed, m = Array(picked), a = app
+                    Task { await a.social { try await a.api.createGroup(name: n, members: m) } }
+                    dismiss()
+                }
+                .buttonStyle(PaintedButtonStyle(kind: .gold))
+                .disabled(name.trimmed.count < 2)
+                .accessibilityIdentifier("group-make")
+                Text("Anyone else can join with the group’s link, from Groups.").font(.caption).foregroundStyle(Painted.paperDim)
             }
-            .buttonStyle(PaintedButtonStyle(kind: .gold))
-            .disabled(name.trimmed.count < 2)
-            .accessibilityIdentifier("group-make")
-            Text("Anyone else can join with the group’s link, from Groups.").font(.caption).foregroundStyle(Painted.paperDim)
         }
         .padding(20)
         .frame(maxWidth: 620)
@@ -619,6 +683,6 @@ struct NewGroup: View {
         .environment(\.colorScheme, .dark)
         .presentationBackground { PaintedBackdrop() }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("new-group")
+        .accessibilityIdentifier(editing == nil ? "new-group" : "edit-group")
     }
 }
