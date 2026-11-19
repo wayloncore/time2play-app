@@ -396,21 +396,25 @@ struct FriendsView: View {
                             .buttonStyle(PaintedButtonStyle(kind: .gold, wide: false, compact: true))
                             .accessibilityLabel("Invite \(g.name)")
                             .accessibilityIdentifier("group-invite-\(g.id)")
+                        PaintedIconButton(icon: "ellipsis", label: "More for \(g.name)", identifier: "group-more-\(g.id)") { groupMenu(g) }
+                    }
+                    HStack(spacing: 8) {
+                        HStack(spacing: -8) {
+                            ForEach(g.members.prefix(8)) { m in
+                                FaceView(face: m.face, size: 30).overlay(Circle().stroke(Painted.faceBottom, lineWidth: 1.5))
+                            }
+                        }
+                        .accessibilityHidden(true)
+                        Spacer(minLength: 4)
                         if g.mine {
-                            // #575: your own group: rename it, put friends in, take people out
+                            // #575: your own group: rename it, put friends in, take people out (on the faces' line, so
+                            // the name keeps its room)
                             Button("Edit") { editingGroup = g }
                                 .buttonStyle(PaintedButtonStyle(kind: .quiet, wide: false, compact: true))
                                 .accessibilityLabel("Edit \(g.name)")
                                 .accessibilityIdentifier("group-edit-\(g.id)")
                         }
-                        PaintedIconButton(icon: "ellipsis", label: "More for \(g.name)", identifier: "group-more-\(g.id)") { groupMenu(g) }
                     }
-                    HStack(spacing: -8) {
-                        ForEach(g.members.prefix(8)) { m in
-                            FaceView(face: m.face, size: 30).overlay(Circle().stroke(Painted.faceBottom, lineWidth: 1.5))
-                        }
-                    }
-                    .accessibilityHidden(true)
                     HStack(spacing: 6) {
                         if g.mine { PaintedTag(text: "Yours") }
                         Text(g.line(me: app.account?.account.id)).font(.caption).foregroundStyle(Painted.paperDim)
