@@ -281,7 +281,7 @@ struct ArtGallery: View {
                         GameArt(game: g).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
-                InviteBannerView(note: InviteNote(text: "Sam invited you to Hot Dice", game: .hotDice, room: "K7QP", face: 3), join: {}, close: {})
+                InviteBannerView(note: InviteNote(text: "Sam invited you to 10,000", game: .hotDice, room: "K7QP", face: 3), join: {}, close: {})
             }
             .padding(16)
         }

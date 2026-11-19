@@ -62,7 +62,7 @@ struct DiceSection: View {
                 .onChange(of: classicDice) { _, c in dice3D = !c }   // the old key, kept in step for the version before
                 .accessibilityIdentifier("toggle-classic-dice")
         } footer: {
-            Text("Rolls Hot Dice and Roll Call with the flat dice instead of the 3D ones.").foregroundStyle(T2P.muted)
+            Text("Rolls 10,000 and Yacht Dice with the flat dice instead of the 3D ones.").foregroundStyle(T2P.muted)
         }
         .listRowBackground(T2P.panel)
     }
@@ -146,7 +146,7 @@ struct AlertsSection: View {
         } header: {
             Text("Alerts")
         } footer: {
-            Text(app.signedIn ? "Your turn, when the app is closed: “Your turn in Hot Dice.” Tapping it opens the room. Never for practice games."
+            Text(app.signedIn ? "Your turn, when the app is closed: “Your turn in 10,000.” Tapping it opens the room. Never for practice games."
                  : "Alerts are for signed-in players. Sign in above to get invites and turn alerts.")
                 .foregroundStyle(T2P.muted)
         }

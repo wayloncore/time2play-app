@@ -260,6 +260,7 @@ struct GameOver: View {
             Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
                 .font(Painted.display(17)).foregroundStyle(Painted.goldLight).frame(minHeight: 44)
                 .accessibilityIdentifier("back-to-library")
+            TipLine()   // #598: quiet, and only when there are tips to give
         }
     }
 }
@@ -378,7 +379,7 @@ struct HotDiceView: View {
                 GameOver(room: room, players: view.players, winners: view.common.winners ?? [], me: me, reason: endReason)
             } else {
                 ScoreStrip(players: view.players, turn: t?.id, owner: view.common.owner, me: me, compact: arena) { p in
-                    !view.board || p.on ? (p.strikes > 0 ? "\(p.strikes) Farkle\(p.strikes == 1 ? "" : "s")" : nil) : "not on the board"
+                    !view.board || p.on ? (p.strikes > 0 ? "\(p.strikes) bust\(p.strikes == 1 ? "" : "s")" : nil) : "not on the board"
                 }
                 .padding(.vertical, 8)
                 Text(targetLine).font(.footnote).foregroundStyle(view.finalBy != nil ? T2P.goldText : T2P.muted)
@@ -507,9 +508,9 @@ struct HotDiceView: View {
         case let .hot(who): return who == me ? "Hot dice! You roll all six again" : "Hot dice! \(name(who)) rolls all six again"
         case let .banked(who, points, total):
             return "\(name(who)) banked \(points.formatted()) · \(who == me ? "you have" : "now") \(total.formatted())"
-        case let .farkled(who, lost): return lost > 0 ? "\(name(who)) Farkled and lost \(lost.formatted())" : "\(name(who)) Farkled"
+        case let .farkled(who, lost): return lost > 0 ? "\(name(who)) busted and lost \(lost.formatted())" : "\(name(who)) busted"
         case let .threeFarkles(who, penalty):
-            return penalty > 0 ? "\(name(who)): three Farkles in a row, −\(penalty.formatted())" : "\(name(who)): three Farkles in a row"
+            return penalty > 0 ? "\(name(who)): three busts in a row, −\(penalty.formatted())" : "\(name(who)): three busts in a row"
         case let .timedOut(who): return who == me ? "Out of time: the room is finishing your turn" : "\(name(who)) ran out of time: the room is finishing the turn"
         case let .missed(who): return who == me ? "Your turn ran out" : "\(name(who))’s turn ran out"
         case let .left(who): return "\(name(who)) left the game"
@@ -572,8 +573,8 @@ struct HotDiceView: View {
     /// The Farkle line, under its dice: what was lost, then why nothing scored.
     private func farkleWords(_ t: HotDice.Turn) -> (title: String, line: String) {
         let who = t.id == me ? "" : " for \(name(t.id))"
-        if t.three { return ("Three Farkles\(who)!", t.penalty > 0 ? "−\(t.penalty.formatted()) points" : "No points to lose") }
-        return ("Farkle\(who)!", t.lost > 0 ? "\(t.lost.formatted()) lost" : "Nothing scores")
+        if t.three { return ("Three busts\(who)!", t.penalty > 0 ? "−\(t.penalty.formatted()) points" : "No points to lose") }
+        return ("Bust\(who)!", t.lost > 0 ? "\(t.lost.formatted()) lost" : "Nothing scores")
     }
 
     private var rollCount: Int {

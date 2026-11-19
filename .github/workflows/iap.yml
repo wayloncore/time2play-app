@@ -1,0 +1,36 @@
+# The tip jar's in-app purchases (#598): makes the three consumable tips in App Store Connect (scripts/asc.py iap),
+# each only if it's missing. Linux only, no Mac minutes. Only by hand (Actions -> Tip jar products -> Run workflow, or
+# the REST dispatch), and only once the Paid Apps agreement is in effect (Apple refuses until then). It never submits:
+# the first tips go to App Review with the next app version, picked on that version's page.
+name: Tip jar products
+on:
+  workflow_dispatch:
+    inputs:
+      shot:
+        description: "A screenshot of the Tip jar for App Review, as a path in the repo (empty: none yet)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: store
+  cancel-in-progress: false
+jobs:
+  iap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tips in App Store Connect
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          SHOT: ${{ inputs.shot }}
+        run: |
+          umask 077; mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/key.p8"
+          export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py iap ${SHOT:+"$SHOT"}
+          rm -rf "$RUNNER_TEMP/asc"

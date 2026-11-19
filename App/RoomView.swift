@@ -9,6 +9,7 @@ struct RoomView: View {
     @StateObject private var dialogs = GameDialogs()
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
     @AppStorage(Dice3DSwitch.classicKey) private var classicDice = false
+    @ObservedObject private var tipJar = TipJar.shared
 
     var body: some View {
         ZStack {
@@ -22,6 +23,10 @@ struct RoomView: View {
         // Leave, painted like the game (Nov 18), and every painted dialog the tables show
         .onChange(of: confirmLeave) { _, on in if on { dialogs.show(leaveDialog) } }
         .gameDialogHost(dialogs)
+        // #598: the tip jar, from the quiet line on a game's end screen
+        .sheet(isPresented: $tipJar.sheet) { TipJarSheet() }
+        // #596: the logo as a joined room opens, over everything in the room (a tap skips it)
+        .overlay { JoinIntroOverlay() }
     }
 
     private var leaveDialog: GameDialog {

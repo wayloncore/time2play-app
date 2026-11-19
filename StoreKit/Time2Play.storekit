@@ -1,0 +1,62 @@
+{
+  "identifier": "7E1A2B3C",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6755000001",
+      "localizations": [
+        {
+          "description": "A coffee’s worth of thanks. Tips unlock nothing.",
+          "displayName": "Tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "live.time2play.app.tip.small",
+      "referenceName": "Tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "6755000002",
+      "localizations": [
+        {
+          "description": "A round of thanks for the table. Tips unlock nothing.",
+          "displayName": "Big tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "live.time2play.app.tip.big",
+      "referenceName": "Big tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "6755000003",
+      "localizations": [
+        {
+          "description": "Game night’s on you. Tips unlock nothing.",
+          "displayName": "Huge tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "live.time2play.app.tip.huge",
+      "referenceName": "Huge tip",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

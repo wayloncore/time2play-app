@@ -3,8 +3,8 @@ import Foundation
 /// The four games the app plays, all run by the server (one rules file each, on the website).
 public enum Game: String, CaseIterable, Codable, Sendable, Identifiable {
     case overdraft
-    case hotDice = "farkle"      // the app's name for the website's Farkle Live ("Farkle" is a trademark, #385)
-    case rollCall = "rollcall"
+    case hotDice = "farkle"      // 10,000 (wayloncore/tyleralocke#595): the id, path and saved keys stay "farkle"
+    case rollCall = "rollcall"   // Yacht Dice (#595): the id, path and saved keys stay "rollcall"
     case closeEnough = "closeenough"
 
     public var id: String { rawValue }
@@ -13,8 +13,8 @@ public enum Game: String, CaseIterable, Codable, Sendable, Identifiable {
     public var title: String {
         switch self {
         case .overdraft: return "Overdraft"
-        case .hotDice: return "Hot Dice"
-        case .rollCall: return "Roll Call"
+        case .hotDice: return "10,000"
+        case .rollCall: return "Yacht Dice"
         case .closeEnough: return "Close Enough"
         }
     }

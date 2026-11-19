@@ -17,7 +17,7 @@ final class StatsUITests: XCTestCase {
         let fav = app.descendants(matching: .any)["stats-favorite"].firstMatch
         if !fav.waitForExistence(timeout: 3) { app.swipeUp() }
         XCTAssertTrue(fav.waitForExistence(timeout: 5), "the favorite game shows")
-        XCTAssertTrue(fav.label.contains("Hot Dice"), fav.label)
+        XCTAssertTrue(fav.label.contains("10,000"), fav.label)   // #595
         let ach = app.buttons["achievements"]
         if !ach.waitForExistence(timeout: 3) { app.swipeUp() }
         tapWhenReady(ach)

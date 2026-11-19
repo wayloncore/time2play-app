@@ -89,7 +89,7 @@ struct RollCallView: View {
     }
 
     private func scoredWords(_ who: String, _ box: String, _ points: Int, _ extra: Int) -> String {
-        "\(name(who)) scored \(points) in \(RollCall.boxName(box))" + (extra > 0 ? ", +\(extra) for another Roll Call" : "")
+        "\(name(who)) scored \(points) in \(RollCall.boxName(box))" + (extra > 0 ? ", +\(extra) for another Yacht" : "")
     }
 
     /// A Roll Call (five of a kind) and the upper bonus, said big for a moment.
@@ -97,7 +97,7 @@ struct RollCallView: View {
         for m in moments {
             if case let .scored(who, box, points, extra, _) = m, extra > 0 || (box == "five" && points > 0) {
                 if who == me { Haptics.yourTurn() }
-                return BigMoment(icon: "star.circle.fill", word: extra > 0 ? "Roll Call again!" : "Roll Call!",
+                return BigMoment(icon: "star.circle.fill", word: extra > 0 ? "Yacht again!" : "Yacht!",
                                  detail: "\(name(who)): five of a kind, +\(points + extra)")
             }
         }
@@ -124,7 +124,7 @@ struct RollCallView: View {
     /// Under a name on the winner screen: the bonuses in their total.
     private func bonusLine(_ p: ScorePlayer) -> String? {
         let b = view.bonus(p)
-        let parts = [b > 0 ? "upper bonus +\(b)" : nil, p.extra > 0 ? "Roll Call bonus +\(p.extra)" : nil].compactMap { $0 }
+        let parts = [b > 0 ? "upper bonus +\(b)" : nil, p.extra > 0 ? "Yacht bonus +\(p.extra)" : nil].compactMap { $0 }
         return parts.isEmpty ? nil : "Includes " + parts.joined(separator: " and ")
     }
 

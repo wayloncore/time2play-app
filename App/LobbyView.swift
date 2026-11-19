@@ -278,7 +278,7 @@ struct RulesEditor: View {
                 picker("Three 1s score", [1000, 300], view["ones"].int ?? 1000, label: { "\($0)" }) { set(["ones": .number(Double($0))]) }
                 picker("Play to", [2500, 5000, 10000], view["target"].int ?? 10000, label: { $0.formatted() }) { set(["target": .number(Double($0))]) }
                 toggle("500 to get on the board", "Your first bank needs 500 in one turn", view["rules"]["board"].bool ?? true) { set(["board": .bool($0)]) }
-                toggle("Three Farkles cost 1,000", "Three in a row, and you lose 1,000", view["rules"]["three"].bool ?? true) { set(["three": .bool($0)]) }
+                toggle("Three busts cost 1,000", "Three in a row, and you lose 1,000", view["rules"]["three"].bool ?? true) { set(["three": .bool($0)]) }
             case .rollCall:
                 toggle("Quick game", "6 rounds instead of 13", view["quick"].bool ?? false) { set(["quick": .bool($0)]) }
             case .closeEnough:

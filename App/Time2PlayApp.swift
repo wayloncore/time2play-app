@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import StoreKit
 import T2PCore
 
 /// Push alerts (#404): this device's token goes to the server for a signed-in player; tapping an invite joins its room.
@@ -101,7 +102,10 @@ struct Time2PlayApp: App {
                 .overlay { IntroOverlay() }   // the intro at a fresh launch, over Play, which starts underneath (#562)
                 .environmentObject(app)
                 .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-t2p-light") ? .light : nil)
-                .onAppear { delegate.app = app; GameCenter.shared.start() }   // #541: only does anything once a player turns it on
+                .onAppear {
+                    delegate.app = app; GameCenter.shared.start()   // #541: only does anything once a player turns it on
+                    TipJar.shared.listen(); Task { await TipJar.shared.load() }   // #598: hidden unless the App Store has the tips
+                }
                 .onOpenURL { url in
                     Intro.shared.skip()   // links go straight in, never through the intro (#562)
                     // an invite link (time2play.live/K7QP), a friend or group link (time2play.live/f/CODE), or the app's
@@ -126,6 +130,7 @@ struct RootView: View {
     @EnvironmentObject var app: AppModel
     @Environment(\.scenePhase) private var phase
     @Environment(\.openURL) private var openURL
+    @Environment(\.requestReview) private var requestReview
 
     var body: some View {
         TabView(selection: $app.tab) {
@@ -158,6 +163,23 @@ struct RootView: View {
                 choices: web.map { u in [GameChoice(label: "Open on the website", kind: .gold, identifier: "open-website") { open(u); clear() }] } ?? [],
                 cancel: "OK", onCancel: clear, identifier: "dialog-problem"))
         }
+        // #594 part 3: back from a finished game, Apple's own rating request, at most once a version (iOS may show
+        // nothing; it keeps it to three a year). Never during a game, and never in the UI tests unless they ask.
+        .onChange(of: app.reviewDue) { _, due in
+            guard due else { return }
+            app.reviewDue = false
+            let d = UserDefaults.standard, v = AppModel.appVersion
+            let args = ProcessInfo.processInfo.arguments
+            guard ReviewAsk.shouldAsk(finishedGame: true, lastAskedVersion: d.string(forKey: ReviewAsk.key), version: v),
+                  !args.contains("-uitest-reset") || args.contains("-t2p-review") else { return }
+            let a = app, ask = requestReview
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard a.room == nil else { return }   // they went straight into another room: not now
+                d.set(v, forKey: ReviewAsk.key)
+                ask()
+            }
+        }
         .onChange(of: app.accountProblem) { _, p in
             guard let p else { return }
             let a = app
@@ -175,7 +197,7 @@ struct RootView: View {
             if SocialDemo.banner {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     MainActor.assumeIsolated {
-                        AppDialogs.shared.showBanner(InviteNote(text: "Sam invited you to Hot Dice", game: .hotDice, room: "DEMO", face: 3))
+                        AppDialogs.shared.showBanner(InviteNote(text: "Sam invited you to 10,000", game: .hotDice, room: "DEMO", face: 3))
                     }
                 }
             }
@@ -183,7 +205,7 @@ struct RootView: View {
         .onChange(of: phase) { _, p in
             // the phone locked or the app was switched away: the room holds the seat (a bot plays); back, it resumes
             if p == .background { if let r = app.room { app.keep.note(r) }; app.room?.pause() }
-            if p == .active { app.room?.resume(); Task { await app.refreshSocial() } }
+            if p == .active { app.room?.resume(); Task { await app.refreshSocial(); await TipJar.shared.load() } }
         }
     }
 }

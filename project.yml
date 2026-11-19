@@ -136,5 +136,9 @@ schemes:
       targets:
         Time2Play: all
         Time2PlayUITests: [test]
+    # The tip jar's products in the simulator (#598): Run from Xcode uses this StoreKit configuration. The command
+    # line's UI tests don't load one, so they use the test build's stand-in (-t2p-tips-demo, App/TipJar.swift).
+    run:
+      storeKitConfiguration: StoreKit/Time2Play.storekit
     test:
       targets: [Time2PlayUITests]

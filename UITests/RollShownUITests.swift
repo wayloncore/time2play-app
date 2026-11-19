@@ -34,7 +34,7 @@ final class RollShownUITests: XCTestCase {
             XCTAssertFalse(faces.isEmpty, "the dice that came up stay on screen")
             XCTAssertTrue(faces.allSatisfy { $0.hasPrefix("Die showing") }, "faces show with the result, not after it: \(faces)")
             if result == "farkle" {
-                XCTAssertTrue(banner.label.contains("Farkle"), banner.label)
+                XCTAssertTrue(banner.label.contains("Bust") || banner.label.contains("busts"), banner.label)   // #595: a bust, never "Farkle"
                 XCTAssertTrue(banner.label.contains("No 1s, no 5s, no three of a kind"), "the Farkle says why: \(banner.label)")
                 // #489: a tap ends the hold at once (the room and this phone hold a Farkle 2.4 s by themselves). The tap
                 // comes once the message has faded in; the Farkle shot is the bot's, in DiceGamesUITests.
