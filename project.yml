@@ -57,7 +57,7 @@ targets:
         INFOPLIST_KEY_NSCameraUsageDescription: "Time2Play uses the camera to scan a room’s QR code, so you can join without typing the code."
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_CFBundleDisplayName: Time2Play
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         CODE_SIGNING_ALLOWED: NO
@@ -104,7 +104,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: live.time2play.app.widget
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Time2Play
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         CODE_SIGNING_ALLOWED: NO
