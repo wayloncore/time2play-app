@@ -6,6 +6,8 @@
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
   asc.py status              lists the app's builds (number, state) for the log
   asc.py gamecenter          Game Center (#541): the capability, the leaderboards and the achievements
+  asc.py store META SHOTS    fills in the App Store listing (#407); never submits
+  asc.py submit BUILD        sends the version to App Review, only if it holds build BUILD (Tyler's "submit")
 
 Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
 
@@ -530,6 +532,47 @@ def gamecenter():
     print("Not submitted. Game Center's leaderboards and achievements go live with an App Store version, which is Tyler's call.")
 
 
+# ---------- submitting for App Review (#407): only when Tyler says "submit", started by hand (submit.yml) ----------
+
+def submit(expected_build):
+    """Sends the version being prepared to App Review, with the build Tyler approved. Checks first that the version
+    holds exactly that build, and stops (changing nothing) if anything doesn't match."""
+    app = the_app()
+    app_id = app["id"]
+    versions = call("GET", f"/v1/apps/{app_id}/appStoreVersions" + q({"filter[platform]": "IOS", "limit": 20}))["data"]
+    ready = [v for v in versions if v["attributes"].get("appStoreState") in
+             ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED")]
+    if not ready:
+        states = ", ".join(f"{v['attributes'].get('versionString')}: {v['attributes'].get('appStoreState')}" for v in versions)
+        die(f"No version waiting to be submitted ({states or 'none'}).")
+    version = ready[0]
+    vid = version["id"]
+    build = one(f"/v1/appStoreVersions/{vid}/build")
+    number = build["attributes"]["version"] if build else None
+    print(f"Version {version['attributes']['versionString']} ({version['attributes']['appStoreState']}), build {number}")
+    if str(number) != str(expected_build):
+        die(f"The version holds build {number}, not build {expected_build}. Nothing submitted.")
+    if build["attributes"].get("processingState") != "VALID":
+        die(f"Build {number} isn't VALID ({build['attributes'].get('processingState')}). Nothing submitted.")
+
+    # a review submission for the app (reuse one still being put together), the version in it, then send it
+    open_subs = call("GET", "/v1/reviewSubmissions" + q({"filter[app]": app_id, "filter[platform]": "IOS",
+                                                           "filter[state]": "READY_FOR_REVIEW", "limit": 5}), ok_missing=True)
+    sub = (open_subs or {}).get("data") or []
+    sub = sub[0] if sub else call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions",
+        "attributes": {"platform": "IOS"}, "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+    items = call("GET", f"/v1/reviewSubmissions/{sub['id']}/items", ok_missing=True)
+    has_version = any((i.get("relationships", {}).get("appStoreVersion", {}).get("data") or {}).get("id") == vid
+                      for i in ((items or {}).get("data") or []))
+    if not has_version:
+        call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
+            "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub["id"]}},
+            "appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+    done = call("PATCH", f"/v1/reviewSubmissions/{sub['id']}", {"data": {"type": "reviewSubmissions", "id": sub["id"],
+        "attributes": {"submitted": True}}})["data"]
+    print(f"Submitted for App Review: build {number}, submission {done['attributes'].get('state')}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "signing":
@@ -542,5 +585,7 @@ if __name__ == "__main__":
         gamecenter()
     elif cmd == "store":
         store(sys.argv[2], sys.argv[3])
+    elif cmd == "submit":
+        submit(sys.argv[2])
     else:
         die(__doc__)
