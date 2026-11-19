@@ -230,15 +230,19 @@ struct GameOver: View {
                         FaceView(face: p.face, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
+                                // the name gets the room first (a bot's tag and the crown made "Rex" read "R…")
                                 Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.headline).foregroundStyle(Painted.paper)
+                                    .lineLimit(1).minimumScaleFactor(0.8).layoutPriority(1)
                                 if p.bot != nil { PaintedTag(text: "Bot") }
                                 if winners.contains(p.id) { Image(systemName: "crown.fill").foregroundStyle(Painted.gold) }
                             }
                             if let d = detail(p) { Text(d).font(.subheadline).foregroundStyle(Painted.paperDim) }
                         }
-                        Spacer()
+                        .layoutPriority(1)
+                        Spacer(minLength: 8)
                         Text(line(p)).font(Painted.display(21, .bold).monospacedDigit())
                             .foregroundStyle(winners.contains(p.id) ? Painted.titleGold : Painted.paper)
+                            .fixedSize()
                     }
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .accessibilityElement(children: .combine)

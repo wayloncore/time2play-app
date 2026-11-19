@@ -214,7 +214,9 @@ struct Wheel3DView: View {
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                 let st = holder.world.state
                 let settled = !model.spinning && Wheel3DWorld.same(st.rot, model.rotation)
-                Text("frames=\(st.frames) spinning=\(model.spinning ? 1 : 0) settled=\(settled ? 1 : 0) rescued=\(st.rescued)")
+                // a plain String: Text's own number formatting would write 1,337
+                let line: String = "frames=\(st.frames) spinning=\(model.spinning ? 1 : 0) settled=\(settled ? 1 : 0) rescued=\(st.rescued)"
+                Text(verbatim: line)
                     .font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("wheel3d-debug")
             }
         }
