@@ -581,6 +581,8 @@ struct HotDiceView: View {
         guard mine, let t else { return false }
         return t.state == "start" || t.state == "hot" || (t.state == "choose" && !t.sel.isEmpty && t.selPts > 0)
     }
+    /// The turn just ended in a Farkle (the room says so, or its banner is still up): nothing left to bank.
+    private var turnFarkled: Bool { t?.state == "farkle" || farkle != nil }
     /// What Bank banks: the dice set aside, plus the scoring dice tapped this roll (the website's bankPts).
     private var bankPoints: Int {
         guard let t else { return 0 }
@@ -836,8 +838,14 @@ struct HotDiceView: View {
                 }
                 .buttonStyle(GoldButtonStyle()).disabled(!canRoll).accessibilityIdentifier("roll")
                 Button { HotDiceView.taps.bank += 1; room.move("bank"); Haptics.yourTurn() } label: {
-                    // the website's +points; while you need 500 to get on the board, the button itself says so
-                    VStack(spacing: 0) { Text("Bank"); Text(boardWait ? "need \((t?.need ?? 0).formatted())" : "+\(bankPoints.formatted())").font(.caption) }
+                    // the website's +points; while you need 500 to get on the board, the button itself says so.
+                    // After a Farkle the points are lost, so it says just Bank (wayloncore/tyleralocke#576); the
+                    // hidden line keeps the button the same height as Roll
+                    VStack(spacing: 0) {
+                        Text("Bank")
+                        if turnFarkled { Text("+0").font(.caption).hidden() }
+                        else { Text(boardWait ? "need \((t?.need ?? 0).formatted())" : "+\(bankPoints.formatted())").font(.caption) }
+                    }
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(QuietButtonStyle()).disabled(!canBank).accessibilityIdentifier("bank")

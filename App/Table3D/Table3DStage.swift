@@ -17,8 +17,6 @@ enum Table3DSwitch {
     static func use3D(classic: Bool) -> Bool { forced || (!forcedClassic && !classic) }
 }
 
-/// The 3D table's bridge between SwiftUI and SceneKit: it owns the scene and its view, fits the camera to the screen,
-/// and publishes where the seats landed so SwiftUI can draw faces, counts and names over them.
 /// The table's per-frame state for the UI tests (-t2p-arena-debug), kept apart from the stage so only its own line
 /// redraws (Nov 18, #571).
 @MainActor
@@ -26,6 +24,9 @@ final class Table3DLive: ObservableObject {
     @Published fileprivate(set) var debug = ""
 }
 
+/// The 3D table's bridge between SwiftUI and SceneKit: it owns the scene and its view, fits the camera to the screen,
+/// and publishes where the seats landed so SwiftUI can draw faces, counts and names over them. The scene moves on its
+/// own clock (a SceneTicker, started here).
 @MainActor
 final class Table3DStage: ObservableObject {
     let live = Table3DLive()
