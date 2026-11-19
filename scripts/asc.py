@@ -24,7 +24,7 @@ WIDGET_ID = "live.time2play.app.widget"
 # every bundle id the build signs: (the profile's name start, the file it's written to, the env name the workflow reads)
 BUNDLES = {BUNDLE_ID: ("Time2Play", "app", "T2P_PROFILE_NAME"),
            WIDGET_ID: ("Time2Play Widget", "widget", "T2P_WIDGET_PROFILE_NAME")}
-VERSION = "1.0"
+VERSION = "1.1"  # 1.0 is on the App Store (approved Nov 19, 2026); the next update
 
 
 def die(msg):
