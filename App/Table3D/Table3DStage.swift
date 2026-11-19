@@ -19,8 +19,16 @@ enum Table3DSwitch {
 
 /// The 3D table's bridge between SwiftUI and SceneKit: it owns the scene and its view, fits the camera to the screen,
 /// and publishes where the seats landed so SwiftUI can draw faces, counts and names over them.
+/// The table's per-frame state for the UI tests (-t2p-arena-debug), kept apart from the stage so only its own line
+/// redraws (Nov 18, #571).
+@MainActor
+final class Table3DLive: ObservableObject {
+    @Published fileprivate(set) var debug = ""
+}
+
 @MainActor
 final class Table3DStage: ObservableObject {
+    let live = Table3DLive()
     let world: Table3DWorld
     let scnView: SCNView
     @Published private(set) var layout: Table3DLayout?
@@ -34,6 +42,7 @@ final class Table3DStage: ObservableObject {
         let v = SCNView(frame: .zero)
         v.scene = world.scene
         v.pointOfView = world.cameraNode
+        // the render callback only times frames (stepping down); the table moves on its own clock (Nov 18, #571)
         v.delegate = world
         v.isPlaying = true
         v.rendersContinuously = true
@@ -47,6 +56,8 @@ final class Table3DStage: ObservableObject {
         scnView = v
         world.onFrozen = { [weak self] in self?.frozen = true }
         world.onStepDown = { [weak self] n in if n >= 2 { self?.scnView.antialiasingMode = .none } }
+        if DiceArenaStage.debugOn { world.onDebug = { [weak self] l in self?.live.debug = l } }
+        SceneTicker.start(world, name: "overdraft-table")
     }
 
     /// Fits the camera and seats to the screen; does nothing if nothing that matters changed.
@@ -81,4 +92,12 @@ struct Table3DSceneHost: UIViewRepresentable {
     let stage: Table3DStage
     func makeUIView(context: Context) -> SCNView { stage.scnView }
     func updateUIView(_ uiView: SCNView, context: Context) {}
+}
+
+/// The UI tests' line (-t2p-arena-debug): frames run, cards in the air, cards the safety net put down.
+struct Table3DDebugLine: View {
+    @ObservedObject var live: Table3DLive
+    var body: some View {
+        Text(live.debug).font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("od3d-debug")
+    }
 }

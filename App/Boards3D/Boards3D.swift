@@ -83,13 +83,14 @@ enum Scene3D {
     }
 
     /// An SCNView set up the way the app's 3D scenes are: clear, untouchable, out of VoiceOver's way.
-    static func view(_ scene: SCNScene, camera: SCNNode, delegate: SCNSceneRendererDelegate? = nil) -> SCNView {
+    /// `continuous`: redraw every frame (a scene moved by a SceneTicker).
+    static func view(_ scene: SCNScene, camera: SCNNode, delegate: SCNSceneRendererDelegate? = nil, continuous: Bool = false) -> SCNView {
         let v = SCNView(frame: .zero)
         v.scene = scene
         v.pointOfView = camera
         v.delegate = delegate
         v.isPlaying = true
-        v.rendersContinuously = delegate != nil
+        v.rendersContinuously = delegate != nil || continuous
         v.preferredFramesPerSecond = 60
         v.antialiasingMode = .multisampling4X
         v.backgroundColor = .clear

@@ -175,7 +175,8 @@ struct ScoreStrip: View {
 }
 
 /// Who won and why, the final scores, and what next (#489): for the owner, Play again and Change seats; for everyone,
-/// Back to Library.
+/// Back to Library. Hot Dice and Roll Call share it. Painted since Nov 18 (wayloncore/tyleralocke#571), like Overdraft's
+/// HandOver: a card face in a gold frame, the serif title, painted plaques for the choices.
 struct GameOver: View {
     @ObservedObject var room: RoomModel
     @EnvironmentObject var app: AppModel
@@ -188,55 +189,74 @@ struct GameOver: View {
     /// A line under a player's name (Roll Call: the bonuses in their total).
     var detail: (ScorePlayer) -> String? = { _ in nil }
     var body: some View {
+        // the card as it is when it fits the screen; scrolling only when it doesn't (a full table, the largest text)
+        ViewThatFits(in: .vertical) {
+            card.padding(.horizontal, 22).padding(.vertical, 26)
+            ScrollView { card.padding(.horizontal, 22).padding(.vertical, 26) }
+        }
+        .frame(maxWidth: 480)
+        .background(PaintedPanel(corner: 24))
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { if winners.contains(me) { Haptics.yourTurn() } }
+    }
+
+    @ViewBuilder private var card: some View {
         let sorted = players.filter { !$0.left || $0.score > 0 }.sorted { $0.score > $1.score }
         let names = winners.compactMap { w in players.first { $0.id == w } }.map { $0.id == me ? "You" : RoomPlayer.stripBot($0.name) }
-        ScrollView {
-            VStack(spacing: 16) {
-                if winners.count == 1, let w = players.first(where: { $0.id == winners[0] }) {
-                    FaceView(face: w.face, size: 76).overlay(Circle().stroke(T2P.gold, lineWidth: 3).padding(-3))
-                } else {
-                    Image(systemName: winners.contains(me) ? "trophy.fill" : "flag.checkered").font(.system(size: 48)).foregroundStyle(T2P.gold).accessibilityHidden(true)
-                }
-                Text(winners.count > 1 ? "A shared win!" : winners.contains(me) ? "You win!" : "\(names.first ?? "Someone") wins!")
-                    .font(.largeTitle.bold()).foregroundStyle(T2P.text).accessibilityIdentifier("game-over")
-                if let r = reason {
-                    Text(winners.count > 1 ? "\(r) \(names.joined(separator: " and ")) finished level." : r)
-                        .foregroundStyle(T2P.muted).multilineTextAlignment(.center).accessibilityIdentifier("game-over-why")
-                }
-                VStack(spacing: 0) {
-                    ForEach(sorted) { p in
-                        HStack(spacing: 12) {
-                            FaceView(face: p.face, size: 40)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.headline).foregroundStyle(T2P.text)
-                                    if p.bot != nil { Tag(text: "BOT") }
-                                    if winners.contains(p.id) { Image(systemName: "crown.fill").foregroundStyle(T2P.gold) }
-                                }
-                                if let d = detail(p) { Text(d).font(.subheadline).foregroundStyle(T2P.muted) }
-                            }
-                            Spacer()
-                            Text(line(p)).font(.title3.bold().monospacedDigit()).foregroundStyle(T2P.text)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .accessibilityElement(children: .combine)
-                    }
-                }
-                .background(T2P.panel, in: RoundedRectangle(cornerRadius: 18))
-                if room.isOwner {
-                    Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(GoldButtonStyle())
-                        .accessibilityIdentifier("play-again")
-                    Button("Change seats") { room.send(Out.again) }.buttonStyle(QuietButtonStyle())
-                } else {
-                    Text("If \(room.ownerName ?? "the room’s owner") starts another game, you’ll be in it.").foregroundStyle(T2P.muted).multilineTextAlignment(.center)
-                }
-                Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
-                    .font(.headline).foregroundStyle(T2P.goldText).frame(minHeight: 44)
-                    .accessibilityIdentifier("back-to-library")
+        VStack(spacing: 14) {
+            if winners.count == 1, let w = players.first(where: { $0.id == winners[0] }) {
+                FaceView(face: w.face, size: 76)
+                    .overlay(Circle().strokeBorder(Painted.rimRing, lineWidth: 3).padding(-4))
+                    .shadow(color: Painted.gold.opacity(0.35), radius: 10)
+            } else {
+                Image(systemName: winners.contains(me) ? "trophy.fill" : "flag.checkered").font(.system(size: 44))
+                    .foregroundStyle(Painted.rim).accessibilityHidden(true)
             }
-            .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
+            VStack(spacing: 8) {
+                Text(winners.count > 1 ? "A shared win!" : winners.contains(me) ? "You win!" : "\(names.first ?? "Someone") wins!")
+                    .font(Painted.display(34, .bold)).foregroundStyle(Painted.titleGold).multilineTextAlignment(.center)
+                    .accessibilityIdentifier("game-over")
+                PaintedDivider()
+            }
+            if let r = reason {
+                Text(winners.count > 1 ? "\(r) \(names.joined(separator: " and ")) finished level." : r)
+                    .foregroundStyle(Painted.paperDim).multilineTextAlignment(.center).accessibilityIdentifier("game-over-why")
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(sorted.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { Rectangle().fill(Painted.gold.opacity(0.14)).frame(height: 1).padding(.horizontal, 14) }
+                    HStack(spacing: 12) {
+                        FaceView(face: p.face, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(p.id == me ? "You" : RoomPlayer.stripBot(p.name)).font(.headline).foregroundStyle(Painted.paper)
+                                if p.bot != nil { PaintedTag(text: "Bot") }
+                                if winners.contains(p.id) { Image(systemName: "crown.fill").foregroundStyle(Painted.gold) }
+                            }
+                            if let d = detail(p) { Text(d).font(.subheadline).foregroundStyle(Painted.paperDim) }
+                        }
+                        Spacer()
+                        Text(line(p)).font(Painted.display(21, .bold).monospacedDigit())
+                            .foregroundStyle(winners.contains(p.id) ? Painted.titleGold : Painted.paper)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Painted.gold.opacity(0.3)))
+            if room.isOwner {
+                Button("Play again") { room.send(Out.again); room.send(Out.deal); Haptics.play() }.buttonStyle(PaintedButtonStyle(kind: .gold))
+                    .accessibilityIdentifier("play-again")
+                Button("Change seats") { room.send(Out.again) }.buttonStyle(PaintedButtonStyle(kind: .quiet))
+            } else {
+                Text("If \(room.ownerName ?? "the room’s owner") starts another game, you’ll be in it.").foregroundStyle(Painted.paperDim).multilineTextAlignment(.center)
+            }
+            Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
+                .font(Painted.display(17)).foregroundStyle(Painted.goldLight).frame(minHeight: 44)
+                .accessibilityIdentifier("back-to-library")
         }
-        .onAppear { if winners.contains(me) { Haptics.yourTurn() } }
     }
 }
 

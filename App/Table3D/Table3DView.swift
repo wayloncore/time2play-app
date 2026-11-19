@@ -139,6 +139,7 @@ struct Table3DView: View {
                 Text(stage.frozen ? "ready" : "").font(.system(size: 2)).opacity(0.02)
                     .accessibilityIdentifier(stage.frozen ? "od3d-ready" : "od3d-wait")
                     .position(x: 2, y: 2)
+                if DiceArenaStage.debugOn { Table3DDebugLine(live: stage.live).position(x: 2, y: 6) }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("table-3d")
