@@ -555,6 +555,34 @@ def submit(expected_build):
     if build["attributes"].get("processingState") != "VALID":
         die(f"Build {number} isn't VALID ({build['attributes'].get('processingState')}). Nothing submitted.")
 
+    # Game Center (#541): the version has to say it uses Game Center (the build carries the entitlement), and the
+    # leaderboards and achievements go with it. Each is added once; one that fails is reported, not fatal.
+    gcv = one(f"/v1/appStoreVersions/{vid}/gameCenterAppVersion")
+    if not gcv:
+        call("POST", "/v1/gameCenterAppVersions", {"data": {"type": "gameCenterAppVersions", "relationships": {
+            "appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+        print("Game Center: turned on for this version")
+    detail = one(f"/v1/apps/{app_id}/gameCenterDetail")
+    if detail:
+        did = detail["id"]
+        for kind, rel, rtype in (("Leaderboard", "gameCenterLeaderboard", "gameCenterLeaderboards"),
+                                 ("Achievement", "gameCenterAchievement", "gameCenterAchievements")):
+            things = call("GET", f"/v1/gameCenterDetails/{did}/{rtype}" + q({"limit": 200}))["data"]
+            released = call("GET", f"/v1/gameCenterDetails/{did}/{kind.lower()}Releases" + q({"limit": 200, "include": rel}), ok_missing=True)
+            have = {((r.get("relationships", {}).get(rel, {}) or {}).get("data") or {}).get("id") for r in ((released or {}).get("data") or [])}
+            added = 0
+            for t in things:
+                if t["id"] in have:
+                    continue
+                try:
+                    call("POST", f"/v1/gameCenter{kind}Releases", {"data": {"type": f"gameCenter{kind}Releases", "relationships": {
+                        rel: {"data": {"type": rtype, "id": t["id"]}},
+                        "gameCenterDetail": {"data": {"type": "gameCenterDetails", "id": did}}}}})
+                    added += 1
+                except SystemExit as e:
+                    print(f"Game Center: couldn't add {kind.lower()} {t['attributes'].get('referenceName')}: {e}")
+            print(f"Game Center: {kind.lower()}s with this version: {len(things)} ({added} added now)")
+
     # a review submission for the app (reuse one still being put together), the version in it, then send it
     open_subs = call("GET", "/v1/reviewSubmissions" + q({"filter[app]": app_id, "filter[platform]": "IOS",
                                                            "filter[state]": "READY_FOR_REVIEW", "limit": 5}), ok_missing=True)
