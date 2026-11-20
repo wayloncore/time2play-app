@@ -17,6 +17,8 @@ final class TipJarUITests: XCTestCase {
         let tip = app.buttons["tip-small"]
         scrollTo(app, tip)
         XCTAssertTrue(tip.waitForExistence(timeout: 10), "the Tip jar in You")
+        // the list only holds the rows on screen (on an iPad the jar can sit lower): bring the last tip up first
+        scrollTo(app, app.buttons["tip-huge"])
         XCTAssertTrue(app.buttons["tip-big"].exists && app.buttons["tip-huge"].exists, "three tips")
         XCTAssertTrue(tip.label.contains("$1.99"), tip.label)
         sleep(1)
