@@ -401,12 +401,16 @@ struct OverdraftTableView: View {
 }
 
 /// A card, drawn with the website's own art.
+/// #609: every card fills the same card shape. The action cards' art (+2, Skip, Reverse, +4) is cut shorter than the
+/// number cards' (320 × about 428 against 320 × 480), so fitting it inside the shape drew those cards about 12% short,
+/// with a gap above and below. Filling the shape draws them exactly as the 3D pile always has (Table3DWorld.cardImage
+/// stretches every card's art to 320 × 489), so a card looks the same in your hand and on the table.
 struct CardImage: View {
     let name: String
     var width: CGFloat = 96
     var body: some View {
         Group {
-            if let i = Art.image(name) { Image(uiImage: i).resizable().scaledToFit() }
+            if let i = Art.image(name) { Image(uiImage: i).resizable() }
             else { RoundedRectangle(cornerRadius: 8).fill(T2P.panelHi) }
         }
         .frame(width: width, height: width * 489 / 320)

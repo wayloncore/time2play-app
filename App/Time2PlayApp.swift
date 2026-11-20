@@ -82,7 +82,10 @@ struct Time2PlayApp: App {
     #endif
     var body: some Scene {
         WindowGroup {
-            if let still = Table3DStill.fromArgs() {
+            if let still = Table3DStill.fromArgs(), still.classic {
+                // #609's screenshots: the classic hand with the same made-up cards
+                ClassicHandStill(still: still)
+            } else if let still = Table3DStill.fromArgs() {
                 // #496's screenshots: the 3D table, made up and stopped at a moment
                 Table3DView(view: still.view, onLeave: {}, still: still)
             } else if let dice = DiceStill.fromArgs() {

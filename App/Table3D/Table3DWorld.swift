@@ -182,7 +182,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         fill.type = .directional; fill.intensity = 290
         let fillNode = SCNNode(); fillNode.light = fill; fillNode.simdPosition = [5, 3.5, -4]; fillNode.simdLook(at: .zero)
         scene.rootNode.addChildNode(fillNode)
-        flashLight.type = .directional; flashLight.intensity = 0; flashLight.color = UIColor(red: 0.8, green: 0.74, blue: 1, alpha: 1)
+        flashLight.type = .directional; flashLight.intensity = 0; flashLight.color = UIColor(red: 0.74, green: 0.56, blue: 1, alpha: 1)   // #610: violet
         let flashNode = SCNNode(); flashNode.light = flashLight; flashNode.simdPosition = [-1, 9, 4]; flashNode.simdLook(at: .zero)
         scene.rootNode.addChildNode(flashNode)
 
@@ -966,13 +966,21 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
 
     /// A strike. `at` (0 to 1 across the screen) places it for a still; otherwise it lands somewhere in the strip of
     /// scene over the far seats, a little dimmer or brighter each time, and now and then it flashes twice.
+    /// #610 (Tyler, Nov 20: "increase the impact of the lightning"): more branches, and often a second, fainter bolt
+    /// beside the first. Photosensitivity: one strike is at most two flashes (the second 0.4 s or more after the
+    /// first), and strikes are at least 1.4 s apart, so the scene never flashes 3 times in a second.
     func strike(at: Double? = nil) {
         let spot = strikeSpot(at)
-        buildBolt(x0: Float(spot.x), z: Float(spot.z), width: Float(spot.w))
-        storm.t = 0; storm.x = spot.x
         let live = freezeAt == nil
-        storm.k = live ? .random(in: 0.6...1) : 1
-        storm.twice = live && Double.random(in: 0..<1) < 0.3 ? .random(in: 0.3...0.5) : -1
+        var bolts: [(x: Float, z: Float, w: Float, br: Float)] = [(Float(spot.x), Float(spot.z), Float(spot.w), 1)]
+        if !live || Double.random(in: 0..<1) < (tier == .low ? 0.25 : 0.55) {
+            let other = strikeSpot(at.map { $0 < 0.5 ? $0 + 0.38 : $0 - 0.38 })
+            bolts.append((Float(other.x), Float(other.z), Float(other.w) * 0.8, 0.6))
+        }
+        buildBolt(bolts)
+        storm.t = 0; storm.x = spot.x
+        storm.k = live ? .random(in: 0.75...1) : 1
+        storm.twice = live && Double.random(in: 0..<1) < 0.4 ? .random(in: 0.4...0.55) : -1
         u.b.x = .random(in: 0...50)
     }
 
@@ -989,8 +997,12 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         return (x, z, w)
     }
 
-    private func buildBolt(x0: Float, z: Float, width: Float = 1) {
+    private func buildBolt(_ bolts: [(x: Float, z: Float, w: Float, br: Float)]) {
         var pos: [Float] = [], ua: [Float] = []
+        var z: Float = 0
+        // #610: more branching (each limb forks more often, one level deeper), a little less on the oldest phones
+        let fork: (Float, Float) = tier == .low ? (0.12, 0.07) : (0.2, 0.12)
+        let deepest = tier == .low ? 3 : 4
         func seg(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ w: Float, _ br: Float) {
             let d = b - a, l = max(1e-4, simd_length(d)), n = SIMD2<Float>(-d.y / l * w, d.x / l * w)
             let v: [(SIMD2<Float>, Float)] = [(a - n, -1), (a + n, 1), (b + n, 1), (b - n, -1)]
@@ -1009,13 +1021,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             }
             for i in 1..<pts.count {
                 seg(pts[i - 1], pts[i], w, br)
-                if depth < 3 && i > 4 && i < pts.count - 4 && Float.random(in: 0..<1) < (depth == 0 ? 0.11 : 0.06) {
+                if depth < deepest && i > 4 && i < pts.count - 4 && Float.random(in: 0..<1) < (depth == 0 ? fork.0 : fork.1) {
                     let p = pts[i], rest = max(1.5, p.y - b.y) * .random(in: 0.35...0.7), dir = (Bool.random() ? -1 : 1) * Float.random(in: 0.3...0.9)
                     limb(p, SIMD2(p.x + sin(dir) * rest, p.y - cos(dir) * rest), w * 0.62, br * 0.6, depth + 1)
                 }
             }
         }
-        limb(SIMD2(x0 + .random(in: -4...4) * width, 30), SIMD2(x0, u.b.z), 0.55 * width, 1, 0)
+        for b in bolts {
+            z = b.z
+            limb(SIMD2(b.x + .random(in: -4...4) * b.w, 30), SIMD2(b.x, u.b.z), 0.55 * b.w, b.br, 0)
+        }
         let idx = (0..<UInt32(pos.count / 3)).map { $0 }
         let g = SCNGeometry(sources: [Self.source(pos, .vertex, 3), Self.source(ua, .texcoord, 2)],
                             elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
@@ -1027,7 +1042,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
 
     private static let light: [String: [UInt32]] = [   // ambient sky, ambient ground, fill, key
         "ember": [0xffb388, 0x7a1e06, 0xff5a1e, 0xffd2a0], "wave": [0xbfdcff, 0x0e3f7a, 0x3a8cff, 0xffe6c4],
-        "bolt": [0xa6a4bc, 0x16161f, 0x7a5cf0, 0xd8d4ec], "leaf": [0xffe2b0, 0x35521a, 0xffa848, 0xffd08a],   // late-afternoon sun
+        "bolt": [0xa89ad0, 0x1a1228, 0x8a4cff, 0xdcd0f4], "leaf": [0xffe2b0, 0x35521a, 0xffa848, 0xffd08a],   // late-afternoon sun
     ]
 
     /// The turn flow's color per element: the suit's color, lifted so it reads on the glass.
@@ -1073,27 +1088,31 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         u.d = u.w * po
         addParts?.isHidden = max(u.d.x, max(u.d.y, u.d.z)) < 0.01
         leafParts?.isHidden = u.d.w < 0.01
-        // the storm (Tyler, Nov 17: "more frequent lightning"): a strike every 3 to 6 seconds, irregular, sometimes a
-        // double flash, each a little dimmer than before so the table stays the star; the clouds flicker in between.
-        // Reduce Motion: no strikes and no flashes.
+        // the storm (Tyler, Nov 17: "more frequent lightning"; #610, Nov 20: "increase the impact"): a strike every
+        // 1.4 to 3.2 seconds (2 to 4 on the oldest phones), irregular, sometimes a second flash; the clouds flicker
+        // in between. Each flash is one smooth swell, never a strobe, and lights the scene and the table's rim, not
+        // the hand or the text (those are drawn over the scene). Reduce Motion: no strikes and no flashes, only the
+        // clouds' slow, gentle flicker (Table3DShaders.metal).
         let wb = Double(u.w.z)
         storm.t += dt
         if wb > 0.6 && freezeAt == nil && !reduced {
             storm.next -= dt
-            if storm.next <= 0 { strike(); storm.next = .random(in: 3...6) }
+            if storm.next <= 0 { strike(); storm.next = tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2) }
         }
         var fl = 0.0, bi = 0.0
         if !reduced {
             let t = storm.t
-            fl = exp(-t * 7) + 0.75 * exp(-pow((t - 0.16) / 0.05, 2)) + 0.3 * exp(-pow((t - 0.3) / 0.07, 2))
+            // one flash: at its brightest at once, then a smooth fall over about a third of a second (no flicker
+            // inside it, which would count as more flashes)
+            fl = exp(-t * 6)
             if storm.twice > 0 && t > storm.twice {
                 let t2 = t - storm.twice
-                fl += 0.7 * exp(-t2 * 8) + 0.45 * exp(-pow((t2 - 0.1) / 0.05, 2))
+                fl += 0.75 * exp(-t2 * 7)
             }
-            let end = 0.55 + max(0, storm.twice)
-            bi = t < end ? min(1, fl * 1.6 + 0.25 * (1 - t / end)) : 0
+            let end = 0.6 + max(0, storm.twice)
+            bi = t < end ? min(1, fl * 1.7 + 0.3 * (1 - t / end)) : 0
         }
-        u.a.w = Float(min(1.2, max(0, fl)) * wb * 0.55 * storm.k)
+        u.a.w = Float(min(1.2, max(0, fl)) * wb * 0.7 * storm.k)
         u.c.y = Float(bi * wb)
         boltNode.isHidden = u.c.y < 0.01 || boltNode.geometry == nil
         flashLight.intensity = CGFloat(u.a.w) * 1800 / .pi

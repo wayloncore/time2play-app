@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import T2PCore
 
 /// Still mode for the 3D table's screenshots (#496): a made-up table, stopped at an exact moment, so each suit, your
@@ -22,6 +23,10 @@ struct Table3DStill {
     var playAt: Double?
     /// Seconds into a drawn card's flight to your hand.
     var drawAt: Double?
+    /// #609: your hand holds every action card (+2, +4, Skip, Reverse, Change Suit) between number cards.
+    var actions = false
+    /// #609: the classic (flat) hand instead of the 3D table, with the same made-up hand.
+    var classic = false
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> Table3DStill? {
         guard let i = args.firstIndex(of: "-t2p-3d-still") else { return nil }
@@ -42,6 +47,8 @@ struct Table3DStill {
             case "reverse": s.reverseAt = Double(kv[1])
             case "play": s.playAt = Double(kv[1])
             case "draw": s.drawAt = Double(kv[1])
+            case "actions": s.actions = kv[1] == "1"
+            case "classic": s.classic = kv[1] == "1"
             default: break
             }
         }
@@ -88,7 +95,7 @@ struct Table3DStill {
     var view: Overdraft.View {
         let names = ["Sim", "Maya", "Dev", "Ada (bot)", "Jordan", "Sam", "Priya", "Leo", "Bea (bot)", "Marcus"]
         let faces = [3, 9, 12, 21, 31, 0, 1, 2, 4, 5]
-        let counts = [hand, 3, 5, 4, 2, 5, 7, 3, 6, 4]
+        let counts = [actions ? 9 : hand, 3, 5, 4, 2, 5, 7, 3, 6, 4]
         let seats: [[String: Any]] = (0..<players).map { i in
             ["id": "p\(i)", "seat": i, "name": names[i], "face": faces[i], "cards": counts[i], "connected": true, "held": false]
         }
@@ -107,6 +114,14 @@ struct Table3DStill {
         let extra: [(String, Int)] = [("ember", 3), ("leaf", 8), ("bolt", 1), ("wave", 5), ("leaf", 0), ("ember", 7), ("bolt", 4), ("wave", 2)]
         for (j, e) in extra.enumerated() where handCards.count < hand { handCards.append(["id": "x\(j)", "kind": "number", "suit": e.0, "n": e.1]) }
         handCards = Array(handCards.prefix(hand))
+        if actions {
+            handCards = [
+                ["id": "a0", "kind": "number", "suit": "bolt", "n": 5], ["id": "a1", "kind": "draw2", "suit": "bolt"],
+                ["id": "a2", "kind": "skip", "suit": "ember"], ["id": "a3", "kind": "reverse", "suit": "wave"],
+                ["id": "a4", "kind": "wild4"], ["id": "a5", "kind": "wild"], ["id": "a6", "kind": "draw2", "suit": "leaf"],
+                ["id": "a7", "kind": "skip", "suit": "bolt"], ["id": "a8", "kind": "number", "suit": "wave", "n": 3],
+            ]
+        }
         let legal: [String] = mine ? handCards.compactMap { c in
             let id = c["id"] as? String ?? ""
             if c["kind"] as? String == "wild" { return id }
@@ -125,5 +140,24 @@ struct Table3DStill {
         ]
         let data = (try? JSONSerialization.data(withJSONObject: root)) ?? Data()
         return Overdraft.View(JSON.parse(data) ?? .null)
+    }
+}
+
+/// #609's classic hand: the flat table's own hand (HandView) holding the still's made-up cards, on the table's color,
+/// so each card's size can be checked beside its neighbors. Launched with -t2p-3d-still "classic=1 actions=1 mine=1".
+struct ClassicHandStill: View {
+    let still: Table3DStill
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            T2P.table.ignoresSafeArea()
+            VStack(spacing: 12) {
+                Spacer()
+                Text("Your hand").font(.headline).foregroundStyle(T2P.text)
+                HandView(view: still.view, onTap: { _ in }).frame(height: 230)
+                Text("ready").font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("od3d-ready")
+            }
+            .padding(.bottom, 24)
+        }
+        .preferredColorScheme(.dark)
     }
 }

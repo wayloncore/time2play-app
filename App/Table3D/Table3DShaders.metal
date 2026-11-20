@@ -54,8 +54,8 @@ static Env envAt(constant T3DU& u, float c) {
 }
 // the scene supports the game: a little dimmer and flatter than the table
 static float3 backdropTone(float3 c) { float l = dot(c, float3(.3, .55, .15)); return mix(c, float3(l), .10) * .84; }
-static float3 horizonCol(float4 W) { return W.x * float3(.70, .21, .04) + W.y * float3(.085, .19, .40) + W.z * float3(.17, .165, .225) + W.w * float3(.90, .68, .36); }
-static float3 zenithCol(float4 W) { return W.x * float3(.055, .018, .018) + W.y * float3(.012, .035, .10) + W.z * float3(.022, .022, .034) + W.w * float3(.17, .30, .38); }
+static float3 horizonCol(float4 W) { return W.x * float3(.70, .21, .04) + W.y * float3(.085, .19, .40) + W.z * float3(.19, .12, .30) + W.w * float3(.90, .68, .36); }
+static float3 zenithCol(float4 W) { return W.x * float3(.055, .018, .018) + W.y * float3(.012, .035, .10) + W.z * float3(.034, .016, .060) + W.w * float3(.17, .30, .38); }
 
 // ---------- the ground under the glass: sea, lava, storm sea, meadow ----------
 static float wh(float2 q, float time) {
@@ -125,16 +125,16 @@ static float3 boltG(float2 p, float3 V, float near, thread const Env& e) {
     float k = .9 * (.2 + .8 * near);
     float3 n = normalize(float3(-(hx - h0) / ee * k, 1., -(hz - h0) / ee * k));
     float fr = pow(1. - max(dot(n, V), 0.), 3.);
-    float3 c = mix(float3(.022, .024, .034), float3(.10, .105, .145), ss(.35, 1.5, h0));
+    float3 c = mix(float3(.026, .016, .044), float3(.12, .08, .19), ss(.35, 1.5, h0));   // #610: violet-slate swells
     float3 R = reflect(-V, n);
-    float3 skyR = mix(float3(.27, .265, .34), float3(.05, .05, .07), clamp(R.y * 1.4, 0., 1.));
+    float3 skyR = mix(float3(.30, .20, .42), float3(.06, .03, .10), clamp(R.y * 1.4, 0., 1.));
     c = mix(c, skyR, .14 + .62 * fr);
     float glint = pow(max(R.y, 0.), 3.) * ss(.9, 1.5, h0);
-    c += float3(.26, .22, .42) * glint * .55;
+    c += float3(.36, .20, .62) * glint * .6;
     float m = fbm3(p * .35 + e.seed);
     float a1 = pow(1. - abs(2. * noise2(p * .42 + m * 2.6 + e.seed) - 1.), 30.);
-    c += float3(.80, .74, 1.) * a1 * e.flash * .9 * near;
-    c += float3(.55, .48, .95) * e.flash * (.10 + .55 * fr + .25 * glint);
+    c += float3(.78, .58, 1.) * a1 * e.flash * .9 * near;
+    c += float3(.55, .34, .98) * e.flash * (.10 + .55 * fr + .25 * glint);
     return c;
 }
 static float3 elementGround(float2 p, float3 V, float dist, thread const Env& e) {
@@ -235,7 +235,8 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     float pulse = e.turn * (.75 + .25 * sin(e.t * 3.2));
     col += (tint * .5 + .5) * (ss(.90, .995, ed) * .30 + ss(.975, 1., ed) * .5);
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
-    col += float3(.5, .42, .9) * e.flash * .28;
+    // #610: a flash lights the rim (the felt's edge) in violet; the middle of the glass, under the cards, only a little
+    col += float3(.5, .34, .95) * e.flash * (.12 + ss(.80, 1., ed) * .55 + ss(.95, 1., ed) * .65);
     float4 fl = turnFlow(vW.xz, u);
     col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35;   // and its glow on the glass round it
     return float4(lin(col), 1.);
@@ -248,7 +249,7 @@ fragment float4 t3d_edge_frag(WorldOut in [[stage_in]], constant T3DU& u [[buffe
     float lines = ss(.80, 1., v) * .9 + ss(.16, 0., v) * .35;
     float pulse = e.turn * (.75 + .25 * sin(e.t * 3.2));
     float3 col = tint * (.22 + lines) + zenithCol(e.W) * .5 + (horizonCol(e.W) * .8 + .2) * pulse * .9;
-    col += float3(.5, .42, .9) * e.flash * .6;
+    col += float3(.62, .40, 1.) * e.flash * 1.1;   // #610: the rim's edge catches each flash
     float a = .62 + .38 * lines;
     return float4(lin(col) * a, a);
 }
@@ -287,23 +288,24 @@ fragment float4 t3d_sky_frag(SkyOut in [[stage_in]], constant T3DU& u [[buffer(2
         float dm = mix(d1, d3, low);
         float body = ss(.34, .66, dm);
         float wisps = ss(.36, .70, d2);
-        float3 dark = float3(.022, .023, .034), slate = float3(.26, .265, .31);
+        float3 dark = float3(.030, .016, .052), slate = float3(.27, .20, .38);   // #610: purple-dark between strikes
         float3 cl = mix(slate * (.50 + .75 * g), dark, body);
         cl = mix(cl, mix(dark * 1.3, slate * .85, d2), wisps * .5);
         float edgeL = ss(.34, .46, dm) * (1. - ss(.46, .62, dm));
-        cl += float3(.42, .40, .52) * edgeL * (.30 + .55 * g);
-        cl += float3(.26, .14, .48) * (1. - body) * low * .40;
+        cl += float3(.46, .36, .62) * edgeL * (.30 + .55 * g);
+        cl += float3(.36, .14, .66) * (1. - body) * low * .55;
         float veil = ss(.48, .72, fbm3(float2(az * 3.2 + t * .006, 1.3))) * (1. - ss(.0, .20, h));
-        cl = mix(cl, float3(.15, .15, .20), veil * .55);
+        cl = mix(cl, float3(.16, .10, .24), veil * .55);
         for (int k = 0; k < 2; k++) {   // silent flickers inside the clouds
             float fk = float(k), per = 2.6 + fk * 1.3, ph = t / per + fk * .37, tc = floor(ph), uu = fract(ph);
             float2 c0 = float2((hash2(float2(tc, fk * 7.)) - .5) * .9, .05 + .16 * hash2(float2(tc, 3. + fk)));
             float env = exp(-pow((uu - .30) / .07, 2.)) + .6 * exp(-pow((uu - .46) / .06, 2.));
             float gl = exp(-(pow(az - c0.x, 2.) / .020 + pow(h - c0.y, 2.) / .006));
-            cl += float3(.62, .56, .95) * gl * env * (.35 + .9 * body) * .42 * (1. - u.b.w);   // none with Reduce Motion
+            // #610: violet; with Reduce Motion the scene's clock runs slowly, so these become a gentle, slow glow
+            cl += float3(.66, .46, 1.) * gl * env * (.35 + .9 * body) * .50 * (1. - .55 * u.b.w);
         }
-        cl += float3(.92, .86, 1.) * e.flash * (.10 + 1.1 * (1. - body) * (.35 + .65 * wisps) + .55 * edgeL);
-        cl = mix(cl, float3(.20, .20, .27), (1. - ss(.0, .035, h)) * .6);
+        cl += float3(.84, .66, 1.) * e.flash * (.10 + 1.1 * (1. - body) * (.35 + .65 * wisps) + .55 * edgeL);
+        cl = mix(cl, float3(.22, .15, .32), (1. - ss(.0, .035, h)) * .6);
         float3 base = mix(zenithCol(W), horizonCol(W), g);
         add2 += W.z * (cl - base);
     }
@@ -477,7 +479,7 @@ fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer
     float d = abs(in.ua.x);
     float core = ss(.16, .03, d);
     float glow = pow(max(1. - d, 0.), 3.);
-    float3 col = float3(1.) * core * 1.3 + float3(.62, .48, 1.) * glow * .75;
+    float3 col = float3(.94, .88, 1.) * core * 1.35 + float3(.58, .30, 1.) * glow * 1.0;   // #610: violet
     float k = in.ua.y * u.c.y;
     return float4(lin(col * k), 1.);
 }

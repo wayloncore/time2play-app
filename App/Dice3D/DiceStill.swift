@@ -4,7 +4,10 @@ import T2PCore
 /// Still mode for the 3D dice's screenshots (#521): a made-up Hot Dice or Roll Call turn played on a timer through
 /// the real game screen, the scene stopped at an exact moment, so a roll mid-tumble, the dice settled, two kept and
 /// a Farkle are shot the same way every run. UI tests launch the app with
-///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle, over)
+///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle, over;
+///                                                  Roll Call also takes before: the turn before its first roll)
+/// Roll Call (Yacht Dice) has no arena since Nov 20: its still is the in-place board, a tumble stopped part way
+/// (YachtTumble.frozenAt), and "yacht-ready" says when it's there.
 /// ("over" is the end of the game: the painted winner screen, with the tip jar's quiet line when there are tips, #598)
 /// and optionally after=<seconds> to stop that long after the moment instead (build 45: the camera still eased in
 /// three seconds after the dice land).
@@ -121,12 +124,21 @@ struct DiceStill {
             return [(0, RollCall.View(Self.json(v)))]
         }
         let faces = [3, 3, 5, 2, 6]
-        var steps: [(Double, RollCall.View)] = [
-            (0, Self.rollCall(rolls: 0, faces: [1, 1, 1, 1, 1], held: Array(repeating: false, count: 5))),
-            (0.9, Self.rollCall(rolls: 1, faces: faces, held: Array(repeating: false, count: 5))),
-        ]
-        if moment == "kept" { steps.append((5.0, Self.rollCall(rolls: 1, faces: faces, held: [true, true, false, false, false]))) }
+        var steps: [(Double, RollCall.View)] = [(0, Self.rollCall(rolls: 0, faces: [1, 1, 1, 1, 1], held: Array(repeating: false, count: 5)))]
+        if moment == "before" { return steps }
+        steps.append((0.9, Self.rollCall(rolls: 1, faces: faces, held: Array(repeating: false, count: 5))))
+        if moment == "kept" { steps.append((2.4, Self.rollCall(rolls: 1, faces: faces, held: [true, true, false, false, false]))) }
         return steps
+    }
+
+    /// Roll Call: when its board is ready to shoot (seconds after the screen opens).
+    var rollCallReady: Double {
+        switch moment {
+        case "before", "over": return 0.8
+        case "tumble": return 1.4
+        case "kept": return 3.4
+        default: return 2.4
+        }
     }
 }
 
@@ -137,13 +149,15 @@ struct DiceStillView: View {
     @State private var room: RoomModel?
     @State private var hot: HotDice.View?
     @State private var rc: RollCall.View?
+    @State private var ready = false
 
     var body: some View {
         ZStack {
             (still.game == "rollcall" ? Color(hex: 0x0B1121) : T2P.felt).ignoresSafeArea()
             if let room {
                 if let hot { HotDiceView(room: room, view: hot, onLeave: {}, arena: true) }
-                if let rc { RollCallView(room: room, view: rc, onLeave: {}, arena: true) }
+                if let rc { RollCallView(room: room, view: rc, onLeave: {}) }
+                if ready { Text("ready").font(.caption2).foregroundStyle(.clear).accessibilityIdentifier("yacht-ready") }
             }
         }
         .environmentObject(app)
@@ -159,7 +173,9 @@ struct DiceStillView: View {
         room = RoomModel(game: still.game == "rollcall" ? .rollCall : .hotDice, code: "SOLO", app: app, taken: [], starting: false,
                          offline: app.offlineRules)
         if still.game == "rollcall" {
+            if still.moment == "tumble" { YachtTumble.frozenAt = 0.42 }
             for (at, v) in still.rollCallSteps { DispatchQueue.main.asyncAfter(deadline: .now() + at) { rc = v } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + still.rollCallReady) { ready = true }
         } else {
             for (at, v) in still.hotSteps { DispatchQueue.main.asyncAfter(deadline: .now() + at) { hot = v } }
         }

@@ -93,7 +93,8 @@ struct RoomView: View {
                 else { LobbyView(room: room, onLeave: { confirmLeave = true }) }
             // #521: the 3D dice for everyone (Nov 17); You → "Classic dice" rolls the flat ones
             case .hotDice: HotDiceView(room: room, view: HotDice.View(v), onLeave: { confirmLeave = true }, arena: Dice3DSwitch.use3D(classic: classicDice))
-            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true }, arena: Dice3DSwitch.use3D(classic: classicDice))
+            // Nov 20: Yacht Dice always rolls in place (no arena), whatever You → Classic dice says
+            case .rollCall: RollCallView(room: room, view: RollCall.View(v), onLeave: { confirmLeave = true })
             case .closeEnough: CloseEnoughView(room: room, view: CloseEnough.View(v), onLeave: { confirmLeave = true })
             }
         }
