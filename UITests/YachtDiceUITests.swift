@@ -93,12 +93,13 @@ final class YachtDiceUITests: XCTestCase {
         shot(app, "609-\(device)\(name)")
         let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'legal-' OR identifier BEGINSWITH 'card-'")).allElementsBoundByIndex
         XCTAssertGreaterThanOrEqual(cards.count, 9, "\(name): the whole hand")
-        // the classic hand's cards lie flat: every one the same size (the action cards were drawn short). The 3D fan
+        // the classic hand's cards lie flat: every one the same size (the action cards were drawn short; a playable
+        // card's 3-point gold ring adds 3 to its frame, so allow that). The 3D fan
         // tilts each card a little differently, so its frames differ; that hand is checked in its screenshot.
         if cfg.contains("classic=1") {
             let heights = cards.map { $0.frame.height.rounded() }, widths = cards.map { $0.frame.width.rounded() }
-            XCTAssertLessThanOrEqual((heights.max() ?? 0) - (heights.min() ?? 0), 1, "\(name): one height: \(heights)")
-            XCTAssertLessThanOrEqual((widths.max() ?? 0) - (widths.min() ?? 0), 1, "\(name): one width: \(widths)")
+            XCTAssertLessThanOrEqual((heights.max() ?? 0) - (heights.min() ?? 0), 3, "\(name): one height: \(heights)")
+            XCTAssertLessThanOrEqual((widths.max() ?? 0) - (widths.min() ?? 0), 3, "\(name): one width: \(widths)")
         }
         app.terminate()
     }

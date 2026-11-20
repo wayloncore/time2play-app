@@ -48,9 +48,10 @@ struct RollCallView: View {
                 }
                 .padding(.horizontal, 16)
                 MomentFeed(lines: Array(feed.prefix(1)), id: "rollcall-last").padding(.top, 2)
+                // on an iPad the card stops growing (rows about 75 points), centered above the dice
                 scorecard
                     .padding(.horizontal, 10).padding(.top, 6)
-                    .frame(maxWidth: 760).frame(maxWidth: .infinity)
+                    .frame(maxWidth: 760, maxHeight: wide ? CGFloat(660) : CGFloat.infinity).frame(maxWidth: .infinity)
                     .frame(maxHeight: .infinity)
                 tray
                     .padding(.horizontal, 10).padding(.top, 8)
@@ -166,7 +167,7 @@ struct RollCallView: View {
     /// The bottom of the screen: the five dice locked in one row on the felt, Roll under them.
     private var tray: some View {
         VStack(spacing: 8) {
-            diceRow.padding(.top, 12)
+            diceRow.padding(.top, 16)
             if mine { rollButton.padding(.horizontal, 14) }
         }
         .padding(.bottom, 12)
@@ -175,7 +176,7 @@ struct RollCallView: View {
     }
 
     private var diceRow: some View {
-        let size: CGFloat = wide ? 84 : 56
+        let size: CGFloat = wide ? 92 : 56
         return HStack(spacing: wide ? 26 : 10) {
             ForEach(0..<5, id: \.self) { i in die(i, size) }
         }
@@ -281,7 +282,10 @@ struct RollCallView: View {
             .accessibilityHidden(true)
     }
 
-    private var boxWidth: CGFloat { wide ? 76 : 50 }
+    private var boxWidth: CGFloat { wide ? 84 : 50 }
+    private var rowFont: Font { wide ? Font.title3.weight(.semibold) : Font.callout.weight(.semibold) }
+    /// A box's height in a row this tall: most of the row, never a tall slab on an iPad.
+    private func boxHeight(_ h: CGFloat) -> CGFloat { wide ? min(56, h - 12) : max(24, h - 6) }
     private var boxFont: Font { Painted.display(wide ? 22 : 17, .bold).monospacedDigit() }
 
     /// One box: open and takeable this roll (a gold plaque with its points), filled (gold on the felt), or open.
@@ -293,11 +297,11 @@ struct RollCallView: View {
             if open {
                 Button { room.move("score", ["key": .string(key)]); Haptics.play() } label: {
                     HStack(spacing: 6) {
-                        Text(name).font(.callout.weight(.semibold)).foregroundStyle(Painted.paper).lineLimit(1).minimumScaleFactor(0.7)
+                        Text(name).font(rowFont).foregroundStyle(Painted.paper).lineLimit(1).minimumScaleFactor(0.7)
                         Spacer(minLength: 2)
                         Text("\(pts)").font(boxFont)
                             .foregroundStyle(pts > 0 ? Color(hex: 0x2A1A05) : Painted.goldLight)
-                            .frame(width: boxWidth, height: max(24, h - 6))
+                            .frame(width: boxWidth, height: boxHeight(h))
                             .background(shape.fill(pts > 0 ? AnyShapeStyle(YachtFeltPanel.goldFill) : AnyShapeStyle(Color.white.opacity(0.07))))
                             .overlay(shape.strokeBorder(Painted.rim, lineWidth: 1.5))
                             .shadow(color: Painted.gold.opacity(pts > 0 ? 0.55 : 0.15), radius: 6)
@@ -309,11 +313,11 @@ struct RollCallView: View {
                 .accessibilityIdentifier("box-\(key)")
             } else {
                 HStack(spacing: 6) {
-                    Text(name).font(.callout.weight(.semibold)).foregroundStyle(filled == nil ? Painted.paperDim : Painted.paper)
+                    Text(name).font(rowFont).foregroundStyle(filled == nil ? Painted.paperDim : Painted.paper)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Spacer(minLength: 2)
                     Text(filled.map { "\($0)" } ?? "").font(boxFont).foregroundStyle(Painted.titleGold)
-                        .frame(width: boxWidth, height: max(24, h - 6))
+                        .frame(width: boxWidth, height: boxHeight(h))
                         .background(shape.fill(Color.black.opacity(0.28)))
                         .overlay(shape.strokeBorder(Painted.gold.opacity(filled == nil ? 0.2 : 0.45), lineWidth: 1))
                 }
@@ -328,10 +332,10 @@ struct RollCallView: View {
     /// The upper bonus's own box, under Sixes: 35 once it's earned.
     private func bonusBox(_ bonus: Int, _ h: CGFloat) -> some View {
         HStack(spacing: 6) {
-            Text("Bonus").font(.callout.weight(.semibold).italic()).foregroundStyle(bonus > 0 ? Painted.paper : Painted.paperDim)
+            Text("Bonus").font(rowFont.italic()).foregroundStyle(bonus > 0 ? Painted.paper : Painted.paperDim)
             Spacer(minLength: 2)
             Text(bonus > 0 ? "\(bonus)" : "").font(boxFont).foregroundStyle(Painted.titleGold)
-                .frame(width: boxWidth, height: max(24, h - 6))
+                .frame(width: boxWidth, height: boxHeight(h))
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.black.opacity(0.18)))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Painted.gold.opacity(bonus > 0 ? 0.45 : 0.15), style: StrokeStyle(lineWidth: 1, dash: bonus > 0 ? [] : [3, 3])))
         }
@@ -525,8 +529,8 @@ struct YachtTumble: View {
             YachtDie(value: 1 + h % 6, size: size)
                 .rotation3DEffect(.degrees(sin(p * .pi * 4.5) * 55 * (1 - p)), axis: (x: 1, y: CGFloat(dir * 0.7), z: 0), perspective: 0.6)
                 .rotationEffect(.degrees((1 - slow) * 420 * dir))
-                .scaleEffect(1 + 0.16 * hop)
-                .offset(y: -size * 0.16 * hop)
+                .scaleEffect(1 + 0.12 * hop)
+                .offset(y: -size * 0.11 * hop)
         }
         .accessibilityHidden(true)
     }
