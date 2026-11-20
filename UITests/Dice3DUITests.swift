@@ -56,14 +56,7 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertEqual(app.buttons["die-0"].value as? String, "scores")
             XCTAssertTrue(app.buttons["dice-reset-view"].exists, "a moved view offers its reset")
         }
-        still("game=rollcall moment=settled", "rc-1-settled") { app in
-            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "fitted", "Roll Call's row never moves the camera")
-            self.checkTapTargets(app, "rc-die-")
-        }
-        still("game=rollcall moment=kept", "rc-2-two-held") { app in
-            XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held")
-            XCTAssertEqual(app.buttons["rc-die-1"].value as? String, "held")
-        }
+        // Yacht Dice (Roll Call) has no arena since Nov 20: its stills are in YachtDiceUITests
     }
 
     /// Hot Dice offline against Rex with the 3D dice: roll, keep a scoring die (it goes to the keep row), put it back,
@@ -166,14 +159,14 @@ final class Dice3DUITests: XCTestCase {
         XCTFail("no roll to choose from in 12 tries")
     }
 
-    /// Roll Call offline against Pip with the 3D dice: roll, hold two (they stay in their places, marked HOLD), roll
-    /// again, score.
+    /// Yacht Dice (Roll Call) offline against Pip with the 3D dice on: since Nov 20 it rolls in place anyway (no
+    /// arena). Roll, hold two (they stay in their places, marked HOLD), roll again, score.
     func testRollCallPlayed() {
         let app = launch(["-t2p-dice3d", "-t2p-seed", "3"])
         startOffline(app, "rollcall", bot: "easy")
-        XCTAssertTrue(app.descendants(matching: .any)["dice-3d"].waitForExistence(timeout: 20), "the 3D dice are on")
         let roll = app.buttons["rc-roll"]
         XCTAssertTrue(waitEnabled(roll, 60), "your turn")
+        XCTAssertFalse(app.descendants(matching: .any)["dice-3d"].exists, "Yacht Dice rolls in place, even with the 3D dice on")
         roll.tap()
         let box = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'box-'")).firstMatch
         XCTAssertTrue(box.waitForExistence(timeout: 12), "the boxes show once the dice land")
