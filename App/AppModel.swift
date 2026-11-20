@@ -57,7 +57,8 @@ final class AppModel: ObservableObject {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-uitest-reset") {
             for k in ["t2p.profile", "t2p.seats", "t2p.library", "t2p.account", Table3DSwitch.classicKey, Dice3DSwitch.classicKey,
-                      Keepsakes.recentKey, Keepsakes.favoritesKey, TurnAlerts.key, IntroSettings.key] + FeelSettings.all { UserDefaults.standard.removeObject(forKey: k) }
+                      Keepsakes.recentKey, Keepsakes.favoritesKey, TurnAlerts.key, IntroSettings.key,
+                      JoinIntroSettings.key, Tips.countKey, Tips.hideStarKey, ReviewAsk.key, FrameWatch.key] + FeelSettings.all { UserDefaults.standard.removeObject(forKey: k) }
             SharedRoom.clear()
             Keychain.delete()
         }
@@ -101,6 +102,8 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var webFallback: URL?
+    /// A finished game's room just closed: RootView may ask for a rating (#594).
+    @Published var reviewDue = false
 
     /// Starts a hostless room of a game; the first to join owns it, which is you.
     func start(_ g: Game) async {
@@ -114,7 +117,9 @@ final class AppModel: ObservableObject {
     }
 
     func open(_ g: Game, code: String, taken: [Int], starting: Bool = false, canWatch: Bool = false) {
-        Intro.shared.skip()   // the intro never stands between a player and a game (#562)
+        Intro.shared.skip()   // the launch intro never stands between a player and a game (#562)
+        // #596: joining someone's room plays the logo once as it opens (not your own new room, not your own seat)
+        JoinIntro.shared.roomOpening(starting: starting, offline: false, returning: seats.seat(for: code)?.game == g.rawValue)
         room?.close()
         let r = RoomModel(game: g, code: code, app: self, taken: taken, starting: starting, session: api.session)
         r.canWatch = canWatch
@@ -125,6 +130,10 @@ final class AppModel: ObservableObject {
 
     func closeRoom() {
         if let r = room { keep.note(r) }   // who was in it, for Recent rooms (a confirmed Leave already took it off)
+        JoinIntro.shared.skip()
+        FrameWatch.shared.stop()   // #594: the last game's frame numbers are kept for a report
+        // #594 part 3: Apple's rating request, after a finished game, once a version (RootView asks)
+        if room?.finishedGame == true { reviewDue = true }
         room?.close(); room = nil; TVModel.shared.watch(nil, code: nil, endpoints: endpoints)
     }
 
@@ -142,6 +151,7 @@ final class AppModel: ObservableObject {
     func startOffline(_ g: Game) {
         guard let rules = offlineRules else { problem = "Offline play isn’t available right now."; return }
         Intro.shared.skip()
+        JoinIntro.shared.skip()
         room?.close()
         let r = RoomModel(game: g, code: "SOLO", app: self, taken: [], starting: true, offline: rules)
         room = r

@@ -38,7 +38,8 @@ public struct Library: Equatable, Sendable {
             guard let key = $0["key"].string, let title = $0["title"].string, $0["showName"].bool != true else { return nil }
             let p = $0["facts"]["players"].array.compactMap(\.int)
             let game = $0["app"].string.flatMap(Game.init(rawValue:))
-            return Item(key: key, title: game != nil ? ($0["appTitle"].string ?? title) : title,
+            // an app game goes by the app's own name (#595: 10,000 and Yacht Dice), whatever the feed calls it
+            return Item(key: key, title: game?.title ?? title,
                         category: $0["category"].string ?? "", blurb: $0["blurb"].string.map(Library.plain), thumb: $0["thumb"].string,
                         page: $0["page"].string ?? "/library/\(key)", players: p.count == 2 ? (p[0], p[1]) : nil,
                         phones: $0["facts"]["phones"].string, game: game)

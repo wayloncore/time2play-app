@@ -8,6 +8,9 @@
   asc.py gamecenter          Game Center (#541): the capability, the leaderboards and the achievements
   asc.py store META SHOTS    fills in the App Store listing (#407); never submits
   asc.py submit BUILD        sends the version to App Review, only if it holds build BUILD (Tyler's "submit")
+  asc.py iap [SHOT]          the tip jar's three consumable in-app purchases (#598): makes any that are missing, with
+                             their names, US prices and every territory, and SHOT (a screenshot of the Tip jar) for
+                             App Review. Needs the Paid Apps agreement in effect first. Never submits anything.
 
 Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
 
@@ -375,8 +378,19 @@ def store(meta_path, shots_dir):
             "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
     print("Review notes and contact: set (the phone number is Tyler's to add)")
 
-    # screenshots: only into an empty set, so a re-run never doubles them and never deletes any
+    # screenshots: only into an empty set, so a re-run never doubles them. "replaceShots" (#595: the games' new names
+    # are on the new screenshots) first clears this version's sets once, for a version still being prepared
     sets = call("GET", f"/v1/appStoreVersionLocalizations/{vloc['id']}/appScreenshotSets")["data"]
+    if meta.get("replaceShots") == version["attributes"]["versionString"]:
+        made = os.listdir(shots_dir)
+        for device, kind in SHOT_TYPES.items():
+            x = next((x for x in sets if x["attributes"]["screenshotDisplayType"] == kind), None)
+            if not x or not any(f.startswith(f"store-{device}-") and f.endswith(".png") for f in made):
+                continue   # nothing new to put in its place: leave it as it is
+            old = call("GET", f"/v1/appScreenshotSets/{x['id']}/appScreenshots")["data"]
+            for o in old:
+                call("DELETE", f"/v1/appScreenshots/{o['id']}")
+            print(f"Screenshots {kind}: cleared {len(old)} for the new ones")
     for device, kind in SHOT_TYPES.items():
         files = sorted(f for f in os.listdir(shots_dir) if f.startswith(f"store-{device}-") and f.endswith(".png")
                        and f not in meta.get("skipShots", []))
@@ -411,8 +425,9 @@ def store(meta_path, shots_dir):
 
 GC = {
     "leaderboards": [
-        ("t2p.best.hotdice", "Hot Dice best score", "Hot Dice", "points", "point"),
-        ("t2p.best.rollcall", "Roll Call best score", "Roll Call", "points", "point"),
+        # #595: the games' names changed (Hot Dice is 10,000, Roll Call is Yacht Dice); the ids never change
+        ("t2p.best.hotdice", "10,000 best score", "10,000", "points", "point"),
+        ("t2p.best.rollcall", "Yacht Dice best score", "Yacht Dice", "points", "point"),
         ("t2p.best.closeenough", "Close Enough best score", "Close Enough", "points", "point"),
     ],
     # (id, name, points, before, after): the app's own achievements (T2PCore Stats.swift Achievement.all)
@@ -423,9 +438,9 @@ GC = {
         ("t2p.wins_5", "On a roll", 30, "Win 5 games.", "You won 5 games."),
         ("t2p.all_four", "All-rounder", 30, "Play all four games.", "You played all four games."),
         ("t2p.overdraft_win", "Empty-handed", 15, "Win a hand of Overdraft.", "You won a hand of Overdraft."),
-        ("t2p.hotdice_10k", "Ten thousand", 40, "Win a Hot Dice game played to 10,000.", "You won a Hot Dice game played to 10,000."),
-        ("t2p.rollcall_full", "Full card", 50, "Finish Roll Call with points in every box.", "You finished Roll Call with points in every box."),
-        ("t2p.rollcall_300", "Three hundred club", 40, "Score 300 or more in Roll Call.", "You scored 300 or more in Roll Call."),
+        ("t2p.hotdice_10k", "Ten thousand", 40, "Win a game of 10,000 played to the full 10,000.", "You won a game of 10,000 played to the full 10,000."),
+        ("t2p.rollcall_full", "Full card", 50, "Finish Yacht Dice with points in every box.", "You finished Yacht Dice with points in every box."),
+        ("t2p.rollcall_300", "Three hundred club", 40, "Score 300 or more in Yacht Dice.", "You scored 300 or more in Yacht Dice."),
         ("t2p.closeenough_bullseye", "Bullseye", 25, "Score full points on a Close Enough question.", "You scored full points on a Close Enough question."),
     ],
 }
@@ -497,7 +512,17 @@ def gamecenter():
             call("GET", f"/v1/gameCenterDetails/{did}/gameCenterLeaderboards" + q({"limit": 200}))["data"]}
     for vid, ref, name, suffix, single in GC["leaderboards"]:
         if vid in have:
-            print(f"Leaderboard {vid}: there")
+            # #595: one that's there gets its English name brought up to date (never its id)
+            lid = have[vid]["id"]
+            if have[vid]["attributes"].get("referenceName") != ref:
+                call("PATCH", f"/v1/gameCenterLeaderboards/{lid}", {"data": {"type": "gameCenterLeaderboards", "id": lid, "attributes": {"referenceName": ref}}})
+            locs = call("GET", f"/v1/gameCenterLeaderboards/{lid}/localizations")["data"]
+            en = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
+            if en and en["attributes"].get("name") != name:
+                call("PATCH", f"/v1/gameCenterLeaderboardLocalizations/{en['id']}", {"data": {"type": "gameCenterLeaderboardLocalizations", "id": en["id"], "attributes": {"name": name}}})
+                print(f"Leaderboard {vid}: there, renamed to {name}")
+            else:
+                print(f"Leaderboard {vid}: there")
             continue
         lb = call("POST", "/v1/gameCenterLeaderboards", {"data": {"type": "gameCenterLeaderboards", "attributes": {
             "referenceName": ref, "vendorIdentifier": vid, "defaultFormatter": "INTEGER", "submissionType": "BEST_SCORE",
@@ -514,7 +539,15 @@ def gamecenter():
     tmp = os.environ.get("RUNNER_TEMP", "/tmp")
     for k, (vid, name, points, before, after) in enumerate(GC["achievements"]):
         if vid in have:
-            print(f"Achievement {vid}: there")
+            # #595: one that's there gets its English words brought up to date (never its id)
+            locs = call("GET", f"/v1/gameCenterAchievements/{have[vid]['id']}/localizations")["data"]
+            en = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
+            want = {"name": name, "beforeEarnedDescription": before, "afterEarnedDescription": after}
+            if en and any(en["attributes"].get(f) != v for f, v in want.items()):
+                call("PATCH", f"/v1/gameCenterAchievementLocalizations/{en['id']}", {"data": {"type": "gameCenterAchievementLocalizations", "id": en["id"], "attributes": want}})
+                print(f"Achievement {vid}: there, words brought up to date")
+            else:
+                print(f"Achievement {vid}: there")
             continue
         a = call("POST", "/v1/gameCenterAchievements", {"data": {"type": "gameCenterAchievements", "attributes": {
             "referenceName": name, "vendorIdentifier": vid, "points": points, "showBeforeEarned": True, "repeatable": False},
@@ -601,6 +634,92 @@ def submit(expected_build):
     print(f"Submitted for App Review: build {number}, submission {done['attributes'].get('state')}")
 
 
+# ---------- the tip jar (#598): three consumable in-app purchases; never submits ----------
+
+IAP = [
+    # (product id, name, US price, description: 55 characters at most)
+    ("live.time2play.app.tip.small", "Tip", "1.99", "A coffee’s worth of thanks. Tips unlock nothing."),
+    ("live.time2play.app.tip.big", "Big tip", "4.99", "A round of thanks for the table. Tips unlock nothing."),
+    ("live.time2play.app.tip.huge", "Huge tip", "9.99", "Game night’s on you. Tips unlock nothing."),
+]
+IAP_REVIEW_NOTE = ("A tip jar: You, then Tip jar (and a small line on a game's end screen). Tips are thank-yous only: they "
+                   "unlock nothing, and every game stays free. A Supporter star then shows on the player's own You screen, on "
+                   "that phone only.")
+
+
+def iap(shot=None):
+    """Makes the tip jar's products in App Store Connect, each only if it's missing (safe to run again). Apple refuses
+    until the Paid Apps agreement is in effect; its answer is printed and nothing else changes."""
+    app = the_app()
+    app_id = app["id"]
+    print(f"App: {app['attributes']['name']} ({app_id})")
+    have = {i["attributes"]["productId"]: i for i in
+            call("GET", f"/v1/apps/{app_id}/inAppPurchasesV2" + q({"limit": 200}))["data"]}
+    territories = None
+    for pid, name, price, desc in IAP:
+        if pid in have:
+            item = have[pid]
+            print(f"{pid}: there ({item['attributes'].get('state')})")
+        else:
+            item = call("POST", "/v2/inAppPurchases", {"data": {"type": "inAppPurchases", "attributes": {
+                "name": name, "productId": pid, "inAppPurchaseType": "CONSUMABLE", "reviewNote": IAP_REVIEW_NOTE,
+                "familySharable": False}, "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+            print(f"{pid}: made")
+        iid = item["id"]
+        # the English name and description
+        locs = call("GET", f"/v2/inAppPurchases/{iid}/inAppPurchaseLocalizations")["data"]
+        if not any(l["attributes"]["locale"] == "en-US" for l in locs):
+            call("POST", "/v1/inAppPurchaseLocalizations", {"data": {"type": "inAppPurchaseLocalizations", "attributes": {
+                "locale": "en-US", "name": name, "description": desc},
+                "relationships": {"inAppPurchaseV2": {"data": {"type": "inAppPurchases", "id": iid}}}}})
+            print(f"{pid}: English name and description set")
+        # the price: the US price point, the other territories follow it (Apple's equalization)
+        sched = call("GET", f"/v2/inAppPurchases/{iid}/iapPriceSchedule", ok_missing=True)
+        if not (sched or {}).get("data"):
+            points = call("GET", f"/v2/inAppPurchases/{iid}/pricePoints" + q({"filter[territory]": "USA", "limit": 8000}))["data"]
+            pp = next((x for x in points if x["attributes"].get("customerPrice") == price), None)
+            if not pp:
+                die(f"{pid}: no US price point at {price}")
+            call("POST", "/v1/inAppPurchasePriceSchedules", {
+                "data": {"type": "inAppPurchasePriceSchedules", "relationships": {
+                    "inAppPurchase": {"data": {"type": "inAppPurchases", "id": iid}},
+                    "baseTerritory": {"data": {"type": "territories", "id": "USA"}},
+                    "manualPrices": {"data": [{"type": "inAppPurchasePrices", "id": "${price}"}]}}},
+                "included": [{"type": "inAppPurchasePrices", "id": "${price}", "attributes": {"startDate": None},
+                              "relationships": {"inAppPurchasePricePoint": {"data": {"type": "inAppPurchasePricePoints", "id": pp["id"]}}}}]})
+            print(f"{pid}: priced at ${price} (US)")
+        # where it's sold: everywhere the app is
+        avail = call("GET", f"/v2/inAppPurchases/{iid}/inAppPurchaseAvailability", ok_missing=True)
+        if not (avail or {}).get("data"):
+            if territories is None:
+                territories = [t["id"] for t in call("GET", "/v1/territories" + q({"limit": 200}))["data"]]
+            call("POST", "/v1/inAppPurchaseAvailabilities", {"data": {"type": "inAppPurchaseAvailabilities",
+                "attributes": {"availableInNewTerritories": True}, "relationships": {
+                    "inAppPurchase": {"data": {"type": "inAppPurchases", "id": iid}},
+                    "availableTerritories": {"data": [{"type": "territories", "id": t} for t in territories]}}}})
+            print(f"{pid}: available in {len(territories)} territories")
+        # App Review's screenshot of the Tip jar
+        if shot:
+            got = call("GET", f"/v2/inAppPurchases/{iid}/appStoreReviewScreenshot", ok_missing=True)
+            if not (got or {}).get("data"):
+                data = open(shot, "rb").read()
+                made = call("POST", "/v1/inAppPurchaseAppStoreReviewScreenshots", {"data": {
+                    "type": "inAppPurchaseAppStoreReviewScreenshots",
+                    "attributes": {"fileName": os.path.basename(shot), "fileSize": len(data)},
+                    "relationships": {"inAppPurchaseV2": {"data": {"type": "inAppPurchases", "id": iid}}}}})["data"]
+                for op in made["attributes"]["uploadOperations"]:
+                    part = data[op["offset"]:op["offset"] + op["length"]]
+                    req = urllib.request.Request(op["url"], data=part, method=op["method"],
+                                                 headers={h["name"]: h["value"] for h in op.get("requestHeaders", [])})
+                    urllib.request.urlopen(req, timeout=120).read()
+                call("PATCH", f"/v1/inAppPurchaseAppStoreReviewScreenshots/{made['id']}", {"data": {
+                    "type": "inAppPurchaseAppStoreReviewScreenshots", "id": made["id"],
+                    "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+                print(f"{pid}: review screenshot uploaded")
+    print("Not submitted. The first tips go to App Review with the next app version: pick them on that version's page "
+          "(In-App Purchases) before submitting, which is Tyler's call.")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "signing":
@@ -615,5 +734,7 @@ if __name__ == "__main__":
         store(sys.argv[2], sys.argv[3])
     elif cmd == "submit":
         submit(sys.argv[2])
+    elif cmd == "iap":
+        iap(sys.argv[2] if len(sys.argv) > 2 else None)
     else:
         die(__doc__)

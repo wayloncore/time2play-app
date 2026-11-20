@@ -4,7 +4,8 @@ import T2PCore
 /// Still mode for the 3D dice's screenshots (#521): a made-up Hot Dice or Roll Call turn played on a timer through
 /// the real game screen, the scene stopped at an exact moment, so a roll mid-tumble, the dice settled, two kept and
 /// a Farkle are shot the same way every run. UI tests launch the app with
-///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle)
+///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle, over)
+/// ("over" is the end of the game: the painted winner screen, with the tip jar's quiet line when there are tips, #598)
 /// and optionally after=<seconds> to stop that long after the moment instead (build 45: the camera still eased in
 /// three seconds after the dice land).
 /// Nothing here talks to a room.
@@ -70,6 +71,18 @@ struct DiceStill {
 
     /// The Hot Dice views in order, each with when it arrives (seconds after the screen opens).
     var hotSteps: [(Double, HotDice.View)] {
+        if moment == "over" {
+            let ps: [[String: Any]] = [
+                ["id": "p0", "name": "Sim", "face": 3, "score": 10350, "on": true, "connected": true],
+                ["id": "p1", "name": "June (bot)", "face": 12, "bot": "steady", "score": 8900, "on": true, "connected": true],
+                ["id": "p2", "name": "Rex (bot)", "face": 21, "bot": "bold", "score": 6150, "on": true, "connected": true],
+            ]
+            let you: [String: Any] = ["id": "p0", "name": "Sim", "face": 3]
+            let v: [String: Any] = ["t": "you", "phase": "done", "code": "SOLO", "you": you, "yourTurn": false, "hostless": true,
+                                    "owner": "p0", "players": ps, "winners": ["p0"], "target": 10000, "ones": 1000,
+                                    "rules": ["board": true, "three": true]]
+            return [(0, HotDice.View(Self.json(v)))]
+        }
         let rolled: [Int?] = moment == "farkle" ? [2, 3, 4, 6, 6, 3] : [5, 1, 3, 3, 6, 2]
         var steps: [(Double, HotDice.View)] = [
             (0, Self.hot(state: "start", seq: 0, faces: Array(repeating: 1, count: 6))),
@@ -97,6 +110,16 @@ struct DiceStill {
     }
 
     var rollCallSteps: [(Double, RollCall.View)] {
+        if moment == "over" {
+            let ps: [[String: Any]] = [
+                ["id": "p0", "name": "Sim", "face": 3, "total": 287, "extra": 100, "scores": ["five": 50, "chance": 24, "sixes": 24, "fives": 20, "fours": 16, "threes": 9, "twos": 6, "ones": 3], "connected": true],
+                ["id": "p1", "name": "Rosa (bot)", "face": 9, "bot": "medium", "total": 214, "scores": ["chance": 25, "sixes": 24, "full": 25, "large": 40, "small": 30, "three": 22, "four": 24, "fives": 15, "fours": 9], "connected": true],
+            ]
+            let you: [String: Any] = ["id": "p0", "name": "Sim", "face": 3]
+            let v: [String: Any] = ["t": "you", "phase": "done", "code": "SOLO", "you": you, "yourTurn": false, "hostless": true,
+                                    "owner": "p0", "quick": false, "rounds": 13, "players": ps, "winners": ["p0"], "last": ["n": 26]]
+            return [(0, RollCall.View(Self.json(v)))]
+        }
         let faces = [3, 3, 5, 2, 6]
         var steps: [(Double, RollCall.View)] = [
             (0, Self.rollCall(rolls: 0, faces: [1, 1, 1, 1, 1], held: Array(repeating: false, count: 5))),
@@ -130,6 +153,7 @@ struct DiceStillView: View {
 
     private func start() {
         guard room == nil else { return }
+        Task { await TipJar.shared.load() }   // #598: the end screen's tip line, when there are tips
         DiceArenaStage.stillFreeze = still.freeze
         DiceArenaStage.stillZoom = still.zoom
         room = RoomModel(game: still.game == "rollcall" ? .rollCall : .hotDice, code: "SOLO", app: app, taken: [], starting: false,

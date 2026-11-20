@@ -14,8 +14,15 @@ it applies here too.
   or `[testflight]` in a pushed commit's message on main. Its build number is the run number. `scripts/asc.py` talks
   to App Store Connect with the API key in secrets (ASC_ISSUER_ID, ASC_KEY_ID, ASC_KEY_P8): the distribution
   certificate, the App Store profile, waiting for processing, and the internal testing group.
+- The tip jar (#598): `App/TipJar.swift`, three consumable StoreKit 2 tips (ids in T2PCore `Tips`), hidden while
+  StoreKit returns none. `StoreKit/Time2Play.storekit` is the simulator's configuration (the scheme's Run options); the
+  command line's UI tests use the test build's stand-in (`-t2p-tips-demo`). `scripts/asc.py iap` (the "Tip jar
+  products" workflow, by hand only) makes the products once the Paid Apps agreement is in effect.
+- Feedback (#594): You → "Send a report" (`App/ReportView.swift`) posts to the website's own report form
+  (tyleralocke.com/report) only when tapped; `App/FrameWatch.swift` keeps the last game's frame numbers on the phone
+  for it; Apple's rating request asks after a finished game, once a version. UI tests never send a report.
 - `App/Assets.xcassets/AppIcon.appiconset`: the app icon (one 1024 × 1024 PNG, no transparency):
-  the website's Time2Play mark (the gold 2 in its ring).
+  the full Time 2 Play ring with the little character on Play, a still from the playful loop.
 
 ## Testing
 - **In a cloud session:** `bash scripts/install-swift.sh` (Swift from swift.org, signature checked), then

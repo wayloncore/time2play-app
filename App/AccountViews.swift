@@ -131,6 +131,7 @@ struct YouView: View {
     @State private var picking = false
     @State private var taps = 0
     @State private var review = false
+    @State private var reporting = false
     @State private var name = ""
     @AppStorage(Table3DSwitch.key) private var table3D = false
     @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
@@ -144,8 +145,11 @@ struct YouView: View {
                         if let f = app.profile.face { FaceView(face: f, size: 64) }
                         else { Image(systemName: "person.crop.circle").font(.system(size: 56)).foregroundStyle(T2P.muted) }
                         VStack(alignment: .leading) {
-                            Text(app.profile.name.isEmpty ? "Guest" : app.profile.name).font(.title2.bold()).foregroundStyle(T2P.text)
-                                .accessibilityIdentifier("you-name")
+                            HStack(spacing: 8) {
+                                Text(app.profile.name.isEmpty ? "Guest" : app.profile.name).font(.title2.bold()).foregroundStyle(T2P.text)
+                                    .accessibilityIdentifier("you-name")
+                                SupporterStar()   // #598: once you've tipped, kept on this phone
+                            }
                             Text(app.signedIn ? (app.account?.kind == "review" ? "Signed in for review" : "Signed in with Apple") : "Playing as a guest")
                                 .foregroundStyle(T2P.muted)
                         }
@@ -201,6 +205,10 @@ struct YouView: View {
 
                 BoardSettingsSection()   // #535
 
+                TipJarSection()   // #598: only when the App Store has the tips
+                SupporterSection()
+                ReportSection(open: $reporting)   // #594
+
                 Section {
                     Link("Help and support", destination: URL(string: "https://tyleralocke.com/help#app-support")!)
                     Link("Privacy", destination: URL(string: "https://tyleralocke.com/privacy")!)
@@ -224,6 +232,7 @@ struct YouView: View {
                 }))
             }
             .sheet(isPresented: $review) { ReviewSignIn() }
+            .sheet(isPresented: $reporting) { ReportSheet().environmentObject(app) }
         }
     }
 

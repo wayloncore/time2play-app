@@ -351,6 +351,7 @@ struct CloseEnoughOver: View {
                 Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
                     .buttonStyle(PaintedButtonStyle(kind: .quiet))
                     .accessibilityIdentifier("back-to-library")
+                TipLine()   // #598
             }
             .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
         }

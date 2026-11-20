@@ -667,6 +667,7 @@ struct HandOver: View {
             Button("Back to Library") { room.leave(); app.closeRoom(); app.tab = .library }
                 .font(.headline).foregroundStyle(T2P.goldText).frame(minHeight: 44)
                 .accessibilityIdentifier("back-to-library")
+            TipLine()   // #598
         }
     }
 }

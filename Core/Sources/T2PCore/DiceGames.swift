@@ -109,7 +109,7 @@ public enum HotDice {
                 let name = j["players"].array.first { $0["id"].string == who }?["name"].string ?? "Someone"
                 switch kind {
                 case "bank": lastLine = "\(name) banked \(l["pts"].int ?? 0)"
-                case "farkle": lastLine = l["three"].bool == true ? "\(name): three Farkles, −\(l["penalty"].int ?? 1000)" : "\(name) Farkled"
+                case "farkle": lastLine = l["three"].bool == true ? "\(name): three busts, −\(l["penalty"].int ?? 1000)" : "\(name) busted"
                 default: lastLine = nil
                 }
             }
@@ -132,7 +132,7 @@ public enum RollCall {
     public static let boxes: [(key: String, name: String)] = [
         ("ones", "Ones"), ("twos", "Twos"), ("threes", "Threes"), ("fours", "Fours"), ("fives", "Fives"), ("sixes", "Sixes"),
         ("three", "3 of a Kind"), ("four", "4 of a Kind"), ("full", "Full House"), ("small", "Sm. Straight"),
-        ("large", "Lg. Straight"), ("five", "Roll Call"), ("chance", "Chance"),
+        ("large", "Lg. Straight"), ("five", "Yacht"), ("chance", "Chance"),
     ]
     public static let maxRolls = 3
 

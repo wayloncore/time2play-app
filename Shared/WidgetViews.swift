@@ -113,7 +113,7 @@ extension WidgetContent {
                              key: i?.key ?? "overdraft", game: i?.game, last: fresh)
     }
 
-    static let sample = WidgetContent(day: Date(), title: "Hot Dice", line: "Roll six dice, keep what scores, and know when to stop.",
+    static let sample = WidgetContent(day: Date(), title: "10,000", line: "Roll six dice, keep what scores, and know when to stop.",
                                       players: "2–8 players", key: "farkle", game: .hotDice,
                                       last: RecentRoom(code: "K7QP", game: .overdraft))
 }

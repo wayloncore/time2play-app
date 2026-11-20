@@ -93,7 +93,7 @@ struct GameCenterSection: View {
                 Button("Achievements in Game Center") { gc.show(.achievements) }
             }
         } footer: {
-            Text(on ? (gc.problem ?? "Best scores in Hot Dice, Roll Call and Close Enough go to the leaderboards, and achievements show in Game Center. Practice games don’t count.")
+            Text(on ? (gc.problem ?? "Best scores in 10,000, Yacht Dice and Close Enough go to the leaderboards, and achievements show in Game Center. Practice games don’t count.")
                  : "Optional. Share best scores and achievements through Game Center. You never need it to play.")
                 .foregroundStyle(T2P.muted)
         }

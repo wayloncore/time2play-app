@@ -123,7 +123,8 @@ final class Intro: ObservableObject {
 struct IntroOverlay: View {
     @ObservedObject var intro = Intro.shared
 
-    private static let still = Bundle.main.path(forResource: "intro-end", ofType: "jpg").flatMap { UIImage(contentsOfFile: $0) }
+    /// The clip's finished mark, for Reduce Motion (the join logo uses it too).
+    static let still = Bundle.main.path(forResource: "intro-end", ofType: "jpg").flatMap { UIImage(contentsOfFile: $0) }
 
     var body: some View {
         ZStack {
@@ -159,8 +160,9 @@ struct IntroOverlay: View {
     }
 }
 
-/// The clip, drawn by an AVPlayerLayer at the clip's own shape (resizeAspect: never stretched or cropped).
-private struct IntroPlayer: UIViewRepresentable {
+/// The clip, drawn by an AVPlayerLayer at the clip's own shape (resizeAspect: never stretched or cropped). The join
+/// logo (#596, JoinIntro.swift) draws with it too.
+struct IntroPlayer: UIViewRepresentable {
     let player: AVPlayer?
 
     final class PlayerView: UIView {
@@ -182,9 +184,10 @@ private struct IntroPlayer: UIViewRepresentable {
     }
 }
 
-/// You → Intro at launch, and Logo on the waiting screen (#543).
+/// You → Intro at launch, Logo when you join a room (#596), and Logo on the waiting screen (#543).
 struct IntroSection: View {
     @AppStorage(IntroSettings.key) private var on = true
+    @AppStorage(JoinIntroSettings.key) private var join = true
     @AppStorage(WaitingLoopSettings.key) private var loop = true
 
     var body: some View {
@@ -192,11 +195,14 @@ struct IntroSection: View {
             Toggle("Intro at launch", isOn: $on)
                 .tint(T2P.gold)
                 .accessibilityIdentifier("toggle-intro")
+            Toggle("Logo when you join a room", isOn: $join)
+                .tint(T2P.gold)
+                .accessibilityIdentifier("toggle-join-intro")
             Toggle("Logo on the waiting screen", isOn: $loop)
                 .tint(T2P.gold)
                 .accessibilityIdentifier("toggle-waiting-loop")
         } footer: {
-            Text("The Time2Play mark when the app opens. It never plays when you open a game’s link, an invite or an alert. The waiting screen’s logo plays beside the room code until the game starts; with Reduce Motion or Low Power Mode on, it holds still.")
+            Text("The Time2Play mark when the app opens (not when a link, an invite or an alert opens it), and once as a room you join opens (tap to skip). The waiting screen’s logo plays beside the room code until the game starts. With Reduce Motion on, each is a still logo; Low Power Mode holds the waiting screen’s logo still.")
                 .foregroundStyle(T2P.muted)
         }
         .listRowBackground(T2P.panel)

@@ -84,10 +84,10 @@ final class ViewsTests: XCTestCase {
                                  ["key": "wheel", "title": "Wheel", "category": "Games", "future": true]]]
         let lib = Library(j)!
         XCTAssertEqual(lib.items.count, 2)
-        XCTAssertEqual(lib.items[0].title, "Hot Dice"); XCTAssertEqual(lib.items[0].game, .hotDice)
+        XCTAssertEqual(lib.items[0].title, "10,000"); XCTAssertEqual(lib.items[0].game, .hotDice)
         XCTAssertEqual(lib.items[0].playersLine, "2–8 players")
         XCTAssertNil(lib.items[1].game)
-        XCTAssertEqual(lib.search("hot").map(\.key), ["farkle-live"])
+        XCTAssertEqual(lib.search("10,000").map(\.key), ["farkle-live"])
         XCTAssertNil(Library(["items": [:]]))
     }
 

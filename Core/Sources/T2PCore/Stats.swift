@@ -114,11 +114,11 @@ public struct Achievement: Equatable, Sendable, Identifiable {
         Achievement(id: "t2p.overdraft_win", title: "Empty-handed", detail: "Win a hand of Overdraft.", symbol: "rectangle.stack.fill") { s, _ in
             count(s.byGame[Game.overdraft.rawValue]?.wins ?? 0, of: 1)
         },
-        Achievement(id: "t2p.hotdice_10k", title: "Ten thousand", detail: "Win a Hot Dice game played to 10,000.", symbol: "dice.fill") { _, l in
+        Achievement(id: "t2p.hotdice_10k", title: "Ten thousand", detail: "Win a game of 10,000 played to the full 10,000.", symbol: "dice.fill") { _, l in
             l.contains { $0.game == Game.hotDice.rawValue && $0.won && $0.flags.contains("target10k") } ? 1 : 0
         },
-        Achievement(id: "t2p.rollcall_full", title: "Full card", detail: "Finish Roll Call with points in every box.", symbol: "checklist") { _, l in flag("fullCard", l) },
-        Achievement(id: "t2p.rollcall_300", title: "Three hundred club", detail: "Score 300 or more in Roll Call.", symbol: "die.face.5.fill") { s, _ in
+        Achievement(id: "t2p.rollcall_full", title: "Full card", detail: "Finish Yacht Dice with points in every box.", symbol: "checklist") { _, l in flag("fullCard", l) },
+        Achievement(id: "t2p.rollcall_300", title: "Three hundred club", detail: "Score 300 or more in Yacht Dice.", symbol: "die.face.5.fill") { s, _ in
             (s.byGame[Game.rollCall.rawValue]?.best ?? 0) >= 300 ? 1 : count(s.byGame[Game.rollCall.rawValue]?.best ?? 0, of: 300) * 0.99
         },
         Achievement(id: "t2p.closeenough_bullseye", title: "Bullseye", detail: "Score full points on a Close Enough question.", symbol: "scope") { _, l in flag("bullseye", l) },

@@ -15,6 +15,8 @@ final class RoomModel: ObservableObject, Identifiable {
     private weak var app: AppModel?
     private var retry: DispatchWorkItem?
     private var recorded = false
+    /// A game here reached its end while this phone watched (a winner screen): Apple's rating request may follow (#594).
+    private(set) var finishedGame = false
 
     @Published private(set) var status: RoomSession.Status = .connecting
     @Published private(set) var view: JSON?
@@ -111,6 +113,12 @@ final class RoomModel: ObservableObject, Identifiable {
         view = session.view
         if preset != nil { applyPreset() }
         StatsKeeper.shared.observe(self)   // #540: a finished game, recorded once
+        if let v = view {
+            let over = v["phase"].string == "done" || v["table"]["over"].bool == true
+            if over { finishedGame = true }
+            // #594: how smoothly a game draws, counted only while one is being played on this screen
+            FrameWatch.shared.playing(v["phase"].string == "playing" && !over && !watching, game: game)
+        }
         // the game's feel (sounds, the Bolt's jolt): what this view means next to the one before it
         if let now = view, now != before { Feel.events(FeelEvents.between(before, now, game: game)) }
         // a room you're in goes on Play's recent rooms (and the widget's rejoin); practice rooms don't
