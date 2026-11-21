@@ -15,16 +15,15 @@ final class FeelUITests: XCTestCase {
         // iPhone: the tab bar; iPad: the tabs at the top (or Play's own You button, which opens the same tab)
         let tab = app.tabBars.buttons["You"]
         tapWhenReady(tab.waitForExistence(timeout: 5) ? tab : app.buttons["You"].firstMatch)
-        let classic = app.switches["toggle-classic-dice"]
         app.swipeUp()
-        XCTAssertTrue(classic.waitForExistence(timeout: 10))
-        XCTAssertEqual(classic.value as? String, "0", "3D dice for everyone: Classic dice starts off")
+        // Nov 20 2026: 3D only, so no Classic table or Classic dice switch in You
+        XCTAssertTrue(app.switches["toggle-haptics"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.switches["toggle-classic-dice"].exists, "no Classic dice")
+        XCTAssertFalse(app.switches["toggle-classic"].exists, "no Classic table")
         XCTAssertEqual(app.switches["toggle-haptics"].value as? String, "1", "haptics start on")
         XCTAssertEqual(app.switches["toggle-sound"].value as? String, "1", "sound starts on")
         XCTAssertEqual(app.switches["toggle-music"].value as? String, "0", "music starts off")
         shot(app, "feel-you-settings")
-        flip(classic)
-        XCTAssertEqual(classic.value as? String, "1")
         let turn = app.switches["toggle-turn-alerts"]
         if !turn.exists { app.swipeUp() }
         XCTAssertTrue(turn.waitForExistence(timeout: 5))

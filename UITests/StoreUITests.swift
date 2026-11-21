@@ -15,7 +15,7 @@ final class StoreUITests: XCTestCase {
     }
 
     func testStoreShots() {
-        var app = launch()
+        var app = launch(["-t2p-3d", "-t2p-dice3d"])
         XCTAssertTrue(app.textFields["room-code"].waitForExistence(timeout: 10))
         sleep(1)
         shot(app, "store-\(device)-1-play")
@@ -33,7 +33,7 @@ final class StoreUITests: XCTestCase {
         shot(app, "store-\(device)-3-overdraft")
 
         // Hot Dice after a roll
-        app = launch()
+        app = launch(["-t2p-3d", "-t2p-dice3d"])
         XCTAssertTrue(app.textFields["room-code"].waitForExistence(timeout: 10))
         joinOffline(app, "farkle")
         tapWhenReady(app.buttons["addbot-bold"]); sleep(1)
@@ -44,7 +44,7 @@ final class StoreUITests: XCTestCase {
         shot(app, "store-\(device)-4-hot-dice")
 
         // The Library
-        app = launch()
+        app = launch(["-t2p-3d", "-t2p-dice3d"])
         XCTAssertTrue(app.textFields["room-code"].waitForExistence(timeout: 10))
         // iPad shows the tabs along the top, not in a tab bar
         let tab = app.tabBars.buttons["Library"]
