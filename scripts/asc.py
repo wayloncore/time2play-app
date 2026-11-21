@@ -339,6 +339,8 @@ def store(meta_path, shots_dir):
 
     # the version's words
     fields = {k: meta[k] for k in ("description", "keywords", "promotionalText", "supportUrl", "marketingUrl")}
+    if meta.get("whatsNew"):   # an update's "What's New in This Version" (not allowed on a first version)
+        fields["whatsNew"] = meta["whatsNew"]
     locs = call("GET", f"/v1/appStoreVersions/{vid}/appStoreVersionLocalizations")["data"]
     vloc = next((l for l in locs if l["attributes"]["locale"] == loc), None)
     if vloc:
