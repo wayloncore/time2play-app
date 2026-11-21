@@ -1,0 +1,23 @@
+{
+  "_about": "Captions for the App Store screenshots (1.1). scripts/caption-shots.py puts each over its raw screenshot (from a Store listing run's store-shots download) and writes store/shots. The {gold} part shows in gold.",
+  "1-play": [
+    "Start a room.",
+    "Share the code. {Play.}"
+  ],
+  "2-lobby": [
+    "Short on players?",
+    "{Bots} take the empty seats."
+  ],
+  "3-overdraft": [
+    "{Overdraft}: match the",
+    "suit or the number."
+  ],
+  "4-hot-dice": [
+    "{10,000}: roll, keep,",
+    "and know when to bank."
+  ],
+  "5-library": [
+    "Classroom games",
+    "live in the {Library}."
+  ]
+}

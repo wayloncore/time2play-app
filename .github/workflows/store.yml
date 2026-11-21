@@ -12,6 +12,10 @@ on:
         description: "Fill in App Store Connect (false: screenshots only)"
         required: false
         default: "true"
+      shots:
+        description: "take: new screenshots on the Mac. committed: Tyler's approved captioned ones in store/shots (Linux, no Mac)"
+        required: false
+        default: "take"
   push:
     branches: [main, "claude/**"]
 permissions:
@@ -21,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   listing:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[store-')
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.shots != 'committed') || contains(github.event.head_commit.message, '[store-')
     runs-on: macos-15
     timeout-minutes: 50
     steps:
@@ -66,6 +70,16 @@ jobs:
           done
           for f in "$HOME"/t2p-shots/store-*.png; do echo "$(basename "$f"): $(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixel/{printf "%s ", $2}') hasAlpha=$(sips -g hasAlpha "$f" | awk '/hasAlpha/{print $2}')"; done
           echo "shots_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Full-size screenshots into the log (for the captioned set in store/shots)
+        if: always()
+        run: |
+          # artifact downloads don't reach a cloud session, the log does: full size, as JPEG (App Store Connect takes it)
+          mkdir -p "$RUNNER_TEMP/full"
+          for f in "$HOME"/t2p-shots/store-*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png); sips -s format jpeg -s formatOptions 92 "$f" --out "$RUNNER_TEMP/full/$n.jpg" >/dev/null
+            echo "BEGIN-FULL $n.jpg"; base64 -i "$RUNNER_TEMP/full/$n.jpg" | fold -w 4000; echo "END-FULL"
+          done
       - name: Small previews into the log
         if: always()
         run: |
@@ -93,3 +107,26 @@ jobs:
       - name: Timing
         if: always()
         run: echo "TIMING shots=${shots_s:-?} total=$(( $(date +%s) - start ))"
+  # The approved captioned screenshots (store/shots, made from a run's store-shots download) go in with the words.
+  # Linux, no Mac. Same fill as above: it never submits.
+  committed:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.shots == 'committed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fill in App Store Connect with store/shots (never submits)
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          REVIEW_SIGNIN_KEY: ${{ secrets.REVIEW_SIGNIN_KEY }}
+        run: |
+          ls -la store/shots
+          umask 077; mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/key.p8"
+          export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py store store/metadata.json store/shots || rc=$?
+          rm -rf "$RUNNER_TEMP/asc"
+          exit ${rc:-0}
