@@ -40,14 +40,15 @@ def fit(d, lines, font_path, size, maxw):
         size -= 4
     return ImageFont.truetype(font_path, size)
 
-def caption(raw_path, lines, out_path, fonts):
+def caption(raw_path, lines, out_path, fonts, all_lines):
     shot = Image.open(raw_path).convert("RGB")
     w, h = shot.size
     pad = 1 if w < h * 0.85 else 0          # iPhone is tall; iPad is nearly square
     img = background(w, h)
     d = ImageDraw.Draw(img)
     top = int(h * (0.075 if pad else 0.06))
-    big = fit(d, lines, fonts[900], int(w * (0.085 if pad else 0.06)), w * 0.86)
+    # one size for the whole set (the longest line decides), so the captions match from shot to shot
+    big = fit(d, all_lines, fonts[900], int(w * (0.085 if pad else 0.06)), w * 0.86)
     lh = int(big.size * 1.18)
     for i, l in enumerate(lines):
         draw_line(d, l, big, w / 2, top + i * lh)
@@ -79,7 +80,8 @@ def main(raw_dir, out_dir, font_dir):
         m = re.fullmatch(r"store-(iphone|ipad)-(.+)\.png", f)
         if not m or m.group(2) not in caps:
             continue
-        caption(os.path.join(raw_dir, f), caps[m.group(2)], os.path.join(out_dir, f), fonts)
+        every = [l for k, v in caps.items() if not k.startswith("_") for l in v]
+        caption(os.path.join(raw_dir, f), caps[m.group(2)], os.path.join(out_dir, f), fonts, every)
 
 if __name__ == "__main__":
     main(*sys.argv[1:4])

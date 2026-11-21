@@ -44,7 +44,7 @@ struct PlayView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 if let logo = Art.image("t2p-logo") {
-                    Image(uiImage: logo).resizable().scaledToFit().frame(height: 40).accessibilityLabel("Time2Play")
+                    Image(uiImage: logo).resizable().scaledToFit().frame(height: 52).accessibilityLabel("Time2Play")
                 }
                 Spacer()
                 Button { app.tab = .you } label: {
