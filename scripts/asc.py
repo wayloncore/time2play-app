@@ -642,6 +642,9 @@ IAP = [
     ("live.time2play.app.tip.big", "Big tip", "4.99", "A round of thanks for the table. Tips unlock nothing."),
     ("live.time2play.app.tip.huge", "Huge tip", "9.99", "Game night’s on you. Tips unlock nothing."),
 ]
+# The EU's 27 (App Store territory ids): the app isn't offered there (Tyler, Nov 20 2026), so neither are the tips
+EU = {"AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA",
+      "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE"}
 IAP_REVIEW_NOTE = ("A tip jar: You, then Tip jar (and a small line on a game's end screen). Tips are thank-yous only: they "
                    "unlock nothing, and every game stays free. A Supporter star then shows on the player's own You screen, on "
                    "that phone only.")
@@ -688,11 +691,13 @@ def iap(shot=None):
                 "included": [{"type": "inAppPurchasePrices", "id": "${price}", "attributes": {"startDate": None},
                               "relationships": {"inAppPurchasePricePoint": {"data": {"type": "inAppPurchasePricePoints", "id": pp["id"]}}}}]})
             print(f"{pid}: priced at ${price} (US)")
-        # where it's sold: everywhere the app is
+        # where it's sold: everywhere the app is. Not the EU (Tyler, Nov 20 2026): the app is off there, so no trader
+        # status (the Digital Services Act puts a trader's address on the store page) is needed
         avail = call("GET", f"/v2/inAppPurchases/{iid}/inAppPurchaseAvailability", ok_missing=True)
         if not (avail or {}).get("data"):
             if territories is None:
-                territories = [t["id"] for t in call("GET", "/v1/territories" + q({"limit": 200}))["data"]]
+                territories = [t["id"] for t in call("GET", "/v1/territories" + q({"limit": 200}))["data"]
+                               if t["id"] not in EU]
             call("POST", "/v1/inAppPurchaseAvailabilities", {"data": {"type": "inAppPurchaseAvailabilities",
                 "attributes": {"availableInNewTerritories": True}, "relationships": {
                     "inAppPurchase": {"data": {"type": "inAppPurchases", "id": iid}},

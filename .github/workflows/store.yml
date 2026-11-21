@@ -70,14 +70,16 @@ jobs:
           done
           for f in "$HOME"/t2p-shots/store-*.png; do echo "$(basename "$f"): $(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixel/{printf "%s ", $2}') hasAlpha=$(sips -g hasAlpha "$f" | awk '/hasAlpha/{print $2}')"; done
           echo "shots_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
-      - name: Full-size screenshots as a download (for the captioned set in store/shots)
+      - name: Full-size screenshots into the log (for the captioned set in store/shots)
         if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: store-shots
-          path: ~/t2p-shots/store-*.png
-          if-no-files-found: ignore
-          retention-days: 14
+        run: |
+          # artifact downloads don't reach a cloud session, the log does: full size, as JPEG (App Store Connect takes it)
+          mkdir -p "$RUNNER_TEMP/full"
+          for f in "$HOME"/t2p-shots/store-*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png); sips -s format jpeg -s formatOptions 92 "$f" --out "$RUNNER_TEMP/full/$n.jpg" >/dev/null
+            echo "BEGIN-FULL $n.jpg"; base64 -i "$RUNNER_TEMP/full/$n.jpg" | fold -w 4000; echo "END-FULL"
+          done
       - name: Small previews into the log
         if: always()
         run: |
