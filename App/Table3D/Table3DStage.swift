@@ -13,8 +13,9 @@ enum Table3DSwitch {
     static let classicKey = "t2p.classicTable"
     static var forced: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-3d") }
     static var forcedClassic: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-classic") }
-    /// The 3D table unless "Classic table" is on (or a test asks for the classic one).
-    static func use3D(classic: Bool) -> Bool { forced || (!forcedClassic && !classic) }
+    /// The 3D table, always (Tyler, Nov 20 2026: the 3D table is the only one). A "Classic table" saved by an older
+    /// version is ignored; only a UI test can still ask for the flat one.
+    static func use3D(classic: Bool) -> Bool { forced || !forcedClassic }
 }
 
 /// The table's per-frame state for the UI tests (-t2p-arena-debug), kept apart from the stage so only its own line

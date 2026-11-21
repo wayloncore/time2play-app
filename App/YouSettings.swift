@@ -50,25 +50,6 @@ struct FeelSection: View {
     }
 }
 
-/// You → Classic dice: the flat dice instead of the 3D ones (#521), the way Classic table works for Overdraft. Since
-/// Nov 20 it's 10,000's only: Yacht Dice always rolls its dice in place.
-struct DiceSection: View {
-    @AppStorage(Dice3DSwitch.key) private var dice3D = false
-    @AppStorage(Dice3DSwitch.classicKey) private var classicDice = false
-
-    var body: some View {
-        Section {
-            Toggle("Classic dice", isOn: $classicDice)
-                .tint(T2P.gold)
-                .onChange(of: classicDice) { _, c in dice3D = !c }   // the old key, kept in step for the version before
-                .accessibilityIdentifier("toggle-classic-dice")
-        } footer: {
-            Text("Rolls 10,000 with the flat dice instead of the 3D ones. Yacht Dice always rolls its dice in place.").foregroundStyle(T2P.muted)
-        }
-        .listRowBackground(T2P.panel)
-    }
-}
-
 /// You → App icon: the Time2Play mark on a few backgrounds.
 struct AppIconSection: View {
     @State private var current: String? = UIApplication.shared.alternateIconName

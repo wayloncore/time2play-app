@@ -13,8 +13,9 @@ enum Dice3DSwitch {
     static let classicKey = "t2p.classicDice"
     static var forced: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-dice3d") }
     static var forcedClassic: Bool { ProcessInfo.processInfo.arguments.contains("-t2p-classic-dice") }
-    /// The 3D dice unless "Classic dice" is on (or a test asks for the flat ones).
-    static func use3D(classic: Bool) -> Bool { forced || (!forcedClassic && !classic) }
+    /// The 3D dice, always (Tyler, Nov 20 2026: the only style). A "Classic dice" saved by an older version is
+    /// ignored; only a UI test can still ask for the flat ones.
+    static func use3D(classic: Bool) -> Bool { forced || !forcedClassic }
 }
 
 /// The arena's bridge between SwiftUI and SceneKit: it owns the scene (made the first time it's drawn, so a game with

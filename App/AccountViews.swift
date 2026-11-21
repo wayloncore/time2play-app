@@ -133,8 +133,6 @@ struct YouView: View {
     @State private var review = false
     @State private var reporting = false
     @State private var name = ""
-    @AppStorage(Table3DSwitch.key) private var table3D = false
-    @AppStorage(Table3DSwitch.classicKey) private var classicTable = false
     @AppStorage(HandSize.key) private var handSize = HandSize.medium.rawValue
 
     var body: some View {
@@ -179,25 +177,18 @@ struct YouView: View {
                 StatsSections()   // #540
                 GameCenterSection()   // #541
 
+                // Nov 20 2026: the 3D table is the only one (no Classic table); Card size stays
                 Section {
-                    Toggle("Classic table", isOn: $classicTable)
-                        .tint(T2P.gold)
-                        .onChange(of: classicTable) { _, c in table3D = !c }
-                        .accessibilityIdentifier("toggle-classic")
-                    if !classicTable {
-                        Picker("Card size", selection: $handSize) {
-                            ForEach(HandSize.allCases) { Text($0.name).tag($0.rawValue) }
-                        }
-                        .accessibilityIdentifier("card-size")
+                    Picker("Card size", selection: $handSize) {
+                        ForEach(HandSize.allCases) { Text($0.name).tag($0.rawValue) }
                     }
+                    .accessibilityIdentifier("card-size")
                 } footer: {
-                    Text(classicTable ? "Plays Overdraft at the flat table instead of the 3D one."
-                         : "Plays Overdraft at the flat table instead of the 3D one. Card size is how big your hand is at the 3D table.")
+                    Text("How big your hand of cards is at the Overdraft table.")
                         .foregroundStyle(T2P.muted)
                 }
                 .listRowBackground(T2P.panel)
 
-                DiceSection()
                 FeelSection()
                 AlertsSection()
                 AppIconSection()
