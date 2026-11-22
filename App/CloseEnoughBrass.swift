@@ -377,7 +377,7 @@ struct BrassInstrument: View {
                 .padding(.horizontal, max(0, kw / 2 - 20)).padding(.top, 2)
                 .accessibilityHidden(true)
         }
-        .onAppear { breathe = true }
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { breathe = true } }
     }
 
     private var lowLabel: String { "Low end of your range" }
@@ -410,10 +410,14 @@ struct BrassInstrument: View {
             .overlay(RoundedRectangle(cornerRadius: 6).fill(RadialGradient(colors: [Brass.brassLit.opacity(0.22), .clear], center: .center, startRadius: 0, endRadius: ph)))
             .overlay(alignment: .bottom) { LinearGradient(colors: [.clear, Brass.tri.opacity(0.5)], startPoint: .top, endPoint: .bottom).frame(height: ph * 0.3).clipShape(RoundedRectangle(cornerRadius: 6)) }
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Brass.brassLit, lineWidth: 1))
-            .shadow(color: missed ? .clear : Brass.brassLit.opacity((hit ? 0.6 : 0.42) * glow), radius: hit ? 23 : 17)
-            .shadow(color: missed ? .clear : Brass.brassLit.opacity((hit ? 0.75 : 0.6) * glow), radius: hit ? 5 : 3.5)
+            // the glow breathes; only the glow is animated, so the plate's size and place never are (the first Mac run's
+            // plate drifted when the whole plate carried the repeating animation)
+            .animation(reduceMotion || answer != nil ? nil : .easeInOut(duration: 2.4).repeatForever(autoreverses: true)) { plate in
+                plate
+                    .shadow(color: missed ? .clear : Brass.brassLit.opacity((hit ? 0.6 : 0.42) * glow), radius: hit ? 23 : 17)
+                    .shadow(color: missed ? .clear : Brass.brassLit.opacity((hit ? 0.75 : 0.6) * glow), radius: hit ? 5 : 3.5)
+            }
             .saturation(missed ? 0.45 : 1).brightness(missed ? -0.18 : 0)
-            .animation(reduceMotion || answer != nil ? nil : .easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: breathe)
             .allowsHitTesting(false)
     }
 

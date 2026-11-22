@@ -54,7 +54,7 @@ final class CloseEnoughUITests: XCTestCase {
     /// shot at the phone's size to set beside the Library game's own screens.
     func testTheLibraryLook726() {
         let app = launch()
-        startOffline(app, "closeenough", bot: "medium")
+        startOfflineCE(app)
         let lock = app.buttons["lock-in"]
         XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
         XCTAssertTrue(app.staticTexts["ce-web"].exists, "the brass look is the default")
@@ -89,7 +89,7 @@ final class CloseEnoughUITests: XCTestCase {
         sleep(1)                                          // the needle lands on the track
         XCTAssertTrue(app.staticTexts["ce-verdict"].exists, "the verdict says how your range did")
         shot(app, "726-ce-4-answer")
-        app.swipeUp()
+        scrollDown(app)
         usleep(400_000)
         shot(app, "726-ce-5-standings")
     }
@@ -97,13 +97,37 @@ final class CloseEnoughUITests: XCTestCase {
     /// #726 at the largest text the game takes, with Reduce Motion: nothing cut off, the glow still.
     func testTheLibraryLookLargeText726() {
         let app = launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-t2p-reduce-motion"])
-        startOffline(app, "closeenough", bot: "medium")
+        startOfflineCE(app)
         XCTAssertTrue(app.buttons["lock-in"].waitForExistence(timeout: 20), "the first question is asked")
         sleep(1)
         shot(app, "726-ce-6-large-text")
-        app.swipeUp()
+        scrollDown(app)
         usleep(400_000)
         shot(app, "726-ce-7-large-text-lower")
+    }
+
+    /// Scrolls from low on the screen: the brass track takes a drag that starts on it, as the Library's does.
+    private func scrollDown(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
+    }
+
+    /// Practice Close Enough against a bot. On a small iPhone its button sits off to the side of the offline row, so the
+    /// row is swiped along to it first.
+    private func startOfflineCE(_ app: XCUIApplication) {
+        app.swipeUp()
+        let b = app.buttons["offline-closeenough"]
+        XCTAssertTrue(b.waitForExistence(timeout: 20), "Practice Close Enough is offered")
+        var tries = 0
+        while !b.isHittable && tries < 4 {
+            let y = b.frame.midY / max(1, app.frame.height)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: y)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: y)))
+            tries += 1
+        }
+        tapWhenReady(b)
+        let name = app.textFields["name"]
+        if name.waitForExistence(timeout: 10) { typeName(app, name); tapWhenReady(app.buttons["join-room"]) }
+        tapWhenReady(app.buttons["addbot-medium"]); sleep(1)
+        tapWhenReady(app.buttons["start-game"])
     }
 
     /// Sets the range with a finger. #726: the brass handles are drawn by the app, so each is dragged along the track
@@ -111,7 +135,7 @@ final class CloseEnoughUITests: XCTestCase {
     private func setRange(_ app: XCUIApplication, _ lo: CGFloat, _ hi: CGFloat) {
         let track = app.descendants(matching: .any)["ce-track"]
         for (id, at) in [("ce-low", lo), ("ce-high", hi)] {
-            let s = app.sliders[id]
+            let s = track.exists ? app.descendants(matching: .any)[id] : app.sliders[id]
             if track.exists {
                 let f = track.frame, k = s.frame
                 let from = track.coordinate(withNormalizedOffset: CGVector(dx: (k.midX - f.minX) / max(1, f.width), dy: 0.6))
