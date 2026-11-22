@@ -8,9 +8,14 @@ import T2PCore
 /// -t2p-ce3d / -t2p-ce-flat, -t2p-wheel3d / -t2p-wheel-flat. Saved data: new keys only.
 enum Boards3D {
     static let flatCloseEnoughKey = "t2p.flatCloseEnough"
+    /// #707: a player's Close Enough takes the website's look; this setting (off unless turned on) plays the 3D board
+    /// instead. A new key, so 1.1 still reads the old one (which the host's big screen still uses).
+    static let closeEnough3DKey = "t2p.closeEnough3D"
     static let flatWheelKey = "t2p.flatWheel"
     private static func arg(_ a: String) -> Bool { ProcessInfo.processInfo.arguments.contains(a) }
     static func closeEnough3D(flat: Bool) -> Bool { arg("-t2p-ce3d") || (!arg("-t2p-ce-flat") && !flat) }
+    /// A player's Close Enough: the 3D board only when You → "3D Close Enough board" is on (or -t2p-ce3d).
+    static func playerCloseEnough3D(on: Bool) -> Bool { arg("-t2p-ce3d") || (!arg("-t2p-ce-flat") && !arg("-t2p-ce-web") && on) }
     static func wheel3D(flat: Bool) -> Bool { arg("-t2p-wheel3d") || (!arg("-t2p-wheel-flat") && !flat) }
 }
 

@@ -48,4 +48,30 @@ final class CloseEnoughUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["game-over"].waitForExistence(timeout: 3), "Back to Library leaves the room")
         shot(app, "489-ce-8-back-to-library")
     }
+
+    /// #707 (Tyler: "make Close Enough actually how it looks on the website"): offline against a bot, the website's
+    /// look is what a player gets: a question with a range set, locked in, and the answer with the ranges and points,
+    /// shot at the phone's size to set beside time2play.live's own screens.
+    func testTheWebsiteLook() {
+        let app = launch()
+        startOffline(app, "closeenough", bot: "medium")
+        let lock = app.buttons["lock-in"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
+        XCTAssertTrue(app.staticTexts["ce-web"].exists, "the website's look is the default")
+        XCTAssertFalse(app.descendants(matching: .any)["ce-board3d"].exists, "no 3D board unless it's turned on")
+        app.sliders["ce-low"].adjust(toNormalizedSliderPosition: 0.45)
+        app.sliders["ce-high"].adjust(toNormalizedSliderPosition: 0.62)
+        usleep(400_000)
+        XCTAssertTrue(app.staticTexts["ce-worth"].label.contains("worth"), "what the range is worth: \(app.staticTexts["ce-worth"].label)")
+        shot(app, "707-ce-1-asking")
+        lock.tap()
+        if app.descendants(matching: .any)["ce-locked"].waitForExistence(timeout: 2) { shot(app, "707-ce-2-locked-in") }
+        XCTAssertTrue(app.staticTexts["ce-answer"].waitForExistence(timeout: 80), "the answer is revealed")
+        sleep(1)                                          // the answer's line lands on the scale
+        XCTAssertTrue(app.staticTexts["ce-verdict"].exists, "the verdict says how your range did")
+        shot(app, "707-ce-3-answer")
+        app.swipeUp()
+        usleep(400_000)
+        shot(app, "707-ce-4-standings")
+    }
 }
