@@ -210,7 +210,9 @@ struct DiceArenaView: View {
     /// Room at the top for words drawn over the scene (the tray fits below it).
     var top: Double = 0
     var zoomable = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Reduce Motion, or the UI tests' stand-in for it (-t2p-reduce-motion, #706).
+    private var reduceMotion: Bool { systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-t2p-reduce-motion") }
     @State private var lastScale: CGFloat = 1
     @State private var lastDrag: CGSize = .zero
     @State private var pinching = false
@@ -240,7 +242,7 @@ struct DiceArenaView: View {
         .simultaneousGesture(magnify, including: zoomable ? .all : .subviews)
         .simultaneousGesture(drag, including: zoomable ? .all : .subviews)
         .onChange(of: state) { _, s in stage.update(s, reduced: reduceMotion) }
-        .onChange(of: reduceMotion) { _, r in stage.update(state, reduced: r) }
+        .onChange(of: systemReduceMotion) { _, _ in stage.update(state, reduced: reduceMotion) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dice-3d")
         .accessibilityAction(named: "Reset the view") { stage.resetView() }
