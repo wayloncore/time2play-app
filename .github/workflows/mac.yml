@@ -22,6 +22,10 @@ on:
         description: "Also run these UI tests on an older, smaller iPhone simulator (iPhone SE or the oldest iPhone on the image; empty skips it)"
         required: false
         default: ""
+      largest_only:
+        description: "Also run these UI tests on the largest iPhone simulator (the newest Pro Max or Plus on the image; empty skips it)"
+        required: false
+        default: ""
   push:
     branches: [main]
 permissions:
@@ -163,10 +167,39 @@ jobs:
             CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/older-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           grep -E "^FPS " build/older-test.log | sed 's/^/older: /' || true
           echo "older_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Some tests again on the largest iPhone (#721)
+        if: ${{ !cancelled() && github.event.inputs.largest_only != '' }}
+        env:
+          LARGEST_ONLY: ${{ github.event.inputs.largest_only }}
+        run: |
+          t=$(date +%s)
+          BIG=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys,re
+          d=json.load(sys.stdin)["devices"]
+          best=None
+          for rt,devs in d.items():
+              m=re.search(r"iOS-(\d+)-(\d+)",rt)
+              if not m: continue
+              for x in devs:
+                  if not re.fullmatch(r"iPhone \d+ (Pro Max|Plus)",x["name"]): continue
+                  n=int(re.search(r"iPhone (\d+)",x["name"]).group(1))
+                  k=((int(m.group(1)),int(m.group(2))), n, "Max" in x["name"])
+                  if best is None or k>best[0]: best=(k,x["udid"],x["name"],rt)
+          print(best[1]); print(best[2],best[3],file=sys.stderr)')
+          xcrun simctl boot "$BIG"; xcrun simctl bootstatus "$BIG" -b
+          xcrun simctl status_bar "$BIG" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          set -o pipefail
+          lsel=""; for o in $LARGEST_ONLY; do lsel="$lsel -only-testing:$o"; done
+          # the largest phone's shots carry "largest-" (T2P_SHOT_PREFIX, read by UITests/Support.swift's shot)
+          TEST_RUNNER_T2P_SHOT_PREFIX=largest- xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
+            -destination "id=$BIG" -derivedDataPath build -resultBundlePath build/largest.xcresult \
+            -parallel-testing-enabled NO $lsel \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/largest-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
+          echo "largest_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Why tests failed (the result bundle's failure messages)
         if: always()
         run: |
-          for b in ui ipad older; do
+          for b in ui ipad older largest; do
             [ -d build/$b.xcresult ] || continue
             xcrun xcresulttool get test-results summary --path build/$b.xcresult --format json > summary.json 2>/dev/null || continue
             echo "== $b"
@@ -220,4 +253,4 @@ jobs:
         run: |
           total=$(( $(date +%s) - start ))
           { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
-          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} ipad=${ipad_s:-0} older=${older_s:-0} total=$total"
+          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} ipad=${ipad_s:-0} older=${older_s:-0} largest=${largest_s:-0} total=$total"

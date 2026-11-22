@@ -30,6 +30,8 @@ final class HotDiceBankUITests: XCTestCase {
     /// The achievement line, the first time a look saw it (it lasts about 3 seconds, so every wait looks for it).
     private var toastSeen: (at: Date, words: String, clear: Bool)?
     private var watchToast = false
+    /// What the test last did (#720: said when the achievement line was never seen).
+    private var lastMove = "nothing yet"
     private var rescueSeen = false
 
     private func playAGame(_ args: [String], name: String, achievement: Bool = false, long: Bool = false, oneBank: Bool = false) {
@@ -96,8 +98,11 @@ final class HotDiceBankUITests: XCTestCase {
                     // #576: the grayed-out Bank shows no lost points after a Farkle
                     if bank.exists { let b = said(bank); XCTAssertFalse(b.contains("+"), "\(name): Bank after a Farkle says just Bank: \(b)") }
                     if !farkled { shot(app, "bank-\(device)\(name)-farkle"); farkled = true }
-                    // a Farkle banks nothing: your score stays (or loses 1,000 on a third in a row)
-                    sleep(4)
+                    // a Farkle banks nothing: your score stays (or loses 1,000 on a third in a row). #720: waits while
+                    // looking for the achievement line, which lasts about 3 seconds: when your bust is the game's last
+                    // turn, a plain 4-second sleep could let it come and go unseen.
+                    lastMove = "your bust (\(words))"
+                    _ = waitFor(4) { false }
                     let after = myScore(app)
                     XCTAssertTrue(after == before || (words.contains("Three") && after < before), "\(name): a Farkle banks nothing (\(before) → \(after))")
                     break turn
@@ -120,6 +125,7 @@ final class HotDiceBankUITests: XCTestCase {
                     XCTAssertTrue(bank.isHittable, "\(name): Bank can be tapped (nothing covers it): \(bank.frame)")
                     shot(app, "bank-\(device)\(name)-before-bank")
                     bank.tap()
+                    lastMove = "your bank of \(total)"
                     let want = before + total
                     var ok = waitFor(8) { self.myScore(app) == want }
                     if !ok && on(bank) {
@@ -173,7 +179,10 @@ final class HotDiceBankUITests: XCTestCase {
     private func checkAchievementLine(_ app: XCUIApplication) {
         let toast = app.descendants(matching: .any)["toast"].firstMatch
         if toastSeen == nil { _ = toast.waitForExistence(timeout: 3); peekToast(app) }
-        guard let seen = toastSeen else { XCTFail("the game's end earns Regular (10 games), said at the top"); return }
+        guard let seen = toastSeen else {
+            shot(app, "bank-\(device)achievement-missing")
+            XCTFail("the game's end earns Regular (10 games), said at the top (never seen; the test's last move: \(lastMove))"); return
+        }
         XCTAssertTrue(seen.words.contains("Achievement") && seen.words.contains("Regular"), "it says which: \(seen.words)")
         XCTAssertTrue(seen.clear, "it sits at the top, over no button or die")
         XCTAssertTrue(waitFor(6) { !toast.exists }, "it goes by itself (still up after \(Date().timeIntervalSince(seen.at)) s): \(seen.words)")

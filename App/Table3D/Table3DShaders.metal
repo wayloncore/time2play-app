@@ -17,7 +17,7 @@ struct T3DU {
     float4 d;      // particle opacity: ember, wave, bolt, leaf
     float4 e;      // the arrows: the arc's from (rim s), its span to the next seat, the chevrons' phase, the way they point
     float4 f;      // the arrows: the suit's color, on (0 to 1)
-    float4 g;      // the arrows: a Reverse's sweep (-1 for none), where it started; -1 for #719's "before" only; spare
+    float4 g;      // the arrows: a Reverse's sweep (-1 for none), where it started; -1 for #719's "before" only; 1 for #721's
 };
 
 struct T3DNode {
@@ -181,9 +181,20 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
 // turning each chevron as it passes, then they flow the other way. The website's colors (the suit mixed with its
 // creams) and its opacities. Reduce Motion: nothing flows or sweeps; the arrows point the way play goes.
 constant float RX = 2.2, A0 = 3.2, QA = 3.4557519, PERIM = 26.6230077, SPACING = 26.6230077 / 24.;
-constant float RAIL_K = 1.055, RAIL_W = .24;                  // the rim's middle (of the corner's radius) and width
-constant float CHEV = .28, CHEV_N = 31., CHEV_STEP = PERIM / CHEV_N;   // a chevron's size, how many, how far apart
-constant float ARC_K = .88, ARC_W = .07;                       // the curved arrow: how far out, how thick
+// #721 (Tyler, Nov 22, after build 87: "I don't like how the arrows are not fully on the actual playable arena. If
+// you want to make a slightly more opaque border to allow the full arrow to show, that's fine."): the chevrons ride
+// a darker border INSIDE the glass's edge (k 1.11), wide enough for a whole chevron at any angle a Reverse's sweep
+// turns it to, at the sweep's 1.1 size, with the glass's bright lip left showing outside it. Everything is in world
+// units on the glass, so it's the same on every phone; the strokes antialias inward only, so no pixel of an arrow
+// passes its drawn edge however small the far end gets on screen. Arrows: 1.004 + .0883 = 1.092 at most (CHEV .22:
+// a turned, lit chevron reaches .1943 world units from its middle); the border runs .91 to 1.10.
+constant float BAND_IN = .91, BAND_OUT = 1.10;                  // the border: where it starts and ends (k)
+constant float CHEV_K = 1.004;                                  // the chevrons' middle line (k)
+constant float CHEV = .22, CHEV_N = 39., CHEV_STEP = PERIM / CHEV_N;   // a chevron's size, how many (the website's
+                                                                // spacing, 3.1 sizes apart), how far apart
+constant float ARC_K = .855, ARC_W = .07;                      // the curved arrow: how far out, how thick (its head
+                                                                // reaches .922, inside the border's soft edge, clear
+                                                                // of the chevrons and of the seats' hands)
 
 // Where a point on the glass is round the rim (s, as Table3D.rimPoint counts it) and how far out (k: 1 is the felt's edge).
 static float2 rimSK(float2 p) {
@@ -198,6 +209,8 @@ static float segDist(float2 p, float2 a, float2 b) {
 }
 // How much of a stroke `width` wide covers a point `d` from its middle line (aa: a pixel, in world units).
 static float stroke(float d, float width, float aa) { return 1. - ss(width * .5 - aa, width * .5 + aa, d); }
+// The same, antialiased inward only: nothing past width / 2 (#721: a chevron's edge stays where the math puts it).
+static float strokeIn(float d, float width, float aa) { float a = min(2. * aa, width * .5); return 1. - ss(width * .5 - a, width * .5, d); }
 static float wrapP(float x) { return x - PERIM * floor(x / PERIM); }
 
 // The glass's color with the arrows on it. u.e: the arc's from (rim s), its span to the next seat, the chevrons'
@@ -208,23 +221,31 @@ static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
     if (on < .001) return col;
     float2 sk = rimSK(p);
     float s = sk.x, k = sk.y;
-    if (k < ARC_K - .2 || k > RAIL_K + .2) return col;
+    // #721's frame-rate comparison only (-t2p-721-before): build 87's rail and chevrons, at the same cost they had
+    bool b87 = u.g.w > .5;
+    float chevK = b87 ? 1.055 : CHEV_K, chevSize = b87 ? .28 : CHEV, chevStep = b87 ? PERIM / 31. : CHEV_STEP;
+    float arcK = b87 ? .88 : ARC_K;
+    if (k < arcK - .2 || k > (b87 ? 1.255 : BAND_OUT + .02)) return col;
     float3 sc = u.f.rgb;
     float3 cBand = mix(float3(.961, .871, .584), sc, .55);          // color-mix(--sc 55%, #F5DE95)
     float3 cHalo = mix(float3(.961, .871, .584), sc, .70);          // 70%, #F5DE95
     float3 cCore = mix(float3(1., .957, .824), sc, .30);            // 30%, #FFF4D2
     float3 cArc = mix(float3(1., .937, .761), sc, .40);             // 40%, #FFEFC2
-    // the rim's band: the website's arrows sit on a dark rail, so the glass under them darkens (the Nov 22 stills:
-    // cream arrows on bare glass washed out on the sea and the meadow), with the suit's faint tint over it
-    float across = (k - RAIL_K) * RX;
-    float rail = stroke(abs(across), RAIL_W * .9, aa);
-    col = mix(col, float3(.07, .05, .09), .42 * on * rail);
-    col = mix(col, cBand, .13 * on * rail);
+    // the border: the website's arrows sit on a dark rail, so the glass under them darkens (the Nov 22 stills:
+    // cream arrows on bare glass washed out on the sea and the meadow), with the suit's faint tint over it. #721: a
+    // little more opaque than build 87's rail, inside the glass's edge, its inner side soft so it reads as the
+    // table's own border rather than a frame laid on it; the glass's bright lip shows outside it.
+    float aak = aa / RX;
+    float band = b87 ? stroke(abs((k - 1.055) * RX), .24 * .9, aa)
+                     : ss(BAND_IN - .012 - aak, BAND_IN + .012, k) * (1. - ss(BAND_OUT - .012, BAND_OUT + aak, k));
+    col = mix(col, float3(.07, .05, .09), (b87 ? .42 : .52) * on * band);
+    col = mix(col, cBand, (b87 ? .13 : .14) * on * band);
+    float across = (k - chevK) * RX;
     // the chevrons: the nearest one, where it points, and whether the sweep has turned it
     float phase = u.e.z, pointing = u.e.w >= 0. ? 1. : -1.;
-    float j = floor((s - phase) / CHEV_STEP + .5), c = phase + j * CHEV_STEP;
+    float j = floor((s - phase) / chevStep + .5), c = phase + j * chevStep;
     float along = s - c;
-    float ang = pointing < 0. ? M_PI_F : 0., size = CHEV;
+    float ang = pointing < 0. ? M_PI_F : 0., size = chevSize;
     bool hot = false;
     if (u.g.x >= 0.) {
         float at = wrapP((c - u.g.y) * -pointing), past = u.g.x - at;
@@ -237,15 +258,15 @@ static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
     float h = size * .5;
     float2 tip = float2(h * .9, 0.), armA = float2(-h * .6, h), armB = float2(-h * .6, -h);
     float dc = min(segDist(q, armA, tip), segDist(q, armB, tip));
-    col = mix(col, float3(.05, .03, .06), .35 * on * stroke(dc, size * .44, aa));       // a dark edge round each
-    col = mix(col, cHalo, .30 * on * stroke(dc, size * .32, aa));
-    if (hot) col = mix(col, float3(1., .973, .894), on * stroke(dc, size * .30, aa));     // #FFF8E4
-    else col = mix(col, cCore, .95 * on * stroke(dc, size * .22, aa));
+    col = mix(col, float3(.05, .03, .06), .35 * on * strokeIn(dc, size * .44, aa));     // a dark edge round each
+    col = mix(col, cHalo, .30 * on * strokeIn(dc, size * .32, aa));
+    if (hot) col = mix(col, float3(1., .973, .894), on * strokeIn(dc, size * .30, aa));   // #FFF8E4
+    else col = mix(col, cCore, .95 * on * strokeIn(dc, size * .22, aa));
     // the curved arrow from whoever is on to whoever is next, just inside the rim, the way play goes
     float len = u.e.y, dir = -pointing;
     if (u.g.x < 0.) dir = pointing;
     float gap = min(.8, len * .16), end = len - gap;
-    float d = wrapP((s - u.e.x) * dir), ac = (k - ARC_K) * RX;
+    float d = wrapP((s - u.e.x) * dir), ac = (k - arcK) * RX;
     float hs = ARC_W * 3.4;
     if (d >= gap - ARC_W && d <= end) {
         float da = abs(ac);

@@ -36,18 +36,47 @@ final class Table3DUITests: XCTestCase {
         still("suit=wave n=10", "719-their-turn-10")
     }
 
+    /// #721 (Tyler, after build 87: the arrows weren't fully on the table): the chevrons ride a slightly darker border
+    /// inside the glass's edge, whole at every angle. Your turn, their turn, a Reverse mid-sweep and 10 players, in
+    /// every element, at both quality tiers. testStills721Sizes takes the four moments to the smallest and largest phones.
+    func testStills721() {
+        for tier in ["high", "low"] {
+            let t = tier == "low" ? "-low" : "", x = ["-t2p-3d-tier", tier]
+            still("suit=wave n=5 mine=1", "721-your-turn\(t)", x)
+            still("suit=wave n=5", "721-their-turn\(t)", x)
+            still("suit=wave n=5 reverse=0.95", "721-reverse-sweep\(t)", x)
+            still("suit=wave n=10", "721-their-turn-10\(t)", x)
+        }
+        for s in ["ember", "bolt", "leaf"] { still("suit=\(s) n=5", "721-their-turn-\(s)") }
+        still("suit=leaf n=10 reverse=0.95", "721-reverse-sweep-10-leaf")
+    }
+
+    /// #721 on the smallest and largest phones (mac.yml's older_only and largest_only): the four moments Tyler named.
+    func testStills721Sizes() {
+        still("suit=wave n=5 mine=1", "721-your-turn")
+        still("suit=wave n=5", "721-their-turn")
+        still("suit=wave n=5 reverse=0.95", "721-reverse-sweep")
+        still("suit=wave n=10", "721-their-turn-10")
+    }
+
+    /// #721: the border's frame rate against build 87's rail (-t2p-721-before), the way #719 measured: the same still,
+    /// before and after twice each in turn, at both tiers; prints "FPS 721 …" lines.
+    func testFrameRate721() { frameRate("721", beforeArg: "-t2p-721-before") }
+
     /// #719: the frame rate before and after (Tyler turned down #708's options because they dropped frames). The
     /// same still drawn with -t2p-719-before (the comets and the ring the app had) and without, twice each in turn,
     /// sixteen seconds apiece; prints "FPS 719 before|after …" lines for the report. A simulator's rate comes from
     /// the Mac's GPU, so the two compare; they don't promise a phone's rate.
-    func testFrameRate719() {
+    func testFrameRate719() { frameRate("719", beforeArg: "-t2p-719-before") }
+
+    private func frameRate(_ issue: String, beforeArg: String) {
         for tier in ["high", "low"] {
             var got: [String: [Double]] = [:]
             for round in 0..<2 {
                 for mode in round == 0 ? ["before", "after"] : ["after", "before"] {
                     let app = XCUIApplication()
                     app.launchArguments = ["-t2p-3d-still", "suit=ember n=6", "-t2p-arena-debug", "-t2p-fps", "-t2p-3d-tier", tier]
-                        + (mode == "before" ? ["-t2p-719-before"] : [])
+                        + (mode == "before" ? [beforeArg] : [])
                     app.launch()
                     XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "the still never settled")
                     sleep(3)
@@ -65,7 +94,7 @@ final class Table3DUITests: XCTestCase {
             for mode in ["before", "after"] {
                 let v = (got[mode] ?? []).sorted()
                 let med = v.isEmpty ? 0 : v[v.count / 2]
-                print(String(format: "FPS 719 %@ %@ median %.1f lowest %.1f (%ld samples)", tier, mode, med, v.first ?? 0, v.count))
+                print(String(format: "FPS %@ %@ %@ median %.1f lowest %.1f (%ld samples)", issue, tier, mode, med, v.first ?? 0, v.count))
             }
             XCTAssertFalse((got["after"] ?? []).isEmpty, "no frame-rate samples")
         }

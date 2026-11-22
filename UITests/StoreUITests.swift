@@ -51,10 +51,25 @@ final class StoreUITests: XCTestCase {
         tapWhenReady(tab.waitForExistence(timeout: 5) ? tab : app.buttons["Library"].firstMatch); sleep(3)
         // #487: no card named after a real TV game show (App Review checks names, guideline 5.2.1)
         let labelled = { (words: String) in app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch }
-        XCTAssertTrue(labelled("Live Buzzer").waitForExistence(timeout: 10), "the website's cards have loaded")
-        for show in ["Millionaire", "Jeopardy", "America Says", "Chain Reaction", "Impossible"] {
-            XCTAssertFalse(labelled(show).exists, "the Library leaves out \(show)")
+        // #720: the Library's rows load lazily, so on a smaller phone (mac.yml's simulator) the website's cards below the
+        // fold aren't on screen to find. Wait for them to arrive (more rows than the app's own games and the wheel),
+        // then scroll through the whole list: "Live Buzzer" is in it, and no row anywhere is named after a TV show.
+        let start = Date()
+        // the app's 4 games and the wheel are 5 rows (and a line if the Library can't load)
+        while Date().timeIntervalSince(start) < 15 && app.cells.count <= 6 { usleep(300_000) }
+        var found = false
+        for _ in 0..<14 {
+            if labelled("Live Buzzer").exists { found = true }
+            for show in ["Millionaire", "Jeopardy", "America Says", "Chain Reaction", "Impossible"] {
+                XCTAssertFalse(labelled(show).exists, "the Library leaves out \(show)")
+            }
+            app.swipeUp(velocity: .fast)
         }
+        XCTAssertTrue(found, "the website's cards have loaded")
+        // back to the top for the picture
+        let first = app.buttons["library-start-overdraft"]
+        for _ in 0..<20 where !(first.exists && first.isHittable) { app.swipeDown(velocity: .fast) }
+        sleep(1)
         shot(app, "store-\(device)-5-library")
     }
 }
