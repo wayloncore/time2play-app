@@ -738,19 +738,24 @@ struct BrassMast: View {
     var body: some View {
         HStack(spacing: 10) {
             (Text("Close ").foregroundColor(Brass.ink) + Text("Enough").foregroundColor(Brass.brass).font(Brass.serif(23, .semibold, .title3)))
-                .font(Brass.serif(23, .regular, .title3)).lineLimit(1).minimumScaleFactor(0.7)
+                // #729: at Larger Text on an iPhone SE it shrinks to fit rather than cut to "Close En…"
+                .font(Brass.serif(23, .regular, .title3)).lineLimit(1).minimumScaleFactor(0.4).allowsTightening(true)
+                .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("ce-title")
             Button(action: showMenu) {
                 Text(room.offline ? "PRACTICE" : room.code).font(Brass.mono(11, .regular, .caption)).tracking(1.3).foregroundStyle(Brass.brass)
+                    .lineLimit(1).fixedSize()
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Brass.brassDim, in: RoundedRectangle(cornerRadius: 4))
                     .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Brass.brass.opacity(0.3), lineWidth: 1))
                     .frame(minHeight: 44).contentShape(Rectangle())
             }
+            .layoutPriority(2)
             .accessibilityLabel(room.offline ? "Practice room menu" : "Room \(room.code) menu")
             .accessibilityIdentifier("room-menu")
             Spacer(minLength: 4)
-            Button("Leave", action: onLeave).buttonStyle(BrassSmallButton()).accessibilityIdentifier("leave")
+            Button("Leave", action: onLeave).buttonStyle(BrassSmallButton()).fixedSize().layoutPriority(2).accessibilityIdentifier("leave")
         }
     }
     private func showMenu() {
@@ -859,7 +864,8 @@ struct CloseEnoughBrassGame: View {
                 let compact = g.size.height < 700 || textSize >= .xxLarge
                 // the handle's height from the screen's, as house.css's phone rule: clamp(58px, 12.3vh, 104px)
                 let kh0 = compact ? min(88, max(54, g.size.height * 0.102)) : min(104, max(58, g.size.height * 0.123))
-                let kh = textSize >= .xxLarge ? kh0 * 0.9 : kh0
+                // #729: at the answer the handles only frame the needle, so they're shorter and the pop-up gets the room
+                let kh = (textSize >= .xxLarge ? kh0 * 0.9 : kh0) * (asking ? 1 : 0.68)
                 BrassCased(fits: true) {
                     // the page never scrolls; only if a screen ever can't hold it all does it scroll rather than cut Lock off
                     ViewThatFits(in: .vertical) {
@@ -900,15 +906,31 @@ struct CloseEnoughBrassGame: View {
     private func page(_ kh: CGFloat, _ compact: Bool) -> some View {
         VStack(spacing: 0) {
             BrassMast(room: room, onLeave: onLeave, reactions: true)
-            BrassChips(players: view.players.filter { !$0.left || $0.score > 0 }, me: me)
+            // #729: at the answer the standings are in the pop-up, so the chips give their line to it
+            if asking { BrassChips(players: view.players.filter { !$0.left || $0.score > 0 }, me: me) }
             Rectangle().fill(Brass.mastLine).frame(height: 1).padding(.top, 4)
-            question(compact)
-                .padding(.top, compact ? 8 : 14).padding(.bottom, compact ? 10 : 14)
-                .frame(minHeight: 44, idealHeight: 44, maxHeight: .infinity)
+            if asking {
+                question(compact)
+                    .padding(.top, compact ? 8 : 14).padding(.bottom, compact ? 10 : 14)
+                    .frame(minHeight: 44, idealHeight: 44, maxHeight: .infinity)
+            } else {
+                questionLine.padding(.top, 6).padding(.bottom, compact ? 8 : 10)
+            }
             instrument(kh, compact)
             lower(compact).padding(.top, compact ? 2 : 6)
         }
         .animation(reduceMotion ? nil : .spring(duration: 0.4), value: q.n)
+        .animation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.1), value: asking)
+    }
+
+    /// #729: at the answer the question is one line (cut with …); VoiceOver still reads the whole of it.
+    private var questionLine: some View {
+        Text(q.q).font(Brass.serif(19, .medium, .headline)).foregroundStyle(Brass.qInk)
+            .lineLimit(1).truncationMode(.tail)
+            .shadow(color: .black.opacity(0.55), radius: 0, y: 2)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(q.q)
+            .accessibilityIdentifier("ce-question")
     }
 
     /// The question takes the room that's left between the chips and the nameplate; a long one's type shrinks to fit.
@@ -1152,12 +1174,14 @@ struct CloseEnoughBrassGame: View {
                 .accessibilityLabel("Hide the result")
                 .accessibilityIdentifier("ce-hide-result")
             }
-            .padding(.leading, 20).padding(.trailing, 8).padding(.top, 18)
+            .padding(.leading, 20).padding(.trailing, 8).padding(.top, 14)
             ViewThatFits(in: .vertical) {
                 resultMiddle(vd.1)
+                // (for UI tests: only when the pop-up can't hold it all, on a small screen or at Larger Text, #729)
                 ScrollView { resultMiddle(vd.1) }
                     .scrollBounceBehavior(.basedOnSize)
                     .scrollIndicatorsFlash(onAppear: true)
+                    .accessibilityIdentifier("ce-result-scrolls")
             }
             resultFoot
         }
@@ -1169,51 +1193,68 @@ struct CloseEnoughBrassGame: View {
 
     private func resultMiddle(_ detail: String) -> some View {
         let missing = q.results.values.contains { $0.verdict == "none" }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text((mine?.lo != nil && mine?.hi != nil ? "Your range: \(Brass.rangeText(mine!.lo!, mine!.hi!, q)). " : "") + detail)
-                .font(Brass.sans(15, .regular, .subheadline)).foregroundStyle(Brass.ink2).lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(missing ? "Not everyone locked in before the clock ran out." : "Everyone locked in.")
-                .font(Brass.sans(13, .regular, .footnote)).foregroundStyle(Brass.ink3)
+        // #729: why it ended rides on the end of the detail, a line saved for the standings
+        return VStack(alignment: .leading, spacing: 7) {
+            (Text((mine?.lo != nil && mine?.hi != nil ? "Your range: \(Brass.rangeText(mine!.lo!, mine!.hi!, q)). " : "") + detail + " ")
+                .font(Brass.sans(15, .regular, .subheadline)).foregroundColor(Brass.ink2)
+             + Text(missing ? "Not everyone locked in before the clock ran out." : "Everyone locked in.")
+                .font(Brass.sans(13, .regular, .footnote)).foregroundColor(Brass.ink3))
+                .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("ce-why-ended")
             if let why = q.why, !why.isEmpty {
                 (Text("Why: ").foregroundColor(Brass.ink).fontWeight(.bold) + Text(why))
-                    .font(Brass.sans(15, .regular, .subheadline)).foregroundStyle(Brass.ink2).lineSpacing(2)
+                    .font(Brass.sans(15, .regular, .subheadline)).foregroundStyle(Brass.ink2).lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            standings.padding(.top, 4)
-            BrassReactions(room: room).padding(.top, 2)
+            standings.padding(.top, 2)
+            BrassReactions(room: room)
         }
-        .padding(.leading, 20).padding(.trailing, 16).padding(.top, 6).padding(.bottom, 10)
+        .padding(.leading, 20).padding(.trailing, 16).padding(.top, 4).padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Next (the room's owner) and when it goes on by itself: side by side when they fit (#729), else stacked.
     private var resultFoot: some View {
-        VStack(spacing: 6) {
-            if room.isOwner {
-                Button(q.n < q.of ? "Next question" : "See the standings") { showResult = false; room.move("next"); Haptics.select() }
-                    .buttonStyle(BrassActButton())
-                    .accessibilityIdentifier("ce-next")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                countdown(short: true, alignment: .leading)
+                if room.isOwner { nextButton.fixedSize(horizontal: true, vertical: false) }
             }
-            if let e = q.endsAt {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    let left = max(0, Int((e / 1000 - ctx.date.timeIntervalSince1970).rounded(.up)))
-                    Text(left == 0 ? " " : room.isOwner ? "Or it goes on by itself in \(left)s." : q.n < q.of ? "Next question in \(left)s." : "The standings in \(left)s.")
-                        .font(Brass.sans(13, .regular, .footnote).monospacedDigit()).foregroundStyle(Brass.ink3)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("ce-next-in")
-                }
+            VStack(spacing: 6) {
+                if room.isOwner { nextButton }
+                countdown(short: false, alignment: .center)
             }
         }
-        .padding(.leading, 20).padding(.trailing, 16).padding(.top, 10).padding(.bottom, 14)
+        .padding(.leading, 20).padding(.trailing, 16).padding(.top, 10).padding(.bottom, 12)
         .overlay(alignment: .top) { Rectangle().fill(Brass.line).frame(height: 1).padding(.leading, 20).padding(.trailing, 16) }
+    }
+
+    private var nextButton: some View {
+        Button(q.n < q.of ? "Next question" : "See the standings") { showResult = false; room.move("next"); Haptics.select() }
+            .buttonStyle(BrassActButton())
+            .accessibilityIdentifier("ce-next")
+    }
+
+    @ViewBuilder private func countdown(short: Bool, alignment: Alignment) -> some View {
+        if let e = q.endsAt {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let left = max(0, Int((e / 1000 - ctx.date.timeIntervalSince1970).rounded(.up)))
+                let owner = short ? "On by itself in \(left)s." : "Or it goes on by itself in \(left)s."
+                Text(left == 0 ? " " : room.isOwner ? owner : q.n < q.of ? "Next question in \(left)s." : "The standings in \(left)s.")
+                    .font(Brass.sans(13, .regular, .footnote).monospacedDigit()).foregroundStyle(Brass.ink3)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: alignment)
+                    .accessibilityIdentifier("ce-next-in")
+            }
+        } else {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+        }
     }
 
     /// The standings in the pop-up: compact rows (face, name, range, points this question, total), yours lit.
     private var standings: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("Standings".uppercased()).font(Brass.mono(11, .regular, .caption)).tracking(1.5).foregroundStyle(Brass.ink3)
             ForEach(view.players.filter { !$0.left || $0.score > 0 }.sorted { $0.score > $1.score }) { p in
                 ViewThatFits(in: .horizontal) {
@@ -1256,7 +1297,7 @@ struct CloseEnoughBrassGame: View {
                 total
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 5).frame(minHeight: 36)
+        .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 31)
         .background(Brass.panel.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(p.id == me ? Brass.brass : Brass.panelLine, lineWidth: 1))
         .accessibilityElement(children: .combine)

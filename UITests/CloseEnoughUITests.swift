@@ -144,6 +144,39 @@ final class CloseEnoughUITests: XCTestCase {
         checkAnswer(app, "727-ce-large")
     }
 
+    /// #729 (Tyler: "I never want to scroll."): at the answer the question is one line, the instrument moves up, and the
+    /// whole pop-up (verdict, your range, why, the standings, the reactions, Next with its countdown) shows with no
+    /// scrolling on an iPhone 17 Pro and the largest iPhone. On an iPhone SE only the pop-up's middle may scroll, with
+    /// Next pinned. The Mac run takes it on the SE and the largest iPhone too (older_only, largest_only).
+    func testAnswerFits729() {
+        let app = launch()
+        startOfflineCE(app)
+        let lock = app.buttons["lock-in"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
+        sleep(1)
+        checkAskingFits(app)
+        let question = app.staticTexts["ce-question"].label
+        lock.tap()
+        checkAnswer(app, "729-ce", question: question, mustFit: app.frame.height >= 800)
+    }
+
+    /// #729 at Larger Text (the largest the game takes), with Reduce Motion: "Close Enough" shrinks to fit the masthead,
+    /// and the pop-up keeps Next pinned with the least possible scrolling.
+    func testAnswerFitsLargeText729() {
+        let app = launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-t2p-reduce-motion"])
+        startOfflineCE(app)
+        let lock = app.buttons["lock-in"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
+        let title = app.staticTexts["ce-title"], menu = app.buttons["room-menu"]
+        print("729 \(app.frame.size): title \(title.frame) \(title.label), menu \(menu.frame)")
+        XCTAssertLessThanOrEqual(title.frame.maxX, menu.frame.minX + 1, "the masthead's name stops before the room's code")
+        shot(app, "729-ce-large-1-asking")
+        checkAskingFits(app)
+        let question = app.staticTexts["ce-question"].label
+        lock.tap()
+        checkAnswer(app, "729-ce-large", question: question)
+    }
+
     /// Asking: Lock and Type exact numbers are on screen, and a swipe up from the bottom moves nothing (no page scroll).
     private func checkAskingFits(_ app: XCUIApplication) {
         let lock = app.buttons["lock-in"], type = app.buttons["ce-type"], menu = app.buttons["room-menu"]
@@ -160,12 +193,24 @@ final class CloseEnoughUITests: XCTestCase {
 
     /// The answer: the plate and the needle stay in view, the result is a pop-up under them with the standings, Next is
     /// on screen; tap outside hides it, "See the result" brings it back, and Next goes on.
-    private func checkAnswer(_ app: XCUIApplication, _ prefix: String) {
+    private func checkAnswer(_ app: XCUIApplication, _ prefix: String, question: String? = nil, mustFit: Bool = false) {
         XCTAssertTrue(app.staticTexts["ce-answer"].waitForExistence(timeout: 80), "the answer is revealed")
         let result = app.descendants(matching: .any)["ce-result"]
         XCTAssertTrue(result.waitForExistence(timeout: 5), "the result comes up as a pop-up")
         sleep(1)
         shot(app, "\(prefix)-3-answer")
+        if let question {
+            // #729: the question is one line at the answer, and VoiceOver still reads all of it
+            XCTAssertEqual(app.staticTexts["ce-question"].label, question, "VoiceOver reads the whole question at the answer")
+            let scrolls = app.descendants(matching: .any)["ce-result-scrolls"].exists
+            let st = app.descendants(matching: .any)["ce-standings"], nx = app.buttons["ce-next"]
+            print("729 \(app.frame.size): result \(result.frame), standings \(st.frame), next \(nx.frame), middle scrolls: \(scrolls)")
+            if mustFit {
+                XCTAssertFalse(scrolls, "the whole pop-up shows with no scrolling")
+                XCTAssertLessThanOrEqual(st.frame.maxY, nx.frame.minY, "the standings show whole above Next")
+                XCTAssertTrue(app.buttons["Send Good game"].isHittable, "the reactions show")
+            }
+        }
         let track = app.descendants(matching: .any)["ce-track"], plate = app.staticTexts["ce-answer"]
         print("727 \(app.frame.size): plate \(plate.frame), track \(track.frame), result \(result.frame)")
         XCTAssertGreaterThanOrEqual(result.frame.minY, track.frame.maxY + 10, "the pop-up stops short of the needle")
