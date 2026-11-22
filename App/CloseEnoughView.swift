@@ -16,7 +16,7 @@ struct CloseEnoughView: View {
     @State private var lockLines: [String] = []
     @State private var landed = true          // the answer's marker has dropped onto the scale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// #707: the website's look, unless You → "3D Close Enough board" is on (then #535's 3D board)
+    /// #726: the Library game's brass look, unless You → "3D Close Enough board" is on (then #535's 3D board)
     @AppStorage(Boards3D.closeEnough3DKey) private var threeD = false
     private var board3D: Bool { Boards3D.playerCloseEnough3D(on: threeD) }
 
@@ -28,15 +28,15 @@ struct CloseEnoughView: View {
         if board3D { boardLook } else { webLook }
     }
 
-    /// #707: the website's screens (CloseEnoughWeb.swift), with this view's state and moments (haptics, the answer
-    /// landing, VoiceOver's announcement) kept.
+    /// #726: the Library game's brass screens (CloseEnoughBrass.swift; #707's copy of time2play.live's page before it),
+    /// with this view's state and moments (haptics, the answer landing, VoiceOver's announcement) kept.
     @ViewBuilder private var webLook: some View {
         ZStack {
-            Web.background
+            Brass.background
             if view.common.phase == "done" {
-                CloseEnoughWebOver(room: room, view: view)
+                CloseEnoughBrassOver(room: room, view: view, onLeave: onLeave)
             } else if let q = view.question {
-                CloseEnoughWebGame(room: room, view: view, q: q, onLeave: onLeave, lo: $lo, hi: $hi, landed: landed)
+                CloseEnoughBrassGame(room: room, view: view, q: q, onLeave: onLeave, lo: $lo, hi: $hi, landed: landed)
                     .onAppear { prepare(q) }
                     .onChange(of: q.n) { _, _ in prepare(q) }
                     .onChange(of: q.stage) { _, stage in if stage == "reveal" { revealed(q) } }
@@ -45,8 +45,8 @@ struct CloseEnoughView: View {
         .environment(\.colorScheme, .dark)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .overlay(alignment: .topLeading) {
-            // for UI tests: the website's look is on
-            Text("web").font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("ce-web").allowsHitTesting(false)
+            // for UI tests: the Library's brass look is on (#726; the id is #707's)
+            Text("brass").font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("ce-web").allowsHitTesting(false)
         }
     }
 
