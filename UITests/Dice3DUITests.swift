@@ -70,7 +70,9 @@ final class Dice3DUITests: XCTestCase {
                 XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "\(tag): your roll landed close up")
                 for i in 0..<6 {
                     let die = app.buttons["die-\(i)"]
-                    XCTAssertTrue(die.exists && app.frame.contains(CGPoint(x: die.frame.midX, y: die.frame.midY)), "\(tag): die \(i) is on screen at \(die.frame)")
+                    // the die's button is a little bigger than the die: its middle half must be on screen
+                    let f = die.frame.insetBy(dx: die.frame.width / 4, dy: die.frame.height / 4)
+                    XCTAssertTrue(die.exists && app.frame.contains(f), "\(tag): die \(i) is wholly on screen at \(die.frame)")
                 }
                 let words = app.descendants(matching: .any)["dice-status"].firstMatch
                 if words.exists {

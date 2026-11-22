@@ -171,11 +171,14 @@ public enum DiceArena {
         func cam(_ look: T3Vec, _ k: Double) -> Table3DCamera {
             Table3DCamera.lookAt(eye: look + dir * (dist * k), target: look, fovY: base.fovY, width: w, height: h)
         }
-        // every die clear of the words and the edges, and the keep row in view
+        // every die wholly clear of the words and the edges (its center at least its drawn half, turned, plus a
+        // little, from each), and the keep row in view
         func clear(_ cm: Table3DCamera) -> Bool {
             for p in dice {
                 let a = cm.project(p)
-                if a.y < top + 20 || a.y > h - 20 || a.x < 10 || a.x > w - 10 { return false }
+                let e = cm.project(p + T3Vec(0.5, 0, 0)), f = cm.project(p - T3Vec(0.5, 0, 0))
+                let half = max(10, ((e.x - f.x) * (e.x - f.x) + (e.y - f.y) * (e.y - f.y)).squareRoot() * 0.72 + 6)
+                if a.y < top + max(20, half) || a.y > h - half || a.x < half || a.x > w - half { return false }
             }
             for p in keep {
                 let a = cm.project(p)
