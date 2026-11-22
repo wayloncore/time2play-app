@@ -164,7 +164,8 @@ jobs:
           cat "$R"
           for f in cinema-out/*.png; do sips -s format jpeg -s formatOptions 84 "$f" --out "$D/$(basename "${f%.png}").jpg" >/dev/null; done
           for f in cinema-out/*.mov; do
-            ffmpeg -v error -y -i "$f" -vf "fps=30,scale=540:-2" -c:v libx264 -profile:v high -crf 27 -preset slow -pix_fmt yuv420p -movflags +faststart -an "$D/$(basename "${f%.mov}").mp4"
+            ffmpeg -v error -y -i "$f" -vf "fps=30,scale=540:-2" -c:v libx264 -profile:v high -crf 27 -preset slow -pix_fmt yuv420p -movflags +faststart -an "$D/$(basename "${f%.mov}").mp4" \
+              || echo "$(basename "$f"): the recording couldn't be read (a stopped recording), left out" | tee -a "$R"
           done
           ls -l "$D"
           git config user.name "github-actions[bot]"; git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
