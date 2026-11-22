@@ -136,6 +136,24 @@ final class Table3DUITests: XCTestCase {
         still("suit=leaf n=4 mine=1 hand=6 draw=0.45", "561-card-drawn")
     }
 
+    /// #722 (Tyler, Nov 22: the played card "wobbles, making it phase in and out of the card under it"): a bot's card
+    /// and yours, just before touchdown, at the rock's deepest and through the settle, each beside build 87's
+    /// (-t2p-722-before). The new card stays wholly above the pile.
+    func testStills722() {
+        for (extra, tag) in [([String](), ""), (["-t2p-722-before"], "-before")] {
+            for t in [0.7, 0.72, 0.78, 0.86] { still("suit=ember n=5 throw=\(t)", "722-seat-\(t)\(tag)", extra) }
+            for t in [0.8, 0.86] { still("suit=wave n=4 mine=1 hand=6 play=\(t)", "722-yours-\(t)\(tag)", extra) }
+        }
+    }
+
+    /// #723: the scene change is half a second, so its sweep a quarter of a second in (mix=0.5), in two pairs of
+    /// elements and at the oldest phones' tier.
+    func testStills723() {
+        still("suit=wave n=5 change=bolt mix=0.5", "723-sweep-quarter-second")
+        still("suit=bolt n=6 change=leaf mix=0.5", "723-sweep-quarter-second-2")
+        still("suit=wave n=5 change=ember mix=0.5", "723-sweep-quarter-second-low", ["-t2p-3d-tier", "low"])
+    }
+
     func testStillsSeats() {
         for n in [2, 3, 8, 10] { still("suit=wave n=\(n)", "3d-seats-\(n)") }
     }

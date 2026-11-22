@@ -421,14 +421,28 @@ struct ScoreBoxStyle: ButtonStyle {
     }
 }
 
+/// #724 (Tyler, Nov 22: "when you hold, the black in the gradient needs to be gunmetal gray because it's a little hard
+/// to see"): a held die's gold has gunmetal where the cards' rim has its near-black brown, so it reads on the felt.
+enum HoldGold {
+    /// -t2p-724-before: the near-black brown the held dice had, for the side-by-side still only.
+    static let before = ProcessInfo.processInfo.arguments.contains("-t2p-724-before")
+    static let gunmetal = before ? Painted.goldDeep : Color(hex: 0x4A5058)
+    /// The HOLD tag's letters: a deeper gunmetal, so 10-point type stays clear on the gold.
+    static let letters = before ? Color(hex: 0x2A1A05) : Color(hex: 0x353A40)
+    static var rim: LinearGradient {
+        LinearGradient(colors: [Painted.goldLight, Painted.goldMid, gunmetal, Painted.gold, Painted.goldHi, Painted.goldMid],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
 /// HOLD under a held die: a small gold plaque (room kept for it under every die, so nothing moves).
 struct HoldTag: View {
     let on: Bool
     var body: some View {
         Text("HOLD").font(.system(size: 10, weight: .heavy)).tracking(1.2)
-            .foregroundStyle(on ? Color(hex: 0x2A1A05) : Color.clear)
+            .foregroundStyle(on ? HoldGold.letters : Color.clear)
             .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Capsule().fill(on ? AnyShapeStyle(Painted.rim) : AnyShapeStyle(Color.clear)))
+            .background(Capsule().fill(on ? AnyShapeStyle(HoldGold.rim) : AnyShapeStyle(Color.clear)))
             .accessibilityHidden(true)
     }
 }
@@ -467,7 +481,7 @@ struct YachtDie: View {
         .shadow(color: .black.opacity(0.5), radius: size * 0.05, x: size * 0.02, y: size * 0.06)
         .overlay {
             if held {
-                RoundedRectangle(cornerRadius: r + 4, style: .continuous).strokeBorder(Painted.rim, lineWidth: 3).padding(-4)
+                RoundedRectangle(cornerRadius: r + 4, style: .continuous).strokeBorder(HoldGold.rim, lineWidth: 3).padding(-4)
             }
         }
         .shadow(color: Painted.gold.opacity(held ? 0.8 : 0), radius: held ? 10 : 0)

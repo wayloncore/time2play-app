@@ -10,9 +10,9 @@ final class YachtDiceUITests: XCTestCase {
 
     // MARK: Yacht Dice
 
-    private func board(_ moment: String, _ name: String, check: (XCUIApplication) -> Void = { _ in }) {
+    private func board(_ moment: String, _ name: String, _ extra: [String] = [], check: (XCUIApplication) -> Void = { _ in }) {
         let app = XCUIApplication()
-        app.launchArguments = ["-t2p-dice-still", "game=rollcall moment=\(moment)"]
+        app.launchArguments = ["-t2p-dice-still", "game=rollcall moment=\(moment)"] + extra
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["yacht-ready"].waitForExistence(timeout: 30), "\(name): the board never came")
         XCTAssertFalse(app.descendants(matching: .any)["dice-3d"].exists, "\(name): no arena")
@@ -48,6 +48,16 @@ final class YachtDiceUITests: XCTestCase {
             XCTAssertEqual(app.buttons["rc-die-0"].value as? String, "held")
             XCTAssertEqual(app.buttons["rc-die-1"].value as? String, "held")
             XCTAssertEqual(app.buttons["rc-die-2"].value as? String, "")
+        }
+    }
+
+    /// #724: four held dice, their gold with gunmetal where it had near-black, beside build 87's (-t2p-724-before).
+    func testHeld724() {
+        for (extra, tag) in [([String](), ""), (["-t2p-724-before"], "-before")] {
+            board("kept4", "724-four-held\(tag)", extra) { app in
+                for i in 0..<4 { XCTAssertEqual(app.buttons["rc-die-\(i)"].value as? String, "held") }
+                XCTAssertEqual(app.buttons["rc-die-4"].value as? String, "")
+            }
         }
     }
 

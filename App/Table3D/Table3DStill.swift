@@ -68,7 +68,7 @@ struct Table3DStill {
             } else if let to = st.change {
                 // the table already shows the card that changed the suit; the scene starts on the old suit and turns
                 w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
-                w.freezeAt = c0 + start + 2.1 * st.mix
+                w.freezeAt = c0 + start + Table3DWorld.sceneChange * st.mix
             } else if let t = st.strikeAt {
                 w.addTimer(c0 + start) { w.strike(at: 0.3) }
                 w.freezeAt = c0 + start + t

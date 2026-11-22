@@ -60,6 +60,18 @@ public enum CardMotion {
         slide > 0 ? settle(t, slide: slide, speed: speed) / -slide : 0
     }
 
+    /// How far below its center a tipped card's lowest point is (#722), for a card `width` × `length`, `thickness`
+    /// thick, given how much of each of its own axes points up in the world (`upX` across, `upY` through, `upZ` along;
+    /// 0, 1, 0 for a card lying flat). A card landing on the pile is held at least this far above the card under it,
+    /// so its rock tips it about the edge that touches instead of dipping a corner into the pile.
+    public static func dip(upX: Double, upY: Double, upZ: Double, width: Double, length: Double, thickness: Double) -> Double {
+        abs(upX) * width / 2 + abs(upY) * thickness / 2 + abs(upZ) * length / 2
+    }
+
+    /// The gap kept between a card in the air and the top of the pile under it (world units), so the two never share
+    /// a depth while it moves; it closes as the card settles, so it comes to rest exactly on the next layer up.
+    public static let pileClearance = 0.003
+
     /// A curve's height over the straight line between start and end, `u` of the way through the flight's time: a
     /// parabola that peaks at `arc` halfway.
     public static func arc(_ u: Double, _ arc: Double) -> Double {
