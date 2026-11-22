@@ -544,6 +544,8 @@ struct TableTopBar: View {
     var onLeave: () -> Void
     let owner: Bool
     @ObservedObject var room: RoomModel
+    /// #728: the reactions in the room's menu, for a game screen that has no reaction bar of its own
+    var reactions = false
     @Environment(\.gameDialogs) private var dialogs
     var body: some View {
         HStack {
@@ -577,7 +579,7 @@ struct TableTopBar: View {
     private func showMenu() {
         guard let dialogs else { return }
         let r = room
-        dialogs.show(.roomMenu(room: r, reactions: false,
+        dialogs.show(.roomMenu(room: r, reactions: reactions,
                                onEnd: { dialogs.show(.endRoom(end: { r.send(Out.close) })) },
                                onLeave: onLeave))
     }
