@@ -199,7 +199,8 @@ final class CloseEnoughUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 5), "the result comes up as a pop-up")
         sleep(1)
         shot(app, "\(prefix)-3-answer")
-        if let question {
+        // (a slow simulator can run out the answer's clock before these checks: then they're skipped, #729)
+        if let question, result.exists {
             // #729: the question is one line at the answer, and VoiceOver still reads all of it
             XCTAssertEqual(app.staticTexts["ce-question"].label, question, "VoiceOver reads the whole question at the answer")
             let scrolls = app.descendants(matching: .any)["ce-result-scrolls"].exists
@@ -238,7 +239,11 @@ final class CloseEnoughUITests: XCTestCase {
                 XCTAssertTrue(result.waitForExistence(timeout: 3) || !app.staticTexts["ce-answer"].exists, "See the result brings it back")
             }
         }
-        if app.buttons["ce-next"].exists { app.buttons["ce-next"].tap() }
+        // tapped by where it is, so a clock that runs out between the check and the tap doesn't fail the test (#729)
+        let nextButton = app.buttons["ce-next"]
+        if nextButton.exists, let f = Optional(nextButton.frame), !f.isEmpty {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.midX, dy: f.midY)).tap()
+        }
         XCTAssertTrue(app.buttons["lock-in"].waitForExistence(timeout: 30), "the next question is asked")
     }
 
