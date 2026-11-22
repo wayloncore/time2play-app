@@ -236,3 +236,13 @@ the emphasis. `CameraDirector.sequence` in T2PCore, tested in `SequenceTests`.
 - **Cost:** slow motion holds the room's next step on screen for about a second longer than today; the game itself
   isn't slowed (the room doesn't wait for the animation).
 - **Reduce Motion:** nothing at all, as in A.
+
+### Option C's Mac run and the comparison (Nov 22)
+
+Files: `docs/app/cinematic/moments/`, and the side-by-side in `docs/app/cinematic/compare.md` (with
+`compare-overdraft.jpg` and `compare-dice.jpg`, made by `scripts/cinema-compare.py`). The flash check ran on every
+recording of all three options, on both phones: 0 general and 0 red flashes in any second.
+
+Fixed along the way: the dice camera's look-at kept the node's own up vector, so the director's roll built up frame
+after frame (the first Farkle still tilted far past 2°). It now looks with world up; A and C were shot again. The
+Mac workflow now stops a simulator launch or recording that hangs (one did, Nov 22), instead of waiting out the hour.
