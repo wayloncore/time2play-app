@@ -180,8 +180,19 @@ final class HotDiceBankUITests: XCTestCase {
         let toast = app.descendants(matching: .any)["toast"].firstMatch
         if toastSeen == nil { _ = toast.waitForExistence(timeout: 3); peekToast(app) }
         guard let seen = toastSeen else {
+            // #720: the line lasts about 3 seconds, and a look can take longer while the end screen comes in (Nov 22: the
+            // game ended on your bank, and no look saw it). The app's test-only log says whether it was said and went.
+            let log = (try? app.descendants(matching: .any)["toast-log"].firstMatch.snapshot())?.label ?? ""
             shot(app, "bank-\(device)achievement-missing")
-            XCTFail("the game's end earns Regular (10 games), said at the top (never seen; the test's last move: \(lastMove))"); return
+            print("ACHIEVEMENT 720 not seen on screen; last move: \(lastMove); the app's log: \(log.isEmpty ? "(empty)" : log)")
+            XCTAssertTrue(log.contains("said Achievement: Regular"), "the game's end earns Regular (10 games), said at the top (the app's log: \(log); last move: \(lastMove))")
+            if let r = log.range(of: #"gone after (\d+\.\d)s"#, options: .regularExpression),
+               let secs = Double(log[r].dropFirst(11).dropLast()) {
+                XCTAssertLessThan(secs, 5, "gone in about 3 seconds, not \(secs)")
+            } else { XCTFail("it goes by itself (the app's log: \(log))") }
+            XCTAssertFalse(toast.waitForExistence(timeout: 4), "the achievement isn't announced again")
+            XCTAssertEqual(log.components(separatedBy: "said Achievement").count, 2, "said once: \(log)")
+            return
         }
         XCTAssertTrue(seen.words.contains("Achievement") && seen.words.contains("Regular"), "it says which: \(seen.words)")
         XCTAssertTrue(seen.clear, "it sits at the top, over no button or die")

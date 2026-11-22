@@ -157,6 +157,7 @@ jobs:
                   if best is None or k<best[0]: best=(k,x["udid"],x["name"],rt)
           print(best[1]); print(best[2],best[3],file=sys.stderr)')
           xcrun simctl boot "$OLD"; xcrun simctl bootstatus "$OLD" -b
+          sleep 20   # #721: the first launch on a just-booted older phone timed out ("background assertion")
           xcrun simctl status_bar "$OLD" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
           set -o pipefail
           osel=""; for o in $OLDER_ONLY; do osel="$osel -only-testing:$o"; done
@@ -164,7 +165,7 @@ jobs:
           TEST_RUNNER_T2P_SHOT_PREFIX=older- xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
             -destination "id=$OLD" -derivedDataPath build -resultBundlePath build/older.xcresult \
             -parallel-testing-enabled NO $osel \
-            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/older-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
+            CODE_SIGNING_ALLOWED=NO test-without-building 2>&1 | tee build/older-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           grep -E "^FPS " build/older-test.log | sed 's/^/older: /' || true
           echo "older_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Some tests again on the largest iPhone (#721)
@@ -194,8 +195,14 @@ jobs:
           TEST_RUNNER_T2P_SHOT_PREFIX=largest- xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
             -destination "id=$BIG" -derivedDataPath build -resultBundlePath build/largest.xcresult \
             -parallel-testing-enabled NO $lsel \
-            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/largest-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
+            CODE_SIGNING_ALLOWED=NO test-without-building 2>&1 | tee build/largest-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           echo "largest_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Lines the tests printed (frame rates, #719; even when a test failed, #721)
+        if: always()
+        run: |
+          for b in ui older largest; do
+            [ -f build/$b-test.log ] && grep -E "^(FPS|ACHIEVEMENT) " build/$b-test.log | sed "s/^/$b: /" || true
+          done
       - name: Why tests failed (the result bundle's failure messages)
         if: always()
         run: |

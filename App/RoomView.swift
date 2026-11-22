@@ -119,6 +119,13 @@ struct RoomView: View {
             }
         }
         .padding(.top, 4)
+        // UI tests only (-t2p-earn-test, #720): the lines said at the top, for a test that couldn't look in time
+        .background(alignment: .topLeading) {
+            if StatsKeeper.earnTest {
+                Text(room.toastLog.joined(separator: " | ")).font(.system(size: 2)).fixedSize().opacity(0.02)
+                    .accessibilityIdentifier("toast-log")
+            }
+        }
         .animation(.easeInOut, value: room.toast)
         .animation(.easeInOut, value: room.back)
     }
