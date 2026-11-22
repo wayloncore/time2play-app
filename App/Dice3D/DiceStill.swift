@@ -129,7 +129,7 @@ struct DiceStill {
         if moment == "before" { return steps }
         steps.append((0.9, Self.rollCall(rolls: 1, faces: faces, held: Array(repeating: false, count: 5))))
         if moment == "kept" { steps.append((2.4, Self.rollCall(rolls: 1, faces: faces, held: [true, true, false, false, false]))) }
-        // #724: four held, for the gunmetal in the held dice's gold
+        // #724, #725: four held, for the held dice's gold
         if moment == "kept4" { steps.append((2.4, Self.rollCall(rolls: 1, faces: faces, held: [true, true, true, true, false]))) }
         return steps
     }

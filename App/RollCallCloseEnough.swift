@@ -421,29 +421,49 @@ struct ScoreBoxStyle: ButtonStyle {
     }
 }
 
-/// #724 (Tyler, Nov 22: "when you hold, the black in the gradient needs to be gunmetal gray because it's a little hard
-/// to see"): a held die's gold has gunmetal where the cards' rim has its near-black brown, so it reads on the felt.
+/// #725 (Tyler, Nov 22: "The HOLD word is worse under the held dice. Make the bottom white and gold, and the border"):
+/// a held die reads as lit, not darkened. No gunmetal or dark brown anywhere in the held gold (#724 had gunmetal).
 enum HoldGold {
-    /// -t2p-724-before: the near-black brown the held dice had, for the side-by-side still only.
-    static let before = ProcessInfo.processInfo.arguments.contains("-t2p-724-before")
-    static let gunmetal = before ? Painted.goldDeep : Color(hex: 0x4A5058)
-    /// The HOLD tag's letters: a deeper gunmetal, so 10-point type stays clear on the gold.
-    static let letters = before ? Color(hex: 0x2A1A05) : Color(hex: 0x353A40)
+    /// -t2p-725-before: build 91's gunmetal look (#724), for the side-by-side still only.
+    static let before = ProcessInfo.processInfo.arguments.contains("-t2p-725-before")
+    /// The HOLD pill's own gold: a deeper, rich gold under the white letters, so they read (white on it is 3.7:1 at
+    /// the top and 4.9:1 at the bottom; the soft dark shadow under the letters carries the rest).
+    static let pillTop = Color(hex: 0xB07A24)
+    static let pillBottom = Color(hex: 0x9A6519)
     static var rim: LinearGradient {
-        LinearGradient(colors: [Painted.goldLight, Painted.goldMid, gunmetal, Painted.gold, Painted.goldHi, Painted.goldMid],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
+        before
+            ? LinearGradient(colors: [Painted.goldLight, Painted.goldMid, Color(hex: 0x4A5058), Painted.gold, Painted.goldHi, Painted.goldMid],
+                             startPoint: .topLeading, endPoint: .bottomTrailing)
+            : LinearGradient(colors: [Painted.goldHi, Painted.goldLight, Painted.gold, Painted.goldLight, Painted.goldHi, Painted.gold],
+                             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
-/// HOLD under a held die: a small gold plaque (room kept for it under every die, so nothing moves).
+/// HOLD under a held die: a small gold plaque with white letters and a bright gold edge (room kept for it under
+/// every die, so nothing moves).
 struct HoldTag: View {
     let on: Bool
     var body: some View {
-        Text("HOLD").font(.system(size: 10, weight: .heavy)).tracking(1.2)
-            .foregroundStyle(on ? HoldGold.letters : Color.clear)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Capsule().fill(on ? AnyShapeStyle(HoldGold.rim) : AnyShapeStyle(Color.clear)))
-            .accessibilityHidden(true)
+        if HoldGold.before {
+            Text("HOLD").font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                .foregroundStyle(on ? Color(hex: 0x353A40) : Color.clear)
+                .padding(.horizontal, 7).padding(.vertical, 2)
+                .background(Capsule().fill(on ? AnyShapeStyle(HoldGold.rim) : AnyShapeStyle(Color.clear)))
+                .accessibilityHidden(true)
+        } else {
+            Text("HOLD").font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                .foregroundStyle(on ? Color.white : Color.clear)
+                .shadow(color: .black.opacity(on ? 0.55 : 0), radius: 1, y: 0.5)
+                .padding(.horizontal, 7).padding(.vertical, 2)
+                .background {
+                    if on {
+                        Capsule().fill(LinearGradient(colors: [HoldGold.pillTop, HoldGold.pillBottom], startPoint: .top, endPoint: .bottom))
+                            .overlay(Capsule().strokeBorder(LinearGradient(colors: [Painted.goldHi, Painted.goldLight],
+                                                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    }
+                }
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -482,6 +502,11 @@ struct YachtDie: View {
         .overlay {
             if held {
                 RoundedRectangle(cornerRadius: r + 4, style: .continuous).strokeBorder(HoldGold.rim, lineWidth: 3).padding(-4)
+                if !HoldGold.before {
+                    // #725: a white highlight on the ring's inner edge, so the held die reads as lit
+                    RoundedRectangle(cornerRadius: r + 2, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.85), lineWidth: 1).padding(-2)
+                }
             }
         }
         .shadow(color: Painted.gold.opacity(held ? 0.8 : 0), radius: held ? 10 : 0)
