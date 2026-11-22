@@ -72,16 +72,17 @@ struct CloseEnoughBoardGame: View {
     // MARK: the page
 
     private func page(_ h: CGFloat, _ width: CGFloat, _ compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+        VStack(alignment: .leading, spacing: asking ? (compact ? 8 : 12) : 8) {
             if asking {
                 chips
                 header
+                // the room that's left goes around the question, so it sits centered between the header and the board
                 question(compact)
-                    .frame(minHeight: 44, idealHeight: 44, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minHeight: 44, idealHeight: 44, maxHeight: .infinity, alignment: .leading)
                 board(h, width, compact)
                 askControls(compact)
             } else {
-                header
+                // at the answer the header's line goes to the pop-up: the question (one line) and the answer lead
                 questionLine
                 Text("The answer: \(q.answer.map { q.format($0) } ?? "")").font(.title2.bold()).foregroundStyle(T2P.text)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -158,9 +159,9 @@ struct CloseEnoughBoardGame: View {
         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .trailing).combined(with: .opacity))
     }
 
-    /// At the answer the question is one line (cut with …); VoiceOver still reads the whole of it.
+    /// At the answer the question is one line after its number (cut with …); VoiceOver still reads the whole of it.
     private var questionLine: some View {
-        Text(q.q).font(.headline).foregroundStyle(T2P.muted)
+        Text("\(q.n) of \(q.of) · \(q.q)").font(.headline).foregroundStyle(T2P.muted)
             .lineLimit(1).truncationMode(.tail)
             .accessibilityLabel(q.q)
             .accessibilityIdentifier("ce-question")
@@ -173,7 +174,7 @@ struct CloseEnoughBoardGame: View {
                                                lo: asking && view.lockedIn ? view.answerLo ?? lo : lo,
                                                hi: asking && view.lockedIn ? view.answerHi ?? hi : hi, seated: view.common.seated)
         let natural = CloseEnoughBoard3D.naturalHeight(lanes: state.lanes.count)
-        let cap = asking ? (compact ? max(96, h * 0.2) : max(120, h * 0.26)) : max(130, h * (compact ? 0.36 : 0.44))
+        let cap = asking ? (compact ? max(96, h * 0.2) : max(120, h * 0.26)) : max(130, h * (compact ? 0.27 : 0.25))
         let bh = min(natural, cap)
         let bw = bh < natural ? width * bh / natural : width
         return CloseEnoughBoard3D(state: state, height: bh)
@@ -219,7 +220,6 @@ struct CloseEnoughBoardGame: View {
              + Text(wait).font(.footnote).foregroundColor(T2P.muted))
                 .lineLimit(compact ? 1 : 2).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: lockLine)
         }
     }
 
@@ -352,7 +352,7 @@ struct CloseEnoughBoardGame: View {
                 ForEach(Reaction.allCases) { r in
                     Button(r.words) { room.react(r); Haptics.select() }
                         .font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
-                        .padding(.horizontal, 14).frame(minHeight: 40)
+                        .padding(.horizontal, 14).frame(minHeight: 36)
                         .background(Color.white.opacity(0.08), in: Capsule())
                         .accessibilityLabel("Send \(r.words)")
                 }
