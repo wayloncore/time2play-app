@@ -1,49 +1,49 @@
-Option: moments   run: 44989899361   commit: 7acce2b   2026-11-22 05:53 UTC
+Option: moments   run: 44991521816   commit: e3f0187   2026-11-22 06:20 UTC
 Recent simulator: iPhone 17 Pro (iOS-26-2), drawn at tier high. Older simulator: iPhone SE (3rd generation) (iOS-18-5), drawn at tier low (the oldest phones').
 Simulator frame rates come from the Mac's GPU, not a phone's: they compare options, they don't promise a phone's rate.
 
 Frame rates (FPS lines: frames drawn per 2 s; median and lowest):
-  older-dice: median 60.0, lowest 60.0, worst frame 416.7 ms (11 samples)
-  older-overdraft: median 37.0, lowest 34.8, worst frame 483.3 ms (17 samples)
-  recent-dice: median 60.0, lowest 15.8, worst frame 2000.0 ms (11 samples)
-  recent-overdraft-calm: median 31.7, lowest 30.5, worst frame 633.3 ms (9 samples)
-  recent-overdraft-today: median 18.0, lowest 8.4, worst frame 1000.0 ms (68 samples)
-  recent-overdraft: median 15.2, lowest 12.4, worst frame 616.7 ms (27 samples)
+  older-dice: median 60.0, lowest 58.0, worst frame 150.0 ms (11 samples)
+  older-overdraft: median 26.0, lowest 14.6, worst frame 733.3 ms (13 samples)
+  recent-dice: median 60.0, lowest 52.5, worst frame 266.7 ms (11 samples)
+  recent-overdraft-calm: median 23.4, lowest 14.8, worst frame 783.3 ms (14 samples)
+  recent-overdraft-today: median 18.1, lowest 7.3, worst frame 1166.7 ms (30 samples)
+  recent-overdraft: median 17.8, lowest 12.5, worst frame 750.0 ms (17 samples)
 
 Photosensitivity (flashcheck.py):
-  screen: luminance 0.056 to 0.075, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
+  screen: luminance 0.059 to 0.075, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
   top-left: luminance 0.070 to 0.090, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
-  top-right: luminance 0.061 to 0.087, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
-  bottom-left: luminance 0.044 to 0.065, most general flashes in a second 0, saturated red up to 0.2% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.041 to 0.066, most general flashes in a second 0, saturated red up to 0.3% of the area, most red flashes in a second 0
-FLASHCHECK older-dice PASS general=0 red=0 limit=2 frames=1261 seconds=21.0
-  screen: luminance 0.019 to 0.025, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-  top-left: luminance 0.018 to 0.029, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-  top-right: luminance 0.015 to 0.023, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
-  bottom-left: luminance 0.021 to 0.024, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.022 to 0.024, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-FLASHCHECK older-overdraft PASS general=0 red=0 limit=2 frames=191 seconds=3.2
-  screen: luminance 0.051 to 0.076, most general flashes in a second 0, saturated red up to 0.6% of the area, most red flashes in a second 0
-  top-left: luminance 0.064 to 0.095, most general flashes in a second 0, saturated red up to 0.7% of the area, most red flashes in a second 0
-  top-right: luminance 0.055 to 0.091, most general flashes in a second 0, saturated red up to 0.6% of the area, most red flashes in a second 0
-  bottom-left: luminance 0.041 to 0.078, most general flashes in a second 0, saturated red up to 1.2% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.039 to 0.070, most general flashes in a second 0, saturated red up to 1.2% of the area, most red flashes in a second 0
-FLASHCHECK recent-dice PASS general=0 red=0 limit=2 frames=1144 seconds=19.1
-  screen: luminance 0.024 to 0.028, most general flashes in a second 0, saturated red up to 6.4% of the area, most red flashes in a second 0
-  top-left: luminance 0.027 to 0.035, most general flashes in a second 0, saturated red up to 8.0% of the area, most red flashes in a second 0
-  top-right: luminance 0.026 to 0.032, most general flashes in a second 0, saturated red up to 8.9% of the area, most red flashes in a second 0
+  top-right: luminance 0.064 to 0.091, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  bottom-left: luminance 0.047 to 0.071, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.045 to 0.057, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+FLASHCHECK older-dice PASS general=0 red=0 limit=2 frames=1282 seconds=21.4
+  screen: luminance 0.022 to 0.033, most general flashes in a second 0, saturated red up to 7.6% of the area, most red flashes in a second 0
+  top-left: luminance 0.024 to 0.045, most general flashes in a second 0, saturated red up to 13.0% of the area, most red flashes in a second 0
+  top-right: luminance 0.021 to 0.041, most general flashes in a second 0, saturated red up to 15.5% of the area, most red flashes in a second 0
+  bottom-left: luminance 0.022 to 0.026, most general flashes in a second 0, saturated red up to 2.3% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.023 to 0.027, most general flashes in a second 0, saturated red up to 0.6% of the area, most red flashes in a second 0
+FLASHCHECK older-overdraft PASS general=0 red=0 limit=2 frames=1135 seconds=18.9
+  screen: luminance 0.056 to 0.075, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  top-left: luminance 0.064 to 0.091, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  top-right: luminance 0.059 to 0.092, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  bottom-left: luminance 0.047 to 0.078, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.045 to 0.072, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
+FLASHCHECK recent-dice PASS general=0 red=0 limit=2 frames=1127 seconds=18.8
+  screen: luminance 0.023 to 0.028, most general flashes in a second 0, saturated red up to 6.3% of the area, most red flashes in a second 0
+  top-left: luminance 0.025 to 0.035, most general flashes in a second 0, saturated red up to 7.8% of the area, most red flashes in a second 0
+  top-right: luminance 0.025 to 0.032, most general flashes in a second 0, saturated red up to 8.6% of the area, most red flashes in a second 0
   bottom-left: luminance 0.022 to 0.022, most general flashes in a second 0, saturated red up to 4.7% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.022 to 0.023, most general flashes in a second 0, saturated red up to 4.2% of the area, most red flashes in a second 0
-FLASHCHECK recent-overdraft-calm PASS general=0 red=0 limit=2 frames=354 seconds=5.9
-  screen: luminance 0.024 to 0.038, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-  top-left: luminance 0.025 to 0.048, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.022 to 0.023, most general flashes in a second 0, saturated red up to 4.1% of the area, most red flashes in a second 0
+FLASHCHECK recent-overdraft-calm PASS general=0 red=0 limit=2 frames=930 seconds=15.5
+  screen: luminance 0.024 to 0.037, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
+  top-left: luminance 0.025 to 0.041, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
   top-right: luminance 0.025 to 0.046, most general flashes in a second 0, saturated red up to 0.0% of the area, most red flashes in a second 0
-  bottom-left: luminance 0.020 to 0.031, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.022 to 0.034, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
-FLASHCHECK recent-overdraft-today PASS general=0 red=0 limit=2 frames=6708 seconds=111.8
-  screen: luminance 0.019 to 0.036, most general flashes in a second 0, saturated red up to 5.5% of the area, most red flashes in a second 0
-  top-left: luminance 0.019 to 0.044, most general flashes in a second 0, saturated red up to 6.5% of the area, most red flashes in a second 0
-  top-right: luminance 0.017 to 0.043, most general flashes in a second 0, saturated red up to 8.2% of the area, most red flashes in a second 0
-  bottom-left: luminance 0.018 to 0.028, most general flashes in a second 0, saturated red up to 4.0% of the area, most red flashes in a second 0
-  bottom-right: luminance 0.020 to 0.030, most general flashes in a second 0, saturated red up to 3.6% of the area, most red flashes in a second 0
-FLASHCHECK recent-overdraft PASS general=0 red=0 limit=2 frames=2618 seconds=43.6
+  bottom-left: luminance 0.021 to 0.031, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.022 to 0.030, most general flashes in a second 0, saturated red up to 0.1% of the area, most red flashes in a second 0
+FLASHCHECK recent-overdraft-today PASS general=0 red=0 limit=2 frames=2060 seconds=34.3
+  screen: luminance 0.023 to 0.031, most general flashes in a second 0, saturated red up to 5.5% of the area, most red flashes in a second 0
+  top-left: luminance 0.025 to 0.041, most general flashes in a second 0, saturated red up to 6.5% of the area, most red flashes in a second 0
+  top-right: luminance 0.025 to 0.035, most general flashes in a second 0, saturated red up to 8.2% of the area, most red flashes in a second 0
+  bottom-left: luminance 0.021 to 0.024, most general flashes in a second 0, saturated red up to 4.0% of the area, most red flashes in a second 0
+  bottom-right: luminance 0.023 to 0.025, most general flashes in a second 0, saturated red up to 3.5% of the area, most red flashes in a second 0
+FLASHCHECK recent-overdraft PASS general=0 red=0 limit=2 frames=1244 seconds=20.7
