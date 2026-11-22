@@ -15,9 +15,9 @@ struct T3DU {
     float4 b;      // seed, turn, ground, reduced
     float4 c;      // grow (grass), bolt intensity, focal (points per unit at depth 1), max particle size (points)
     float4 d;      // particle opacity: ember, wave, bolt, leaf
-    float4 e;      // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
-    float4 f;      // turn flow: color, strength
-    float4 g;      // turn flow: the arc's direction, its brightness, rim length, comet spacing
+    float4 e;      // the arrows: the arc's from (rim s), its span to the next seat, the chevrons' phase, the way they point
+    float4 f;      // the arrows: the suit's color, on (0 to 1)
+    float4 g;      // the arrows: a Reverse's sweep (-1 for none), where it started; -1 for #719's "before" only; spare
 };
 
 struct T3DNode {
@@ -172,11 +172,18 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
     return float4(lin(backdropTone(col)), 1.);
 }
 
-// ---------- the turn flow: light running round the rim in turn order (#496, Nov 17) ----------
-// Drawn by the glass itself (opaque, so it never depends on blending). The whole rim flows faintly in play's
-// direction; the arc from whoever is on to whoever is next is bright, and whoever is next glows. Reduce Motion: a
-// still arc that brightens toward whoever is next.
+// ---------- which way play goes: the website's arrows (#719) ----------
+// Tyler, Nov 22: "I like the arrows that I have on Overdraft on the website. I prefer those arrows to the one that
+// you added." These are time2play.live's (static/live/overdraft.html: flowPlace, flowArc, flowDraw), laid on the
+// glass's rim instead of the felt's rail: a faint band on the rim, a ring of chevrons on it that flow round the way
+// play goes (each a soft halo under a bright core), and a curved arrow just inside it from whoever is on to whoever
+// is next. A Reverse: the chevrons slow to a stop, a bright sweep runs once round the rim from whoever played it,
+// turning each chevron as it passes, then they flow the other way. The website's colors (the suit mixed with its
+// creams) and its opacities. Reduce Motion: nothing flows or sweeps; the arrows point the way play goes.
 constant float RX = 2.2, A0 = 3.2, QA = 3.4557519, PERIM = 26.6230077, SPACING = 26.6230077 / 24.;
+constant float RAIL_K = 1.055, RAIL_W = .24;                  // the rim's middle (of the corner's radius) and width
+constant float CHEV = .28, CHEV_N = 31., CHEV_STEP = PERIM / CHEV_N;   // a chevron's size, how many, how far apart
+constant float ARC_K = .88, ARC_W = .07;                       // the curved arrow: how far out, how thick
 
 // Where a point on the glass is round the rim (s, as Table3D.rimPoint counts it) and how far out (k: 1 is the felt's edge).
 static float2 rimSK(float2 p) {
@@ -186,30 +193,96 @@ static float2 rimSK(float2 p) {
     return x < 0. ? float2(QA + (A0 - z), -x / RX) : float2(3. * QA + 2. * A0 + (z + A0), x / RX);
 }
 
-// The flow's color and how much of it (0 to 1) at a point on the glass.
-static float4 turnFlow(float2 p, constant T3DU& u) {
+static float segDist(float2 p, float2 a, float2 b) {
+    float2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); return length(pa - ba * h);
+}
+// How much of a stroke `width` wide covers a point `d` from its middle line (aa: a pixel, in world units).
+static float stroke(float d, float width, float aa) { return 1. - ss(width * .5 - aa, width * .5 + aa, d); }
+static float wrapP(float x) { return x - PERIM * floor(x / PERIM); }
+
+// The glass's color with the arrows on it. u.e: the arc's from (rim s), its span to the next seat, the chevrons'
+// phase, the way they point (1 or -1; during a Reverse the old way); u.f: the suit's color (sRGB), on (0 to 1);
+// u.g: the Reverse's sweep (how far round, rim s; -1 for none), where it started (rim s).
+static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
+    float on = u.f.w;
+    if (on < .001) return col;
+    float2 sk = rimSK(p);
+    float s = sk.x, k = sk.y;
+    if (k < ARC_K - .2 || k > RAIL_K + .2) return col;
+    float3 sc = u.f.rgb;
+    float3 cBand = mix(float3(.961, .871, .584), sc, .55);          // color-mix(--sc 55%, #F5DE95)
+    float3 cHalo = mix(float3(.961, .871, .584), sc, .70);          // 70%, #F5DE95
+    float3 cCore = mix(float3(1., .957, .824), sc, .30);            // 30%, #FFF4D2
+    float3 cArc = mix(float3(1., .937, .761), sc, .40);             // 40%, #FFEFC2
+    // the rim's band: the website's arrows sit on a dark rail, so the glass under them darkens (the Nov 22 stills:
+    // cream arrows on bare glass washed out on the sea and the meadow), with the suit's faint tint over it
+    float across = (k - RAIL_K) * RX;
+    float rail = stroke(abs(across), RAIL_W * .9, aa);
+    col = mix(col, float3(.07, .05, .09), .42 * on * rail);
+    col = mix(col, cBand, .13 * on * rail);
+    // the chevrons: the nearest one, where it points, and whether the sweep has turned it
+    float phase = u.e.z, pointing = u.e.w >= 0. ? 1. : -1.;
+    float j = floor((s - phase) / CHEV_STEP + .5), c = phase + j * CHEV_STEP;
+    float along = s - c;
+    float ang = pointing < 0. ? M_PI_F : 0., size = CHEV;
+    bool hot = false;
+    if (u.g.x >= 0.) {
+        float at = wrapP((c - u.g.y) * -pointing), past = u.g.x - at;
+        ang += M_PI_F * clamp(past / (PERIM * .05), 0., 1.);
+        hot = past > 0. && past < PERIM * .14;
+        if (hot) size *= 1.1;
+    }
+    float ca = cos(ang), sa = sin(ang);
+    float2 q = float2(ca * along + sa * across, -sa * along + ca * across);
+    float h = size * .5;
+    float2 tip = float2(h * .9, 0.), armA = float2(-h * .6, h), armB = float2(-h * .6, -h);
+    float dc = min(segDist(q, armA, tip), segDist(q, armB, tip));
+    col = mix(col, float3(.05, .03, .06), .35 * on * stroke(dc, size * .44, aa));       // a dark edge round each
+    col = mix(col, cHalo, .30 * on * stroke(dc, size * .32, aa));
+    if (hot) col = mix(col, float3(1., .973, .894), on * stroke(dc, size * .30, aa));     // #FFF8E4
+    else col = mix(col, cCore, .95 * on * stroke(dc, size * .22, aa));
+    // the curved arrow from whoever is on to whoever is next, just inside the rim, the way play goes
+    float len = u.e.y, dir = -pointing;
+    if (u.g.x < 0.) dir = pointing;
+    float gap = min(.8, len * .16), end = len - gap;
+    float d = wrapP((s - u.e.x) * dir), ac = (k - ARC_K) * RX;
+    float hs = ARC_W * 3.4;
+    if (d >= gap - ARC_W && d <= end) {
+        float da = abs(ac);
+        col = mix(col, cHalo, .16 * on * stroke(da, ARC_W * 3.2, aa) * ss(gap - ARC_W, gap + ARC_W * 2., d));
+        col = mix(col, cArc, .62 * on * stroke(da, ARC_W, aa) * ss(gap - ARC_W, gap, d));
+    }
+    // its head: a triangle past the arc's end, pointing on round
+    float2 t = float2(d - end, ac);
+    if (t.x > -hs && t.x < hs) {
+        float2 A = float2(hs * .55, 0.), B = float2(-hs * .5, hs * .62), C = float2(-hs * .5, -hs * .62);
+        float2 e0 = B - A, e1 = C - B, e2 = A - C;
+        float s0 = (t.x - A.x) * e0.y - (t.y - A.y) * e0.x, s1 = (t.x - B.x) * e1.y - (t.y - B.y) * e1.x, s2 = (t.x - C.x) * e2.y - (t.y - C.y) * e2.x;
+        float inside = (s0 <= 0. && s1 <= 0. && s2 <= 0.) || (s0 >= 0. && s1 >= 0. && s2 >= 0.) ? 1. : 0.;
+        float edge = min(segDist(t, A, B), min(segDist(t, B, C), segDist(t, C, A)));
+        float m = max(inside, stroke(edge, aa * 2., aa));
+        col = mix(col, cArc, .8 * on * m);
+    }
+    return col;
+}
+
+// #719's frame-rate comparison only (-t2p-719-before): the comets the app drew before, at the same cost they had.
+static float4 turnFlowBefore(float2 p, constant T3DU& u) {
     if (u.f.w < .001) return float4(0.);
     float2 sk = rimSK(p);
     float v = (sk.y - .96) / (1.095 - .96);
     if (v <= 0. || v >= 1.) return float4(0.);
     float s = sk.x, L = u.e.y;
-    float x = (s - u.e.x) * u.g.x; float rel = x - PERIM * floor(x / PERIM);   // past whoever is on, in the arc's direction
+    float x = (s - u.e.x) * u.e.w; float rel = x - PERIM * floor(x / PERIM);
     float inArc = ss(0., .3, rel) * (1. - ss(L - .45, L, rel));
     float across = ss(0., .3, v) * (1. - ss(.7, 1., v));
-    float dn = abs(rel - L); dn = min(dn, PERIM - dn);                         // how far from whoever is next
-    float b;
-    if (u.b.w > .5) {
-        b = inArc * u.g.y * (.40 + .70 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .5) * 1.1 * u.g.y;
-    } else {
-        float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
-        float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
-        float comet = mix(back, fwd, vd * .5 + .5) * 1.6;                     // the bright head leads, its tail trails
-        float glow = exp(-dn * dn / .5) * (1. + .25 * sin(u.a.x * 3.4));
-        b = .14 * comet + inArc * u.g.y * (1.1 * comet + .45) + glow * u.g.y;   // faint all round, bright on the arc
-    }
+    float dn = abs(rel - L); dn = min(dn, PERIM - dn);
+    float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
+    float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
+    float comet = mix(back, fwd, vd * .5 + .5) * 1.6;
+    float glow = exp(-dn * dn / .5) * (1. + .25 * sin(u.a.x * 3.4));
+    float b = .14 * comet + inArc * (1.1 * comet + .45) + glow;
     float a = clamp(b * across * u.f.w, 0., .92);
-    // a light, not a stripe of paint: a pale core of the element's color, whiter where it's brightest, so it reads
-    // on glass of the same color (ember on lava, blue on the sea)
     return float4(mix(u.f.rgb, float3(1.), .45 + .35 * clamp(b - .4, 0., 1.)), a);
 }
 
@@ -237,8 +310,8 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     // #610: a flash lights the rim (the felt's edge) in violet; the middle of the glass, under the cards, only a little
     col += float3(.5, .34, .95) * e.flash * (.12 + ss(.80, 1., ed) * .55 + ss(.95, 1., ed) * .65);
-    float4 fl = turnFlow(vW.xz, u);
-    col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35;   // and its glow on the glass round it
+    if (u.g.z < 0.) { float4 fl = turnFlowBefore(vW.xz, u); col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35; }
+    else col = turnArrows(vW.xz, col, max(length(fwidth(vW.xz)), .004), u);
     return float4(lin(col), 1.);
 }
 

@@ -267,8 +267,9 @@ struct Table3DView: View {
                                    startPoint: .top, endPoint: .bottom),
                     in: UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 16, bottomTrailingRadius: 16, topTrailingRadius: 26))
                 .overlay(UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 16, bottomTrailingRadius: 16, topTrailingRadius: 26)
-                    .stroke(view.yourTurn ? T2P.gold.opacity(0.8) : .white.opacity(0.11), lineWidth: view.yourTurn ? 1.5 : 1))
-                .shadow(color: view.yourTurn ? T2P.gold.opacity(0.45) : .black.opacity(0.5), radius: view.yourTurn ? 14 : 12, y: view.yourTurn ? 0 : 8)
+                    .stroke(view.yourTurn ? Color(hex: 0xFFD866) : .white.opacity(0.11), lineWidth: view.yourTurn ? 2.5 : 1))
+                // #719: your turn's glow round the hand, brighter and wider
+                .shadow(color: view.yourTurn ? Color(hex: 0xFFC94A).opacity(0.75) : .black.opacity(0.5), radius: view.yourTurn ? 18 : 12, y: view.yourTurn ? 0 : 8)
                 .padding(.horizontal, 12).padding(.top, 6)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { tray = $0 }
             if view.drawn != nil && view.yourTurn {
@@ -655,7 +656,10 @@ struct SeatBillboard: View {
         let mk = CGFloat(spec.mark), bw = (seat.cards > 9 ? 0.58 : 0.46) * u * mk, bh = 0.44 * u * mk
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: W, height: H)
-            if turn { TurnRing(endsAt: endsAt).frame(width: fr * 2 * 1.36, height: fr * 2 * 1.36).position(x: fx, y: fy) }
+            if turn {
+                if Table3DWorld.before719 { TurnRingBefore(endsAt: endsAt).frame(width: fr * 2 * 1.36, height: fr * 2 * 1.36).position(x: fx, y: fy) }
+                else { TurnRing(endsAt: endsAt).frame(width: fr * 2 * TurnRing.span, height: fr * 2 * TurnRing.span).position(x: fx, y: fy) }
+            }
             Circle().fill(Color(hex: 0x17111C)).frame(width: fr * 2, height: fr * 2)
                 .shadow(color: .black.opacity(0.7), radius: 0.07 * u, y: 0.023 * u)
                 .position(x: fx, y: fy)
@@ -705,8 +709,45 @@ struct SeatBillboard: View {
     }
 }
 
-/// The gold ring round the face whose turn it is, running down with their clock.
+/// Whose turn it is (#719, Tyler Nov 22: "the illumination ... around or behind the person's avatar to be a little
+/// more clear and a little brighter"): a wide, steady gold halo behind the face, and a bright gold ring round it that
+/// runs down with their clock (what's left near white, what's gone still gold, so the ring never goes dim). A thin
+/// dark edge outside the ring keeps it reading on the bright scenes (the Leaf meadow, a Bolt flash). Nothing moves
+/// but the clock, so Reduce Motion and the frame rate get the same ring; the halo is drawn once, outside the clock's
+/// timeline, and needs no blur.
 struct TurnRing: View {
+    /// The ring's box, as a multiple of the face's size.
+    static let span: CGFloat = 2.0
+    let endsAt: Double?
+    var body: some View {
+        GeometryReader { g in
+            let r = min(g.size.width, g.size.height) / 2, face = r / TurnRing.span      // the face's radius
+            let ringR = face * 1.12, lw = face * 0.17
+            ZStack {
+                Circle().fill(RadialGradient(stops: [
+                    .init(color: Color(hex: 0xFFD866).opacity(0.95), location: 0.45),
+                    .init(color: Color(hex: 0xFFC94A).opacity(0.62), location: 0.66),
+                    .init(color: Color(hex: 0xFFB830).opacity(0.22), location: 0.84),
+                    .init(color: Color(hex: 0xFFB830).opacity(0), location: 1),
+                ], center: .center, startRadius: 0, endRadius: r))
+                Circle().stroke(.black.opacity(0.4), lineWidth: face * 0.05)
+                    .frame(width: (ringR + lw / 2 + face * 0.025) * 2, height: (ringR + lw / 2 + face * 0.025) * 2)
+                Circle().stroke(Color(hex: 0xE9B53F), lineWidth: lw).frame(width: ringR * 2, height: ringR * 2)
+                TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
+                    let left = endsAt.map { max(0, min(1, ($0 / 1000 - ctx.date.timeIntervalSince1970) / 45)) } ?? 1
+                    Circle().trim(from: 0, to: left).stroke(Color(hex: 0xFFF3C4), style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).frame(width: ringR * 2, height: ringR * 2)
+                }
+            }
+            .frame(width: g.size.width, height: g.size.height)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The ring before #719, for the frame-rate comparison only (-t2p-719-before).
+struct TurnRingBefore: View {
     let endsAt: Double?
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { ctx in

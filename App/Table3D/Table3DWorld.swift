@@ -14,9 +14,9 @@ struct T3DUniforms {
     var b = SIMD4<Float>(1.7, 0, -2.6, 0)   // seed, turn, ground, reduced
     var c = SIMD4<Float>(0, 0, 600, 70)     // grow, bolt, focal, max particle size
     var d = SIMD4<Float>(0, 0, 0, 0)        // particle opacity per element
-    var e = SIMD4<Float>(0, 1, 0, 1)        // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
-    var f = SIMD4<Float>(0.8, 0.8, 0.8, 0)  // turn flow: color, strength
-    var g = SIMD4<Float>(1, 1, Float(Table3D.perim), 1.1)   // turn flow: the arc's direction, its brightness, rim length, comet spacing
+    var e = SIMD4<Float>(0, 1, 0, 1)        // the arrows: the arc's from (rim s), its span, the chevrons' phase, the way they point
+    var f = SIMD4<Float>(0.8, 0.8, 0.8, 0)  // the arrows: the suit's color, on (0 to 1)
+    var g = SIMD4<Float>(-1, 0, 0, 0)       // the arrows: a Reverse's sweep (-1 none), where it started; -1: #719's "before" only
 }
 
 /// How much the scene draws: the effects step down on older phones (and again if frames run long).
@@ -131,6 +131,24 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// SceneKit's render callback: it only times frames now (stepping down when they run long). The scene moves in tick.
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         watchFrames(time)
+        if Self.fpsOn { meterFrame(time) }
+    }
+
+    // #719: the frame rate the table really draws at, for the before-and-after comparison. Only with -t2p-fps (and
+    // -t2p-arena-debug, whose line carries it): frames drawn over the last two seconds, and the longest frame.
+    static let fpsOn = ProcessInfo.processInfo.arguments.contains("-t2p-fps")
+    private var fpsStart: TimeInterval?, fpsLast: TimeInterval?, fpsCount = 0, fpsWorstNow = 0.0
+    private var fpsShown = (0.0, 0.0)
+    private func meterFrame(_ time: TimeInterval) {
+        if let l = fpsLast { fpsWorstNow = max(fpsWorstNow, time - l) }
+        fpsLast = time
+        guard let s = fpsStart else { fpsStart = time; fpsCount = 0; return }
+        fpsCount += 1
+        if time - s >= 2 {
+            let shown = (Double(fpsCount) / (time - s), fpsWorstNow * 1000)
+            lock.lock(); fpsShown = shown; lock.unlock()
+            fpsStart = time; fpsCount = 0; fpsWorstNow = 0
+        }
     }
 
     /// One frame (the SceneTicker's thread): what was posted, the timers, then the table.
@@ -157,7 +175,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         frames += 1
         if let cb = onDebug, time - debugAt >= 0.5 {
             debugAt = time
-            let line = "frames=\(frames) flights=\(flights.count) rescued=\(rescued) clk=\(String(format: "%.1f", clock))"
+            var line = "frames=\(frames) flights=\(flights.count) rescued=\(rescued) clk=\(String(format: "%.1f", clock))"
+            if Self.fpsOn { lock.lock(); let f = fpsShown; lock.unlock(); line += String(format: " fps=%.1f worstms=%.0f", f.0, f.1) }
             DispatchQueue.main.async { cb(line) }
         }
     }
@@ -623,86 +642,77 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// Your turn: the rim lights up in the element's color.
     func setMyTurn(_ on: Bool) { turnTarget = on ? 1 : 0 }
 
-    // MARK: the turn flow (#496, Tyler Nov 17: "make the directional animation better")
+    // MARK: which way play goes: the website's arrows (#719)
 
-    /// Light running round the rim in turn order: the bright arc from whoever is on to whoever is next, which way
-    /// play goes, and the comets' phase and speed (a Reverse slows them, stops them and sends them the other way).
+    /// Tyler, Nov 22 (#719): "I like the arrows that I have on Overdraft on the website. I prefer those arrows to the
+    /// one that you added." So these are time2play.live's (static/live/overdraft.html: flowPlace, flowArc, flowDraw),
+    /// drawn by the glass's shader (Table3DShaders.metal, turnArrows): chevrons flowing round the rim the way play
+    /// goes, and a curved arrow from whoever is on to whoever is next. A Reverse uses the website's timing: the
+    /// chevrons slow to a stop (0.42 s), a sweep from whoever played it runs once round the rim turning each one (from
+    /// 0.3 s, for 0.95 s), and they pick up the other way (0.42 s). Reduce Motion: nothing flows or sweeps.
     private struct Flow {
-        var a = 0.0, b = 0.0, ta = 0.0, tb = 0.0   // the arc now, and where it's going (rim s)
-        var d = 1.0, ad = 1.0                      // play's direction, and the arc's (it turns while the flow is stopped)
-        var phase = 0.0, vel = 1.0, fromVel = 1.0  // the comets: offset along the rim, speed (-1 to 1)
-        var show = 0.0, target = 0.0, arc = 1.0, boost = 0.0
-        var rev = -1.0                             // seconds into a Reverse (negative: none)
+        var from = 0.0, len = 1.0, dir = 1.0      // the seat in turn (rim s), the way to the next seat, play's direction
+        var phase = 0.0, vel = 0.0, pointing = 1.0 // the chevrons: offset round the rim, speed, the way they point
+        var rev = -1.0, revFrom = 0.0, revOld = 1.0 // seconds into a Reverse (negative: none), where it started, the old way
+        var on = 0.0, target = 0.0
         var set = false
     }
+    /// How fast the chevrons flow (world units a second; the website's 34 px a second on its rail).
+    private static let flowSpeed = 1.0
 
-    /// The flow is drawn by the glass's shader (Table3DShaders.metal, turnFlow): here only its constants.
+    /// #719's frame-rate comparison only: -t2p-719-before draws the comets the app had before, at their cost.
+    static let before719 = ProcessInfo.processInfo.arguments.contains("-t2p-719-before")
+
     private func buildFlow() {
-        let P = Table3D.perim
-        u.g.z = Float(P); u.g.w = Float(P / (P / 1.1).rounded())   // comets evenly round the rim, about 1.1 apart
+        u.g = SIMD4<Float>(-1, 0, Self.before719 ? -1 : 0, 0)
     }
 
-    /// Whoever is on, whoever is next (rim positions) and play's direction. A new turn slides the bright arc on; a
-    /// change of direction is a Reverse: the flow slows, stops and runs the other way. `pin` (still mode) holds it.
+    /// Whoever is on, whoever is next (rim positions) and play's direction. A change of direction is a Reverse,
+    /// started from the seat that was on. `pin` (still mode) holds it.
     func setFlow(from: Double, to: Double, dir: Int, pin: Bool = false) {
         if flowPinned && !pin { return }
         if pin { flowPinned = true }
-        let d = dir >= 0 ? 1.0 : -1.0
+        let d = dir >= 0 ? 1.0 : -1.0, P = Table3D.perim
+        var len = ((to - from) * d).truncatingRemainder(dividingBy: P)
+        if len < 0 { len += P }
+        if len < 0.01 { len = P }
         flow.target = 1
-        if !flow.set || flow.show < 0.05 {   // the first turn, or a new hand after the flow faded: no animation
-            flow = Flow(a: from, b: to, ta: from, tb: to, d: d, ad: d, vel: d, fromVel: d, show: reduced ? 1 : flow.show, target: 1, set: true)
-            return
+        if !flow.set || flow.on < 0.05 {   // the first turn, or a new hand after the arrows faded: no Reverse to show
+            flow.set = true; flow.dir = d; flow.pointing = d; flow.vel = reduced ? 0 : d * Self.flowSpeed; flow.rev = -1
+            if reduced { flow.on = 1 }
+        } else if d != flow.dir {
+            if reduced { flow.pointing = d; flow.rev = -1 }
+            else { flow.rev = 0; flow.revFrom = flow.from; flow.revOld = flow.dir }
+            flow.dir = d
         }
-        if d != flow.d {
-            flow.d = d; flow.ta = from; flow.tb = to
-            if reduced { flow.a = from; flow.b = to; flow.ad = d; flow.vel = d; flow.rev = -1 } else { flow.rev = 0; flow.fromVel = flow.vel }
-        } else if from != flow.ta || to != flow.tb {
-            flow.ta = from; flow.tb = to
-            if reduced { flow.a = from; flow.b = to }
-        } else { return }
-        flow.boost = 1
+        flow.from = from; flow.len = len
     }
 
-    /// The hand's over: the flow fades away.
+    /// The hand's over: the arrows fade away.
     func hideFlow() { flow.target = 0 }
 
     private func stepFlow(_ dt: Double) {
-        let P = Table3D.perim
-        flow.show += max(-dt * 2.5, min(dt * 2.5, flow.target - flow.show))
-        flow.boost = max(0, flow.boost - dt / 1.6)
-        func ease(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
-        let ad = flow.ad, step = min(1, dt * 4.5)
-        // the arc slides on round the rim in play's direction (back the short way if it has to)
-        func slide(_ cur: Double, _ to: Double) -> Double {
-            var delta = ((to - cur) * ad).truncatingRemainder(dividingBy: P)
-            if delta < 0 { delta += P }
-            if delta > P / 2 { delta -= P }
-            return abs(delta) < 0.002 ? to : cur + ad * delta * step
-        }
+        let P = Table3D.perim, V = Self.flowSpeed
+        var sweep = -1.0
         if flow.rev >= 0 {
             flow.rev += dt
-            let t = flow.rev
-            if t < 0.8 {
-                flow.vel = flow.fromVel * (1 - ease(t / 0.8)); flow.arc = 1 - ease(t / 0.6)
-            } else if t < 1.9 {
-                flow.a = flow.ta; flow.b = flow.tb; flow.ad = flow.d
-                flow.vel = t < 1.1 ? 0 : flow.d * ease((t - 1.1) / 0.8); flow.arc = ease((t - 0.9) / 0.5)
-            } else {
-                flow.vel = flow.d; flow.arc = 1; flow.rev = -1
-            }
-            flow.boost = 1
-        } else {
-            flow.a = slide(flow.a, flow.ta); flow.b = slide(flow.b, flow.tb)
-            flow.vel = flow.d; flow.arc = 1
+            let t = flow.rev, goAt = 0.3 + 0.95 - 0.12
+            func ease(_ x: Double) -> Double { let c = min(1, max(0, x)); return 1 - pow(1 - c, 3) }
+            if t < 0.42 { flow.vel = flow.revOld * V * (1 - ease(t / 0.42)) }
+            else if t < goAt { flow.vel = 0 }
+            else { flow.vel = flow.dir * V * ease((t - goAt) / 0.42) }
+            sweep = max(0, min(1, (t - 0.3) / 0.95)) * (P + P * 0.05)
+            if t > goAt + 0.42 { flow.rev = -1; flow.pointing = flow.dir; flow.vel = flow.dir * V; sweep = -1 }
+        } else if !reduced {
+            flow.vel = flow.dir * V
         }
-        if !reduced { flow.phase = (flow.phase + flow.vel * 0.9 * dt).truncatingRemainder(dividingBy: P) }
-        var L = ((flow.b - flow.a) * flow.ad).truncatingRemainder(dividingBy: P)
-        if L < 0 { L += P }
-        if L < 0.05 { L = P }
-        let a = (flow.a.truncatingRemainder(dividingBy: P) + P).truncatingRemainder(dividingBy: P)
-        u.e = SIMD4<Float>(Float(a), Float(L), Float(flow.phase), Float(flow.vel))
-        u.g.x = Float(flow.ad); u.g.y = Float(flow.arc)
-        u.f.w = Float(flow.show * (0.75 + 0.25 * flow.boost))
+        if !reduced { flow.phase = (flow.phase + flow.vel * dt).truncatingRemainder(dividingBy: P) }
+        flow.on += max(-dt * 3, min(dt * 3, flow.target - flow.on))
+        let a = (flow.from.truncatingRemainder(dividingBy: P) + P).truncatingRemainder(dividingBy: P)
+        let pointing = flow.rev >= 0 ? flow.revOld : flow.pointing
+        u.e = SIMD4<Float>(Float(a), Float(flow.len), Float(flow.phase), Float(pointing))
+        u.g.x = Float(sweep); u.g.y = Float(flow.revFrom)
+        u.f.w = Float(flow.on)
     }
 
     private lazy var boltMaterial: SCNMaterial = programMaterial("t3d_bolt_vert", "t3d_bolt_frag", opaque: false) { m in
@@ -1045,8 +1055,10 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         "bolt": [0xa89ad0, 0x1a1228, 0x8a4cff, 0xdcd0f4], "leaf": [0xffe2b0, 0x35521a, 0xffa848, 0xffd08a],   // late-afternoon sun
     ]
 
-    /// The turn flow's color per element: the suit's color, lifted so it reads on the glass.
-    private static let flowColor: [String: UInt32] = ["ember": 0xFF8A45, "wave": 0x5AAEFF, "bolt": 0xB08CFF, "leaf": 0x9BE07E]
+    /// The arrows' color per element: the website's suit colors (--sc), which its arrows mix with their creams.
+    private static let flowColor: [String: UInt32] = ["ember": 0xE2662A, "wave": 0x2E7FD4, "bolt": 0x8B5FD6, "leaf": 0x4A9E4E]
+    /// The comets' colors before #719, for the frame-rate comparison only.
+    private static let flowColorBefore: [String: UInt32] = ["ember": 0xFF8A45, "wave": 0x5AAEFF, "bolt": 0xB08CFF, "leaf": 0x9BE07E]
 
     private func step(_ dt: Double) {
         let f = Float(dt)
@@ -1082,7 +1094,10 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         key.color = Self.color(acc[3])
         rimLine?.diffuse.contents = Self.color(acc[0] + (SIMD3<Float>(1, 1, 1) - acc[0]) * 0.45)
         var fc = SIMD3<Float>(0, 0, 0)
-        for (i, s) in Self.suits.enumerated() { if let h = Self.flowColor[s] { fc += Self.rgb(h) * u.w[i] } }
+        for (i, s) in Self.suits.enumerated() {
+            if Self.before719 { if let h = Self.flowColorBefore[s] { fc += Self.rgb(h) * u.w[i] } }
+            else if let h = Self.flowColor[s] { fc += Self.rgb(h) * u.w[i] }
+        }
         u.f.x = fc.x; u.f.y = fc.y; u.f.z = fc.z
         let po: Float = reduced ? 0.45 : 1
         u.d = u.w * po
