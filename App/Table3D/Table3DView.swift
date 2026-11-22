@@ -12,7 +12,9 @@ struct Table3DView: View {
     var still: Table3DStill? = nil
 
     @StateObject private var stage = Table3DStage()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Reduce Motion, or -t2p-reduce-motion (#716's calm versions, shot from the Mac run like the intro's)
+    private var reduceMotion: Bool { systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-t2p-reduce-motion") }
     @Environment(\.horizontalSizeClass) private var hsize
 
     @State private var feed: [String] = []
@@ -396,6 +398,15 @@ struct Table3DView: View {
                     bump(who, n)
                     if let i = seatsNow.firstIndex(where: { $0.id == who }) { world.post { world.drawToSeat(i, count: n) } }
                 }
+            default: break
+            }
+        }
+        // #716 (option A, the director): a Bolt that lands is the big moment; nothing without -t2p-cinema director
+        for m in moves {
+            switch m {
+            case let .hit(who, _, _, _), let .tookTrain(who, _):
+                let mine = who == me
+                world.post { world.boltHit(mine: mine) }
             default: break
             }
         }

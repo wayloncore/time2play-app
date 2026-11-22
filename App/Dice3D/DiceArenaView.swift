@@ -50,6 +50,8 @@ final class DiceArenaStage: ObservableObject {
     @Published private(set) var rescues: [String] = []
     private(set) var world: DiceArenaWorld?
     private var scnView: SCNView?
+    /// #716: counts the frames drawn, only with -t2p-cinema-fps (the view holds its delegate weakly)
+    private var meter: RenderMeterDelegate?
     private var last: ArenaState?
     private var reduced = false
     var freezeOn: (DiceArenaWorld.Moment, Double)?
@@ -79,7 +81,9 @@ final class DiceArenaStage: ObservableObject {
         let v = SCNView(frame: .zero)
         v.scene = w.scene
         v.pointOfView = w.cameraNode
-        // build 48: no render delegate; the display link below moves the scene (DiceArenaWorld.tick)
+        // build 48: no render delegate; the display link below moves the scene (DiceArenaWorld.tick). #716's frame
+        // counter is the one exception, and only with -t2p-cinema-fps: it counts frames and changes nothing.
+        if RenderMeter.on { let m = RenderMeterDelegate(name: tray.shelf ? "dice" : "dice-row"); meter = m; v.delegate = m }
         v.isPlaying = true
         v.rendersContinuously = true
         v.preferredFramesPerSecond = 60
@@ -210,7 +214,9 @@ struct DiceArenaView: View {
     /// Room at the top for words drawn over the scene (the tray fits below it).
     var top: Double = 0
     var zoomable = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Reduce Motion, or -t2p-reduce-motion (#716's calm versions, shot from the Mac run like the intro's)
+    private var reduceMotion: Bool { systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-t2p-reduce-motion") }
     @State private var lastScale: CGFloat = 1
     @State private var lastDrag: CGSize = .zero
     @State private var pinching = false

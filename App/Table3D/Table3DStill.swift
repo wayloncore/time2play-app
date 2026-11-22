@@ -27,6 +27,8 @@ struct Table3DStill {
     var actions = false
     /// #609: the classic (flat) hand instead of the 3D table, with the same made-up hand.
     var classic = false
+    /// #716: the table keeps playing (no freeze), with a Bolt aimed at you every few seconds, for a recording.
+    var live = false
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> Table3DStill? {
         guard let i = args.firstIndex(of: "-t2p-3d-still") else { return nil }
@@ -49,6 +51,7 @@ struct Table3DStill {
             case "draw": s.drawAt = Double(kv[1])
             case "actions": s.actions = kv[1] == "1"
             case "classic": s.classic = kv[1] == "1"
+            case "live": s.live = kv[1] == "1"
             default: break
             }
         }
@@ -61,6 +64,12 @@ struct Table3DStill {
         if playAt != nil || drawAt != nil { return }   // Table3DView starts these: they need the hand's place on screen
         w.post {
             let c0 = w.clock, start = 1.0
+            if st.live {
+                // #716's recordings: the storm runs as in a game, and a Bolt is aimed at you every 5 seconds (the
+                // director's big moment; nothing extra without -t2p-cinema director)
+                for k in 0..<8 { w.addTimer(c0 + 2.5 + 5 * Double(k)) { w.boltHit(mine: true) } }
+                return
+            }
             if let t = st.throwAt {
                 let seat = max(0, min(1, st.players - 2)), art = Self.byNumber(st.suit, 6)
                 w.addTimer(c0 + start) { w.throwFromSeat(seat, art: art, k: 9) }
@@ -70,8 +79,14 @@ struct Table3DStill {
                 w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
                 w.freezeAt = c0 + start + 2.1 * st.mix
             } else if let t = st.strikeAt {
-                w.addTimer(c0 + start) { w.strike(at: 0.3) }
-                w.freezeAt = c0 + start + t
+                if w.cinema == .director {
+                    // #716: the director's strike is a Bolt aimed at you: its held beat, then the strike; t is after the strike
+                    w.addTimer(c0 + start) { w.boltHit(mine: true, at: 0.3) }
+                    w.freezeAt = c0 + start + w.strikeLead + t
+                } else {
+                    w.addTimer(c0 + start) { w.strike(at: 0.3) }
+                    w.freezeAt = c0 + start + t
+                }
             } else if let t = st.reverseAt {
                 // play was going forward from the seat that's on; a Reverse sends it back to the seat before
                 // (you are -1, the others 0 up in turn order; the still's turn is yours or the second other seat's)

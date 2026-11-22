@@ -45,6 +45,15 @@ final class DiceArenaWorld: NSObject, SceneTicking {
     var onDebug: ((String) -> Void)?
     private var debugAt = 0.0, frames = 0
 
+    // #716, option A of #708 (the director): your roll gets a held beat (the light drops a little and the camera
+    // pushes in while the dice fly), a hit stop and a shake when they hit the felt, and a Farkle a harder knock.
+    // Only with -t2p-cinema director; without it the arena is exactly as it was.
+    let cinema = CinemaStyle.from(ProcessInfo.processInfo.arguments)
+    private var director = CameraDirector()
+    private var shot = DirectorShot.calm
+    /// The scene's lights and their own intensities, for the held beat's drop.
+    private var lights: [(light: SCNLight, base: CGFloat)] = []
+
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
     private var glowNodes: [Int: SCNNode] = [:]
@@ -132,9 +141,19 @@ final class DiceArenaWorld: NSObject, SceneTicking {
                 if !frozenSaid { frozenSaid = true; let cb = onFrozen; DispatchQueue.main.async { cb?() } }
             } else { dt = min(dt, f - clock) }
         }
+        // #716: the director runs on real time, the scene on its time scale (0 during a hit stop: the dice hold)
+        var directing = false
+        if cinema == .director {
+            director.reduced = reduced
+            shot = director.step(dt)
+            dt *= shot.timeScale
+            directing = shot != .calm
+            let lit = CGFloat(1 - 0.22 * shot.dim)
+            for l in lights { l.light.intensity = l.base * lit }
+        }
         clock += dt
         if dt > 0 || first { step() }
-        if dt > 0 || first || rigDirty { aimCamera(dt) }
+        if dt > 0 || first || rigDirty || directing { aimCamera(dt) }
         frames += 1
         if let cb = onDebug, clock - debugAt >= 0.5 { debugAt = clock; let line = debugLine(); DispatchQueue.main.async { cb(line) } }
     }
@@ -185,6 +204,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         fill.color = UIColor(red: 0.85, green: 0.9, blue: 1, alpha: 1)
         let fn = SCNNode(); fn.light = fill; fn.simdPosition = [-6, 5, 8]; fn.simdLook(at: .zero)
         scene.rootNode.addChildNode(fn)
+        lights = [(ambient, ambient.intensity), (key, key.intensity), (fill, fill.intensity)]
 
         buildTray()
         if tray.shelf { buildCup() }
@@ -499,6 +519,10 @@ final class DiceArenaWorld: NSObject, SceneTicking {
                 dice[id]?.at = .air
             }
             play = Throw(th: th, ids: ids, fixes: fixes, t0: now, key: key)
+            // #716: your roll is the director's moment; its held beat lasts until the first die hits the felt
+            if cinema == .director, want?.mine == true, !row {
+                director.cue(strength: 0.75, lead: th.firstHit.min() ?? 0.4)
+            }
         }
         moment(.pour)
     }
@@ -703,6 +727,8 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         let cb = onLanded
         DispatchQueue.main.async { cb?(key) }
         guard let s = want, s.roll == key else { moment(.landed); return }
+        // #716: your Farkle lands with a harder knock (no held beat: it's only known once the dice are down)
+        if cinema == .director, s.mine, s.farkle, !row { director.cue(strength: 0.9, lead: 0) }
         let lit = s.farkle ? Set(ids) : s.scoring
         for id in lit {
             guard let g = glowNodes[id] else { continue }
@@ -894,10 +920,20 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         let pitch = min(1.5, max(0.42, pitch0 + shownRig.tilt)), yaw = yaw0 + shownRig.yaw
         let dist = d * (1 + (easeK - 1) * a) / shownRig.zoom
         let eye = target + dist * SIMD3<Float>(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw))
-        cameraNode.simdPosition = eye
+        // #716: the director's push-in moves the eye along its line of sight (the spots on the screen follow it); its
+        // shake turns the camera on top (mostly roll) and isn't followed, so a tap still lands on the die it meant
+        let pushed = target + (eye - target) * (1 - 0.12 * Float(shot.push))
+        cameraNode.simdPosition = pushed
         cameraNode.simdLook(at: target)
         cameraNode.camera?.fieldOfView = CGFloat(b.fov)
-        liveCam = Table3DCamera.lookAt(eye: Self.t3(eye), target: Self.t3(target), fovY: b.fov, width: b.w, height: b.h)
+        liveCam = Table3DCamera.lookAt(eye: Self.t3(pushed), target: Self.t3(target), fovY: b.fov, width: b.w, height: b.h)
+        if shot.roll != 0 || shot.yaw != 0 || shot.pitch != 0 {
+            let q = cameraNode.simdOrientation
+            let right = q.act([1, 0, 0]), up = q.act([0, 1, 0])
+            cameraNode.simdPosition = pushed + (right * Float(shot.shiftX) + up * Float(shot.shiftY)) * simd_length(pushed - target) * 0.01
+            cameraNode.simdOrientation = q * simd_quatf(angle: Float(shot.yaw), axis: [0, 1, 0])
+                * simd_quatf(angle: Float(shot.pitch), axis: [1, 0, 0]) * simd_quatf(angle: Float(shot.roll), axis: [0, 0, 1])
+        }
         let settled = abs(shownRig.zoom - user.zoom) < 0.001 && abs(shownRig.yaw - user.yaw) < 0.0005
             && abs(shownRig.tilt - user.tilt) < 0.0005 && simd_length(shownRig.pan - user.pan) < 0.001
         if settled { shownRig = user }

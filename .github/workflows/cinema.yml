@@ -1,0 +1,179 @@
+# #708's cinematic options (wayloncore/tyleralocke#716, #717, #718): the stills, simulator recordings, frame rates and
+# the photosensitivity check for one option, on a recent and an older iPhone simulator. It runs on a pushed commit to
+# the options' branch whose message has [cinema] (or [cinema director], [cinema storm], [cinema moments]), or by hand.
+# The results are committed back to the same branch under docs/app/cinematic/<option>/ (stills as JPEGs, recordings as
+# small MP4s, report.txt), and the stills are printed into the log like mac.yml's. One run per finished piece: it bills
+# about 15 to 25 Mac minutes, which count 10x on a private repo.
+name: Cinematic options
+on:
+  workflow_dispatch:
+    inputs:
+      option:
+        description: "director, storm or moments"
+        required: false
+        default: "director"
+  push:
+    branches: [app-708-cinematic]
+permissions:
+  contents: write
+concurrency:
+  group: cinema-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  shots:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[cinema')
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      MSG: ${{ github.event.head_commit.message }}
+      INPUT_OPTION: ${{ github.event.inputs.option }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Which option, and the tools
+        run: |
+          echo "start=$(date +%s)" >> "$GITHUB_ENV"
+          opt="${INPUT_OPTION:-}"
+          if [ -z "$opt" ]; then opt=$(printf '%s' "$MSG" | sed -n 's/.*\[cinema \([a-z]*\)\].*/\1/p' | head -1); fi
+          echo "OPT=${opt:-director}" >> "$GITHUB_ENV"
+          X=$(ls -d /Applications/Xcode_26*.app | grep -v -i beta | sort -V | tail -1)
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          xcodebuild -version
+          command -v ffmpeg >/dev/null || brew install ffmpeg >/dev/null
+          command -v xcodegen >/dev/null || brew install xcodegen >/dev/null
+          ffmpeg -version | head -1
+      - name: Core package tests (the director's own tests among them)
+        run: |
+          cd Core && swift test > ../core.log 2>&1 || { grep -E "error: |failed|XCTAssert" ../core.log | head -60; tail -15 ../core.log; exit 1; }
+          grep -E "CinemaTests" ../core.log | tail -12; tail -3 ../core.log
+      - name: Build the app for the simulator
+        run: |
+          t=$(date +%s)
+          xcodegen generate
+          set -o pipefail
+          xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 \
+            | grep -E "error:|warning: .*Cinema|\*\* BUILD" | tail -40
+          echo "APP=$PWD/build/Build/Products/Debug-iphonesimulator/Time2Play.app" >> "$GITHUB_ENV"
+          echo "build_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Pick a recent and an older iPhone simulator
+        run: |
+          xcrun simctl list devices available -j | python3 -c '
+          import json,sys,re
+          d=json.load(sys.stdin)["devices"]
+          phones=[]
+          for rt,devs in d.items():
+              m=re.search(r"iOS-(\d+)-(\d+)",rt)
+              if not m: continue
+              v=(int(m.group(1)),int(m.group(2)))
+              for x in devs:
+                  n=re.fullmatch(r"iPhone (\d+)( Pro)?",x["name"])
+                  if n: phones.append((v,int(n.group(1)),bool(n.group(2)),x["udid"],x["name"],rt))
+                  elif x["name"].startswith("iPhone SE"): phones.append((v,0,False,x["udid"],x["name"],rt))
+          new=max(phones, key=lambda p:(p[0],p[1],p[2]))
+          old=min(phones, key=lambda p:(p[1],p[0]))
+          print("NEW="+new[3]); print("NEW_NAME="+new[4]+" ("+new[5].split(".")[-1]+")")
+          print("OLD="+old[3]); print("OLD_NAME="+old[4]+" ("+old[5].split(".")[-1]+")")' >> "$GITHUB_ENV"
+          cat "$GITHUB_ENV" | grep -E "^(NEW|OLD)"
+      - name: Stills, recordings and frame rates
+        run: |
+          t=$(date +%s)
+          OUT="$PWD/cinema-out"; mkdir -p "$OUT"
+          B=live.time2play.app
+          C="-t2p-cinema $OPT"
+          # one device: boot it, put the app on it, shoot
+          run_device() {
+            U=$1; TAG=$2; TIER=$3
+            xcrun simctl boot "$U" 2>/dev/null || true; xcrun simctl bootstatus "$U" -b >/dev/null
+            xcrun simctl status_bar "$U" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+            xcrun simctl install "$U" "$APP"
+            # a still: launch stopped at a moment, wait until it has stopped, take the screen
+            still() { name=$1; wait=$2; shift 2
+              xcrun simctl launch --terminate-running-process "$U" $B -t2p-3d-tier $TIER "$@" >/dev/null
+              sleep "$wait"; xcrun simctl io "$U" screenshot --type=png "$OUT/$TAG-$name.png" >/dev/null 2>&1
+              echo "still $TAG-$name"; }
+            # a recording: launch playing, let it settle, record, and keep the frame rate it printed
+            rec() { name=$1; secs=$2; shift 2
+              xcrun simctl launch --terminate-running-process --stdout="$OUT/$TAG-$name.log" "$U" $B -t2p-3d-tier $TIER -t2p-cinema-fps "$@" >/dev/null
+              sleep 3
+              xcrun simctl io "$U" recordVideo --codec=h264 --force "$OUT/$TAG-$name.mov" >/dev/null 2>&1 & pid=$!
+              sleep "$secs"; kill -INT $pid; wait $pid 2>/dev/null || true
+              echo "recording $TAG-$name: $(grep -c FPS "$OUT/$TAG-$name.log" 2>/dev/null || echo 0) frame-rate lines"; }
+            still overdraft-strike 9 $C -t2p-3d-still "suit=bolt n=5 strike=0.08"
+            still overdraft-strike-calm 9 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 strike=0.08"
+            still dice-mid-roll 9 $C -t2p-dice-still "game=hot moment=tumble"
+            still dice-farkle 10 $C -t2p-dice-still "game=hot moment=farkle after=0.15"
+            rec overdraft 22 $C -t2p-3d-still "suit=bolt n=5 live=1"
+            rec dice 22 $C -t2p-dice-still "game=hot loop=1"
+            if [ "$TAG" = recent ]; then
+              # what the arenas do today, to compare against (no -t2p-cinema)
+              still overdraft-strike-today 9 -t2p-3d-still "suit=bolt n=5 strike=0.08"
+              still dice-mid-roll-today 9 -t2p-dice-still "game=hot moment=tumble"
+              rec overdraft-today 22 -t2p-3d-still "suit=bolt n=5 live=1"
+              rec overdraft-calm 12 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 live=1"
+            fi
+            xcrun simctl terminate "$U" $B 2>/dev/null || true
+            xcrun simctl shutdown "$U" 2>/dev/null || true
+          }
+          run_device "$NEW" recent high
+          # the older phone, drawn at the tier the oldest phones get (the simulator itself always says "high")
+          run_device "$OLD" older low
+          echo "shots_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: "Photosensitivity (WCAG 2.3.1, #708's limit of 2 flashes a second, no red flashes)"
+        run: |
+          set +e; fail=0
+          for f in cinema-out/*.mov; do
+            n=$(basename "$f" .mov)
+            python3 scripts/flashcheck.py "$f" --fps 60 --limit 2 --name "$n" | tee -a cinema-out/flashcheck.txt || fail=1
+          done
+          echo "FLASH_FAIL=$fail" >> "$GITHUB_ENV"
+      - name: The report, and the files back on the branch
+        run: |
+          D="docs/app/cinematic/$OPT"; rm -rf "$D"; mkdir -p "$D"
+          R="$D/report.txt"
+          {
+            echo "Option: $OPT   run: ${{ github.run_id }}   commit: ${GITHUB_SHA:0:7}   $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "Recent simulator: $NEW_NAME, drawn at tier high. Older simulator: $OLD_NAME, drawn at tier low (the oldest phones')."
+            echo "Simulator frame rates come from the Mac's GPU, not a phone's: they compare options, they don't promise a phone's rate."
+            echo
+            echo "Frame rates (FPS lines: frames drawn per 2 s; median and lowest):"
+            python3 - cinema-out/*.log <<'PY'
+          import os, statistics, sys
+          for f in sys.argv[1:]:
+              n = os.path.basename(f)[:-4]
+              rows = [l.split() for l in open(f, errors="replace") if l.startswith("FPS ")]
+              fps = [float(r[2]) for r in rows if len(r) > 2]
+              worst = max([float(r[4]) for r in rows if len(r) > 4] or [0])
+              # the first sample takes in the scene's start: leave it out when there are others
+              use = fps[1:] if len(fps) > 2 else fps
+              if use:
+                  print(f"  {n}: median {statistics.median(use):.1f}, lowest {min(use):.1f}, worst frame {worst:.1f} ms ({len(use)} samples)")
+              else:
+                  print(f"  {n}: no frame-rate lines")
+          PY
+            echo
+            echo "Photosensitivity (flashcheck.py):"
+            cat cinema-out/flashcheck.txt 2>/dev/null
+          } > "$R"
+          cat "$R"
+          for f in cinema-out/*.png; do sips -s format jpeg -s formatOptions 84 "$f" --out "$D/$(basename "${f%.png}").jpg" >/dev/null; done
+          for f in cinema-out/*.mov; do
+            ffmpeg -v error -y -i "$f" -vf "fps=30,scale=540:-2" -c:v libx264 -profile:v high -crf 27 -preset slow -pix_fmt yuv420p -movflags +faststart -an "$D/$(basename "${f%.mov}").mp4"
+          done
+          ls -l "$D"
+          git config user.name "github-actions[bot]"; git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add "$D"
+          git commit -q -m "Cinematic option $OPT: stills, recordings and report (run ${{ github.run_id }})" || exit 0
+          for i in 1 2 3; do git pull -q --rebase origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && break; sleep 5; done
+      - name: Stills into the log
+        if: always()
+        run: |
+          for f in docs/app/cinematic/$OPT/*.jpg; do
+            [ -f "$f" ] || continue
+            echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"
+          done
+      - name: Timing
+        if: always()
+        run: |
+          total=$(( $(date +%s) - start ))
+          echo "TIMING build=${build_s:-?} shots=${shots_s:-?} total=$total"
+          [ "${FLASH_FAIL:-0}" = 0 ] || { echo "::error::a recording failed the photosensitivity check"; exit 1; }

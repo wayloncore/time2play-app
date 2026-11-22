@@ -110,6 +110,19 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     var onDebug: ((String) -> Void)?
     private var debugAt = 0.0
 
+    // #716, option A of #708 (the director): the camera tells the big moment. Only with -t2p-cinema director; without
+    // it every line below leaves the table exactly as it was.
+    let cinema = CinemaStyle.from(ProcessInfo.processInfo.arguments)
+    private(set) var director = CameraDirector()
+    private var shot = DirectorShot.calm
+    /// The fitted camera (setLayout), which the director's push and shake sit on top of.
+    private var baseCam: (p: SIMD3<Float>, q: simd_quatf, fov: Float, dist: Float)?
+    /// A Bolt's strike waiting for the end of its held beat (scene clock).
+    private var strikeDue: (at: Double, strength: Double)?
+    private var meter = RenderMeter(name: "overdraft")
+    /// The director's held beat for a full strike (0 unless the director is on): a still adds it to its freeze time.
+    var strikeLead: Double { cinema == .director ? director.lead(strength: 1) : 0 }
+
     init(tier: T3DTier) {
         self.tier = tier
         super.init()
@@ -131,6 +144,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// SceneKit's render callback: it only times frames now (stepping down when they run long). The scene moves in tick.
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         watchFrames(time)
+        meter.frame(time)
     }
 
     /// One frame (the SceneTicker's thread): what was posted, the timers, then the table.
@@ -148,11 +162,18 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
                 if !frozenSaid { frozenSaid = true; let cb = onFrozen; DispatchQueue.main.async { cb?() } }
             } else { dt = min(dt, f - clock) }
         }
+        // #716: the director runs on real time; the scene on its time scale (0 during a hit stop: the strike frame holds)
+        if cinema == .director {
+            director.reduced = reduced
+            shot = director.step(dt)
+            dt *= shot.timeScale
+        }
         clock += dt
         let due = timers.filter { $0.at <= clock }
         timers.removeAll { $0.at <= clock }
         due.forEach { $0.run() }
         step(dt)
+        if cinema == .director { directCamera() }
         uLock.lock(); uShown = u; uLock.unlock()
         frames += 1
         if let cb = onDebug, time - debugAt >= 0.5 {
@@ -494,6 +515,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
                                         SIMD3<Float>(Float(c.up.x), Float(c.up.y), Float(c.up.z)),
                                         SIMD3<Float>(Float(c.back.x), Float(c.back.y), Float(c.back.z))))
         cameraNode.simdOrientation = simd_quatf(m)
+        baseCam = (cameraNode.simdPosition, cameraNode.simdOrientation, Float(c.fovY), simd_length(cameraNode.simdPosition))
         u.cam = [Float(c.eye.x), Float(c.eye.y), Float(c.eye.z), 0]
         u.c.z = Float(c.focal)
         if seatHands.count != l.seats.count {
@@ -982,6 +1004,62 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         storm.k = live ? .random(in: 0.75...1) : 1
         storm.twice = live && Double.random(in: 0..<1) < 0.4 ? .random(in: 0.4...0.55) : -1
         u.b.x = .random(in: 0...50)
+        // #716: under the director the camera does the work, so a strike is one flash (no restrike), and the storm's
+        // own strikes get only a quiet rumble (a directed one has had its beat cued already)
+        if cinema == .director {
+            storm.twice = -1
+            if strikeDue == nil && live { director.cue(strength: 0.4) }
+        }
+    }
+
+    // MARK: the director (#716)
+
+    /// A Bolt (+2 or +4) landed: on you (`mine`) or someone else. Under the director it's the big moment: a held beat
+    /// with the light dropping and the push starting, then (in the storm's scene) the strike itself with a hit stop
+    /// and a shake, then a long settle. In the other scenes the camera tells it alone, with no lightning.
+    /// `at` places the strike for a still. Without the director (or with Reduce Motion) it does nothing.
+    func boltHit(mine: Bool, at: Double? = nil) {
+        guard cinema == .director, !reduced, strikeDue == nil else { return }
+        let strength = mine ? 1.0 : 0.6
+        // photosensitivity: a strike lands at least 1.4 s after the last one. A Bolt that comes just after the storm's
+        // own strike holds its beat a little longer (up to 0.8 s more) to get there; any closer and the camera tells
+        // it alone, with no lightning.
+        var lead = director.lead(strength: strength)
+        let wait = 1.4 - storm.t
+        let lightning = u.w.z > 0.6 && wait <= lead + 0.8
+        if lightning { lead = max(lead, wait) }
+        director.cue(strength: strength, lead: lead)
+        if lightning {
+            strikeDue = (clock + lead, strength)
+            strikeAt = at
+            storm.next = max(storm.next, lead + 1.6)
+        }
+    }
+    private var strikeAt: Double?
+
+    /// Fires a directed strike when its held beat is over (each frame, scene clock).
+    private func fireDueStrike() {
+        guard let d = strikeDue, clock >= d.at else { return }
+        strike(at: strikeAt)
+        strikeDue = nil; strikeAt = nil
+    }
+
+    /// The camera for this frame: the fitted view, pushed in along its own line of sight and turned a little by the
+    /// shake (mostly roll, then yaw, then pitch, so the table turns rather than slides). The hand and the words are
+    /// drawn over the scene, so they never shake.
+    private func directCamera() {
+        guard let b = baseCam else { return }
+        let s = shot
+        let right = b.q.act([1, 0, 0]), up = b.q.act([0, 1, 0]), fwd = b.q.act([0, 0, -1])
+        let pushDist = b.dist * 0.07 * Float(s.push)
+        var p = b.p + fwd * pushDist
+        p += (right * Float(s.shiftX) + up * Float(s.shiftY)) * b.dist * 0.01
+        let q = b.q * simd_quatf(angle: Float(s.yaw), axis: [0, 1, 0]) * simd_quatf(angle: Float(s.pitch), axis: [1, 0, 0])
+            * simd_quatf(angle: Float(s.roll), axis: [0, 0, 1])
+        cameraNode.simdPosition = p
+        cameraNode.simdOrientation = q
+        cameraNode.camera?.fieldOfView = CGFloat(b.fov - 2.5 * Float(s.push))
+        u.cam = [p.x, p.y, p.z, 0]
     }
 
     /// Where a strike reaches the ground: under a point in the strip of scene between the header and the far seats,
@@ -1052,6 +1130,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         let f = Float(dt)
         u.a.x += f * (reduced ? 0.12 : 1)
         u.b.w = reduced ? 1 : 0
+        if cinema == .director { fireDueStrike() }
         applyElement(dt)
         stepFlow(dt)
         stepFlights(f)
@@ -1097,7 +1176,11 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         storm.t += dt
         if wb > 0.6 && freezeAt == nil && !reduced {
             storm.next -= dt
-            if storm.next <= 0 { strike(); storm.next = tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2) }
+            if storm.next <= 0 {
+                strike()
+                // #716: under the director the storm strikes less often (2.4 to 4.2 s): the camera does the work
+                storm.next = cinema == .director ? .random(in: 2.4...4.2) : tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2)
+            }
         }
         var fl = 0.0, bi = 0.0
         if !reduced {
@@ -1117,6 +1200,11 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         boltNode.isHidden = u.c.y < 0.01 || boltNode.geometry == nil
         flashLight.intensity = CGFloat(u.a.w) * 1800 / .pi
         ambient.intensity = 330 * CGFloat(1 + u.a.w * 0.5)
+        // #716: the held beat before a Bolt: the light on the table drops (at most a third), and comes back with the strike
+        let lit = CGFloat(1 - 0.34 * shot.dim)
+        ambient.intensity *= lit
+        key.intensity = 730 * lit
+        fill.intensity = 290 * lit
         u.c.x = u.w.w
         grassNode?.isHidden = u.w.w < 0.01
         for (s, n) in backdrops { let w = u.w[Self.suits.firstIndex(of: s) ?? 0]; n.isHidden = w < 0.01; n.geometry?.firstMaterial?.transparency = CGFloat(w) }

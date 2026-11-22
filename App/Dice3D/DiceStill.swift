@@ -19,6 +19,8 @@ struct DiceStill {
     var zoom: Double?
     /// Seconds after the moment to stop (nil: the moment's own time).
     var after: Double?
+    /// #716: never stop; roll again every 5 seconds (a Farkle among them), for a recording.
+    var loop = false
 
     static func fromArgs(_ args: [String] = ProcessInfo.processInfo.arguments) -> DiceStill? {
         guard let i = args.firstIndex(of: "-t2p-dice-still") else { return nil }
@@ -30,6 +32,7 @@ struct DiceStill {
             if kv[0] == "moment" { s.moment = kv[1] }
             if kv[0] == "zoom" { s.zoom = Double(kv[1]) }
             if kv[0] == "after" { s.after = Double(kv[1]) }
+            if kv[0] == "loop" { s.loop = kv[1] == "1" }
         }
         return s
     }
@@ -85,6 +88,17 @@ struct DiceStill {
                                     "owner": "p0", "players": ps, "winners": ["p0"], "target": 10000, "ones": 1000,
                                     "rules": ["board": true, "three": true]]
             return [(0, HotDice.View(Self.json(v)))]
+        }
+        if loop {
+            // #716's recordings: six of your rolls, 5 seconds apart, the second and fifth a Farkle
+            let rolls: [[Int]] = [[5, 1, 3, 3, 6, 2], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 4, 2], [6, 2, 5, 3, 3, 4], [2, 3, 4, 6, 6, 3], [5, 5, 5, 1, 2, 6]]
+            var steps: [(Double, HotDice.View)] = [(0, Self.hot(state: "start", seq: 0, faces: Array(repeating: 1, count: 6)))]
+            for (r, f) in rolls.enumerated() {
+                let t0 = 0.9 + 5 * Double(r), farkle = r == 1 || r == 4
+                steps.append((t0, Self.hot(state: "rolling", seq: r + 1, faces: Array(repeating: nil, count: 6))))
+                steps.append((t0 + 1.2, Self.hot(state: farkle ? "farkle" : "choose", seq: r + 1, faces: f)))
+            }
+            return steps
         }
         let rolled: [Int?] = moment == "farkle" ? [2, 3, 4, 6, 6, 3] : [5, 1, 3, 3, 6, 2]
         var steps: [(Double, HotDice.View)] = [
@@ -168,7 +182,7 @@ struct DiceStillView: View {
     private func start() {
         guard room == nil else { return }
         Task { await TipJar.shared.load() }   // #598: the end screen's tip line, when there are tips
-        DiceArenaStage.stillFreeze = still.freeze
+        DiceArenaStage.stillFreeze = still.loop ? nil : still.freeze
         DiceArenaStage.stillZoom = still.zoom
         room = RoomModel(game: still.game == "rollcall" ? .rollCall : .hotDice, code: "SOLO", app: app, taken: [], starting: false,
                          offline: app.offlineRules)
