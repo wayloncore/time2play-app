@@ -173,8 +173,9 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             if let c = cameraNode.camera {
                 let g = CGFloat(m.grade)
                 c.saturation = 1 - 0.4 * g
-                c.vignettingIntensity = 1.1 * g
-                c.vignettingPower = 1.4
+                // no vignette: the first Mac run showed it darkening the scene's own rectangle into a box (the dice) and
+                // hiding the bolt at the top of the scene (Overdraft); a little more contrast instead
+                c.contrast = 0.25 * g
                 c.bloomIntensity = 0.4 + 1.0 * g
             }
         }

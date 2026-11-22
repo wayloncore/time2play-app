@@ -214,11 +214,11 @@ yours, and nothing else. It borrows the director's camera and the storm's staged
   the speed comes back over 0.45 s and the push and grade ease out half a second after. Cue to full speed is 1 to 2 s.
   One at a time, with a 1.2 s cool-down, so it stays rare enough to mean something.
 - **The grade** is what makes it read as a cut to a different shot without a cut: the scene loses 40% of its color
-  and the edges darken (SCNCamera saturation and vignetting), and the bloom rises (HDR as in option B, threshold over
+  and gains contrast (SCNCamera saturation and contrast), and the bloom rises (HDR as in option B, threshold over
   white, so only the bolt and highlights bloom). The hand, the scores and every word are drawn over the scene, so the
   grade never reaches them.
 - **Overdraft.** In the storm, your Overdraft brings a full staged strike (option B's darkening, stepped leader and
-  return stroke, no restrike) whose leader is the wind-up and whose stroke is the payoff, with thunder felt and heard;
+  return stroke, no restrike, a fifth brighter than the storm's and always with a second bolt) whose leader is the wind-up and whose stroke is the payoff, with thunder felt and heard;
   a small shake (trauma 0.6, at most about half a degree) on the stroke. In other weather the camera tells it alone.
   Calm play: the storm's own strikes come every 3.5 to 6.5 s, a third as bright, a fainter bolt, thunder heard quietly.
   A Change Suit to the storm sweeps in at half speed and arrives with a full strike once it's in.
@@ -229,3 +229,13 @@ yours, and nothing else. It borrows the director's camera and the storm's staged
   under slow motion, which only stretches a flash). No red. The recordings are counted by `scripts/flashcheck.py`.
 - **Reduce Motion:** no slow motion, push, shake, grade or strikes; your Overdraft is a gentle dip of the light and back
   over a second (and the haptic it already has). The dice play as today.
+
+### Option C's first Mac run (run 44989899361, Nov 22): what it showed, and what changed
+
+- The slow motion reads: in the dice recording the last of the throw and the bounce play at 0.3×, about 1.7 s in all,
+  and the hot dice land with the warm swell; the Farkle's knock and the Bust! card follow. Every recording passed the
+  flash check (0 general, 0 red flashes in any second, both phones). Frame rates matched today's (the table 15 to 37 fps
+  on the simulator, the dice 60).
+- Two flaws, fixed: the **vignette** darkened the dice scene's own rectangle into a black box round the tray, and on the
+  table it darkened the top band where the bolt lands, so the moment's strike read *fainter* than today's. The
+  vignette is gone (more contrast instead), and the moment's strike is brighter and always has its second bolt.

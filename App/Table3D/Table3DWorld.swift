@@ -127,7 +127,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     private var strikeNear = false
     /// #718 (option C, big moments only): calm play, then a short directed sequence in slow motion for your moments.
     private var moments = MomentDirector()
-    /// The sequence's look this frame (0 to 1: less color, darker edges, more bloom).
+    /// The sequence's look this frame (0 to 1: less color, more contrast, more bloom).
     private var grade = 0.0
     /// The strike now staged is a moment's own (full strength, thunder felt), not the calm storm's far-off one; and its
     /// return stroke hasn't landed yet (the sequence's payoff and the thunder wait for it).
@@ -1027,7 +1027,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         let spot = strikeSpot(at)
         let live = freezeAt == nil
         var bolts: [(x: Float, z: Float, w: Float, br: Float)] = [(Float(spot.x), Float(spot.z), Float(spot.w), 1)]
-        if !live || Double.random(in: 0..<1) < (tier == .low ? 0.25 : 0.55) {
+        if !live || (cinema == .moments && strikeDue != nil) || Double.random(in: 0..<1) < (tier == .low ? 0.25 : 0.55) {
             let other = strikeSpot(at.map { $0 < 0.5 ? $0 + 0.38 : $0 - 0.38 })
             bolts.append((Float(other.x), Float(other.z), Float(other.w) * 0.8, 0.6))
         }
@@ -1059,7 +1059,9 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             // to the slow motion).
             storm.twice = -1
             momentStrike = strikeDue != nil
-            storm.k = momentStrike ? 1 : 0.4
+            // the moment's own strike is the biggest the table gets (the first run's was fainter than today's):
+            // brighter, and always the second bolt beside the first. Still one flash.
+            storm.k = momentStrike ? 1.2 : 0.4
             strokeDue = live || momentStrike
         }
     }
@@ -1147,14 +1149,15 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         guard let b = baseCam else { return }
         let s = shot
         let right = b.q.act([1, 0, 0]), up = b.q.act([0, 1, 0]), fwd = b.q.act([0, 0, -1])
-        // #718: a moment pushes in further (10% of the distance), and its grade takes the color down and darkens the
-        // edges, with more bloom on the strike (the hand and the words are over the scene, so the grade never reaches them)
+        // #718: a moment pushes in further (10% of the distance), and its grade takes the color down and the contrast up,
+        // with more bloom on the strike (the hand and the words are over the scene, so the grade never reaches them)
         let pushDist = b.dist * (cinema == .moments ? 0.1 : 0.07) * Float(s.push)
         if cinema == .moments, let c = cameraNode.camera {
             let g = CGFloat(grade)
             c.saturation = 1 - 0.4 * g
-            c.vignettingIntensity = 1.1 * g
-            c.vignettingPower = 1.4
+            // no vignette: the first Mac run showed it darkening the scene's own rectangle into a box (the dice) and
+            // hiding the bolt at the top of the scene (Overdraft); a little more contrast instead
+            c.contrast = 0.25 * g
             c.bloomIntensity = 0.5 + 1.3 * g
         }
         var p = b.p + fwd * pushDist
@@ -1299,7 +1302,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         } else if !reduced && cinema == .moments {
             // #718: the same staging; a far-off strike is fainter (its bolt at half, its darkening a third)
             let sf = StormStrike.at(storm.t)
-            let near = momentStrike ? 1.0 : 0.5
+            let near = momentStrike ? 1.35 : 0.5
             fl = sf.flash; bi = sf.bolt * near; u.h.x = Float(sf.reveal); stormDark = sf.dark * wb * (momentStrike ? 1 : 0.35)
             if strokeDue && storm.t >= StormStrike.strokeAt {
                 strokeDue = false

@@ -315,7 +315,7 @@ public enum FlashCount {
 /// Option C, big moments only (#718): calm play, then a short directed sequence (1 to 2 s, in slow motion) for the
 /// moments that matter, and nothing in between. The sequence borrows from both other options, but only for the moment:
 /// the director's anticipation and push-in (Thomas and Johnston), the storm's staged strike and bloom, plus a slow-motion
-/// hold and a color grade (the world desaturates and the edges darken, so the one thing that happened carries the
+/// hold and a color grade (the world loses color and gains contrast, so the one thing that happened carries the
 /// color). Swink: cinema answers the player, so only your moments count, and one sequence never follows another
 /// straight away (a cool-down), so the effect stays rare enough to mean something.
 public enum MomentKind: String, CaseIterable, Sendable {
@@ -355,7 +355,7 @@ public enum MomentKind: String, CaseIterable, Sendable {
 }
 
 /// What a big moment asks of the camera and the scene this frame: the director's shot (push, light, time scale, shake)
-/// and the grade (0 is the scene as it is; 1 is the sequence's look: less color, darker edges, more bloom).
+/// and the grade (0 is the scene as it is; 1 is the sequence's look: less color, more contrast, more bloom).
 public struct MomentShot: Equatable, Sendable {
     public var camera = DirectorShot()
     public var grade = 0.0
