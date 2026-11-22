@@ -79,11 +79,8 @@ final class CloseEnoughUITests: XCTestCase {
         let moved = app.staticTexts["ce-range"].label
         print("726 ranges: \(before) → \(after) → \(moved)")
         XCTAssertNotEqual(after, moved, "dragging the plate moves the range")
-        app.buttons["ce-type"].tap()
-        XCTAssertTrue(app.textFields["ce-low-number"].waitForExistence(timeout: 2), "Type exact numbers opens the fields")
-        shot(app, "726-ce-2-typed")
-        app.buttons["ce-type"].tap()
-        lock.tap()
+        // the clock may have run out by now (each drag is slow under XCUITest): then the answer is already out
+        if lock.exists { lock.tap() }
         if app.descendants(matching: .any)["ce-locked"].waitForExistence(timeout: 2) { shot(app, "726-ce-3-locked-in") }
         XCTAssertTrue(app.staticTexts["ce-answer"].waitForExistence(timeout: 80), "the answer is revealed")
         sleep(1)                                          // the needle lands on the track
@@ -103,7 +100,9 @@ final class CloseEnoughUITests: XCTestCase {
         shot(app, "726-ce-6-large-text")
         scrollDown(app)
         usleep(400_000)
-        shot(app, "726-ce-7-large-text-lower")
+        app.buttons["ce-type"].tap()
+        XCTAssertTrue(app.textFields["ce-low-number"].waitForExistence(timeout: 2), "Type exact numbers opens the fields")
+        shot(app, "726-ce-7-large-text-typed")
     }
 
     /// Scrolls from low on the screen: the brass track takes a drag that starts on it, as the Library's does.
@@ -118,7 +117,7 @@ final class CloseEnoughUITests: XCTestCase {
         let b = app.buttons["offline-closeenough"]
         XCTAssertTrue(b.waitForExistence(timeout: 20), "Practice Close Enough is offered")
         var tries = 0
-        while !b.isHittable && tries < 4 {
+        while b.frame.maxX > app.frame.maxX - 4 && tries < 4 {
             let y = b.frame.midY / max(1, app.frame.height)
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: y)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: y)))
             tries += 1
