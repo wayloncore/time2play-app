@@ -105,6 +105,97 @@ final class CloseEnoughUITests: XCTestCase {
         shot(app, "726-ce-7-large-text-typed")
     }
 
+    /// #727 (Tyler: "I never want to scroll. If there's a way to make a pop-up or something on mobile, do it."): offline
+    /// against a bot, the whole screen fits with no page scroll while asking, and at the answer the result comes up as a
+    /// pop-up card under the needle with the standings and Next in it. Tapping outside hides it; "See the result" brings
+    /// it back. The Mac run takes it on the iPhone SE and the largest iPhone too (older_only, largest_only).
+    func testNoPageScroll727() {
+        let app = launch()
+        startOfflineCE(app)
+        let lock = app.buttons["lock-in"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
+        sleep(1)
+        shot(app, "727-ce-1-asking")
+        checkAskingFits(app)
+        lock.tap()
+        checkAnswer(app, "727-ce")
+    }
+
+    /// #727 at the largest text the game takes, with Reduce Motion: still no page scroll, the typed numbers' card above
+    /// the keyboard, and the result's pop-up with Next pinned and only its own middle scrolling.
+    func testNoPageScrollLargeText727() {
+        let app = launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-t2p-reduce-motion"])
+        startOfflineCE(app)
+        let lock = app.buttons["lock-in"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
+        sleep(1)
+        shot(app, "727-ce-large-1-asking")
+        checkAskingFits(app)
+        tapWhenReady(app.buttons["ce-type"])
+        let low = app.textFields["ce-low-number"]
+        XCTAssertTrue(low.waitForExistence(timeout: 3), "Type exact numbers opens its card")
+        low.tap()
+        sleep(1)
+        XCTAssertTrue(app.buttons["ce-type-lock"].isHittable, "the card's Lock sits above the keyboard")
+        XCTAssertTrue(app.staticTexts["ce-range"].isHittable || app.staticTexts["ce-range"].frame.maxY < app.buttons["ce-type-lock"].frame.minY,
+                      "the nameplate still shows over the card")
+        shot(app, "727-ce-large-2-typed")
+        app.buttons["ce-type-lock"].tap()
+        checkAnswer(app, "727-ce-large")
+    }
+
+    /// Asking: Lock and Type exact numbers are on screen, and a swipe up from the bottom moves nothing (no page scroll).
+    private func checkAskingFits(_ app: XCUIApplication) {
+        let lock = app.buttons["lock-in"], type = app.buttons["ce-type"], menu = app.buttons["room-menu"]
+        print("727 \(app.frame.size): lock \(lock.frame), type \(type.frame), menu \(menu.frame)")
+        XCTAssertTrue(lock.isHittable, "Lock is on screen")
+        XCTAssertTrue(type.isHittable, "Type exact numbers is on screen")
+        XCTAssertLessThanOrEqual(lock.frame.maxY, app.frame.maxY, "Lock isn't below the screen")
+        XCTAssertGreaterThanOrEqual(menu.frame.minY, 0, "the masthead isn't above the screen")
+        let y0 = menu.frame.minY
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.97)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25)))
+        usleep(500_000)
+        XCTAssertEqual(menu.frame.minY, y0, accuracy: 1, "the page doesn't scroll")
+    }
+
+    /// The answer: the plate and the needle stay in view, the result is a pop-up under them with the standings, Next is
+    /// on screen; tap outside hides it, "See the result" brings it back, and Next goes on.
+    private func checkAnswer(_ app: XCUIApplication, _ prefix: String) {
+        XCTAssertTrue(app.staticTexts["ce-answer"].waitForExistence(timeout: 80), "the answer is revealed")
+        let result = app.descendants(matching: .any)["ce-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5), "the result comes up as a pop-up")
+        sleep(1)
+        shot(app, "\(prefix)-3-answer")
+        let track = app.descendants(matching: .any)["ce-track"], plate = app.staticTexts["ce-answer"]
+        print("727 \(app.frame.size): plate \(plate.frame), track \(track.frame), result \(result.frame)")
+        XCTAssertGreaterThanOrEqual(result.frame.minY, track.frame.maxY + 10, "the pop-up stops short of the needle")
+        XCTAssertLessThan(plate.frame.maxY, result.frame.minY, "the plate reading the answer stays in view")
+        XCTAssertTrue(app.descendants(matching: .any)["ce-standings"].exists, "the standings are in the pop-up")
+        let next = app.buttons["ce-next"]
+        XCTAssertTrue(next.exists && next.isHittable, "Next is on screen")
+        XCTAssertLessThanOrEqual(next.frame.maxY, app.frame.maxY)
+        // the standings, scrolled to inside the pop-up if its middle scrolls
+        let standings = app.descendants(matching: .any)["ce-standings"]
+        if standings.frame.maxY > next.frame.minY - 4 {
+            let mid = result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            mid.press(forDuration: 0.05, thenDragTo: result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+            usleep(600_000)
+        }
+        shot(app, "\(prefix)-4-standings")
+        // tap outside: the instrument whole; "See the result" brings it back (if the answer is still up)
+        if app.staticTexts["ce-answer"].exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            if app.buttons["ce-show-result"].waitForExistence(timeout: 3) {
+                XCTAssertFalse(result.exists, "tapping outside hides the pop-up")
+                shot(app, "\(prefix)-5-hidden")
+                app.buttons["ce-show-result"].tap()
+                XCTAssertTrue(result.waitForExistence(timeout: 3), "See the result brings it back")
+            }
+        }
+        if app.buttons["ce-next"].exists { app.buttons["ce-next"].tap() }
+        XCTAssertTrue(app.buttons["lock-in"].waitForExistence(timeout: 30), "the next question is asked")
+    }
+
     /// Scrolls from low on the screen: the brass track takes a drag that starts on it, as the Library's does.
     private func scrollDown(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
