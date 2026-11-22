@@ -1,0 +1,22 @@
+{
+  "Version": 1.0,
+  "Metadata": {
+    "Project": "Time2Play",
+    "Description": "Thunder for a lightning strike (#717, option B of #708): the crack at the return stroke, the rumble a beat later. thunder.caf is Time2Play's own (scripts/thunder.py)."
+  },
+  "Pattern": [
+    { "Event": { "Time": 0.0, "EventType": "AudioCustom", "EventWaveformPath": "thunder.caf",
+      "EventParameters": [ { "ParameterID": "AudioVolume", "ParameterValue": 1.0 } ] } },
+    { "Event": { "Time": 0.0, "EventType": "HapticTransient",
+      "EventParameters": [ { "ParameterID": "HapticIntensity", "ParameterValue": 1.0 },
+                           { "ParameterID": "HapticSharpness", "ParameterValue": 0.9 } ] } },
+    { "Event": { "Time": 0.3, "EventType": "HapticContinuous", "EventDuration": 1.5,
+      "EventParameters": [ { "ParameterID": "HapticIntensity", "ParameterValue": 0.8 },
+                           { "ParameterID": "HapticSharpness", "ParameterValue": 0.1 } ] } },
+    { "ParameterCurve": { "ParameterID": "HapticIntensityControl", "Time": 0.3,
+      "ParameterCurveControlPoints": [
+        { "Time": 0.0, "ParameterValue": 0.3 }, { "Time": 0.25, "ParameterValue": 0.9 },
+        { "Time": 0.45, "ParameterValue": 0.6 }, { "Time": 0.6, "ParameterValue": 1.0 },
+        { "Time": 0.9, "ParameterValue": 0.55 }, { "Time": 1.5, "ParameterValue": 0.0 } ] } }
+  ]
+}

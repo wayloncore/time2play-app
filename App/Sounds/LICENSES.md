@@ -15,6 +15,7 @@ a TV show, and there's no theme music.
 | bolt.caf | A Bolt (+2 or +4) aimed at you: a zap stepping down | `zapThreeToneDown.mp3` | Digital Audio | CC0 1.0 |
 | your-turn.caf | Your turn: a short rising chime | `Audio/confirmation_001.ogg` | Interface Sounds | CC0 1.0 |
 | win.caf | A win: a short rising steel-drum jingle | `OGG/jingles_STEEL/jingles_STEEL10.ogg` | Music Jingles | CC0 1.0 |
+| thunder.caf | Thunder for a lightning strike (#717): a crack, then a rolling rumble; played from thunder.ahap | made by `scripts/thunder.py` | Time2Play's own | Time2Play's own |
 | music.m4a | The background music: a quiet loop, off unless turned on in You | made by `scripts/sounds.py` | Time2Play's own | Time2Play's own |
 
 The packs, as Kenney posted them on OpenGameArt (each page says License: CC0, Author: Kenney):

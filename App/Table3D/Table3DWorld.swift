@@ -17,6 +17,7 @@ struct T3DUniforms {
     var e = SIMD4<Float>(0, 1, 0, 1)        // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
     var f = SIMD4<Float>(0.8, 0.8, 0.8, 0)  // turn flow: color, strength
     var g = SIMD4<Float>(1, 1, Float(Table3D.perim), 1.1)   // turn flow: the arc's direction, its brightness, rim length, comet spacing
+    var h = SIMD4<Float>(1, 0, 0, 0)        // #717: how much of the bolt's channel is drawn (the stepped leader; 1 is all)
 }
 
 /// How much the scene draws: the effects step down on older phones (and again if frames run long).
@@ -120,6 +121,10 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// A Bolt's strike waiting for the end of its held beat (scene clock).
     private var strikeDue: (at: Double, strength: Double)?
     private var meter = RenderMeter(name: "overdraft")
+    /// #717 (option B, the storm): how far the scene's light has dropped before a strike's return stroke, and whether
+    /// the strike now staged is a Bolt aimed at you (its thunder is felt as well as heard).
+    private var stormDark = 0.0
+    private var strikeNear = false
     /// The director's held beat for a full strike (0 unless the director is on): a still adds it to its freeze time.
     var strikeLead: Double { cinema == .director ? director.lead(strength: 1) : 0 }
 
@@ -190,6 +195,18 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         cam.projectionDirection = .vertical
         cam.fieldOfView = 60
         cam.zNear = 0.1; cam.zFar = 600
+        if cinema == .storm {
+            // #717: HDR, so the bolt and the flash can be brighter than white and bloom. No exposure adaptation (the
+            // picture never pumps), and a threshold over 1, so only what's past white (the bolt, the flash on the rim)
+            // blooms, never the cards or the words.
+            cam.wantsHDR = true
+            cam.wantsExposureAdaptation = false
+            cam.exposureOffset = 0
+            cam.bloomThreshold = 1.05
+            cam.bloomIntensity = 1.6
+            cam.bloomBlurRadius = 14
+            cam.bloomIterationCount = 2
+        }
         cameraNode.camera = cam
         scene.rootNode.addChildNode(cameraNode)
         scene.background.contents = UIColor(red: 0.04, green: 0.04, blue: 0.07, alpha: 1)
@@ -1010,6 +1027,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             storm.twice = -1
             if strikeDue == nil && live { director.cue(strength: 0.4) }
         }
+        if cinema == .storm {
+            // #717: `twice` is now a restrike's delay after the return stroke, down the same channel (about two in five)
+            storm.twice = live && Double.random(in: 0..<1) < 0.45 ? .random(in: 0.18...0.3) : -1
+            storm.k = 1
+            strikeNear = strikeDue != nil
+            if live {
+                let near = strikeNear
+                DispatchQueue.main.asyncAfter(deadline: .now() + StormStrike.strokeAt) { Thunder.shared.play(near: near) }
+            }
+        }
     }
 
     // MARK: the director (#716)
@@ -1019,6 +1046,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// and a shake, then a long settle. In the other scenes the camera tells it alone, with no lightning.
     /// `at` places the strike for a still. Without the director (or with Reduce Motion) it does nothing.
     func boltHit(mine: Bool, at: Double? = nil) {
+        // #717 (the storm): the world answers a Bolt aimed at you with a strike of its own, staged and with thunder, as
+        // soon as the last strike is far enough behind (up to 0.8 s later); a Bolt on someone else gets nothing more
+        if cinema == .storm {
+            guard mine, !reduced, strikeDue == nil, u.w.z > 0.6 else { return }
+            let wait = max(0, StormStrike.minGap - storm.t)
+            guard wait <= 0.8 else { return }
+            strikeDue = (clock + wait, 1); strikeAt = at
+            storm.next = max(storm.next, wait + StormStrike.minGap + 0.6)
+            return
+        }
         guard cinema == .director, !reduced, strikeDue == nil else { return }
         let strength = mine ? 1.0 : 0.6
         // photosensitivity: a strike lands at least 1.4 s after the last one. A Bolt that comes just after the storm's
@@ -1130,7 +1167,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         let f = Float(dt)
         u.a.x += f * (reduced ? 0.12 : 1)
         u.b.w = reduced ? 1 : 0
-        if cinema == .director { fireDueStrike() }
+        if cinema != .off { fireDueStrike() }
         applyElement(dt)
         stepFlow(dt)
         stepFlights(f)
@@ -1179,11 +1216,17 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             if storm.next <= 0 {
                 strike()
                 // #716: under the director the storm strikes less often (2.4 to 4.2 s): the camera does the work
-                storm.next = cinema == .director ? .random(in: 2.4...4.2) : tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2)
+                storm.next = cinema == .director ? .random(in: 2.4...4.2) : cinema == .storm ? .random(in: 2.4...4.4)
+                    : tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2)
             }
         }
         var fl = 0.0, bi = 0.0
-        if !reduced {
+        stormDark = 0
+        if !reduced && cinema == .storm {
+            // #717: the strike staged (StormStrike): darken, the stepped leader, the return stroke, the afterglow
+            let sf = StormStrike.at(storm.t, restrike: max(0, storm.twice))
+            fl = sf.flash; bi = sf.bolt; u.h.x = Float(sf.reveal); stormDark = sf.dark * wb
+        } else if !reduced {
             let t = storm.t
             // one flash: at its brightest at once, then a smooth fall over about a third of a second (no flicker
             // inside it, which would count as more flashes)
@@ -1195,13 +1238,13 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             let end = 0.6 + max(0, storm.twice)
             bi = t < end ? min(1, fl * 1.7 + 0.3 * (1 - t / end)) : 0
         }
-        u.a.w = Float(min(1.2, max(0, fl)) * wb * 0.7 * storm.k)
+        u.a.w = Float(min(1.2, max(0, fl)) * wb * (cinema == .storm ? 0.85 : 0.7) * storm.k)
         u.c.y = Float(bi * wb)
         boltNode.isHidden = u.c.y < 0.01 || boltNode.geometry == nil
         flashLight.intensity = CGFloat(u.a.w) * 1800 / .pi
         ambient.intensity = 330 * CGFloat(1 + u.a.w * 0.5)
         // #716: the held beat before a Bolt: the light on the table drops (at most a third), and comes back with the strike
-        let lit = CGFloat(1 - 0.34 * shot.dim)
+        let lit = CGFloat(1 - 0.34 * shot.dim) * CGFloat(1 - 0.3 * stormDark)
         ambient.intensity *= lit
         key.intensity = 730 * lit
         fill.intensity = 290 * lit

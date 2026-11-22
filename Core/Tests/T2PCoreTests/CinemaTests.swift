@@ -141,3 +141,61 @@ final class CinemaTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxPush, 1 + 1e-9)
     }
 }
+
+/// #717: option B's staged strike.
+final class StormStrikeTests: XCTestCase {
+    func testStaging() {
+        // darkening first: no leader, no flash
+        let early = StormStrike.at(0.05)
+        XCTAssertEqual(early.flash, 0); XCTAssertEqual(early.reveal, 0); XCTAssertGreaterThan(early.dark, 0.3)
+        // the leader steps down the channel, dim, still no flash
+        let reveals = stride(from: StormStrike.leaderAt, to: StormStrike.strokeAt, by: 0.005).map { StormStrike.at($0).reveal }
+        XCTAssertEqual(Set(reveals).count, 5, "five steps")
+        XCTAssertEqual(reveals, reveals.sorted(), "it only goes down")
+        XCTAssertTrue(stride(from: 0, to: StormStrike.strokeAt, by: 0.01).allSatisfy { StormStrike.at($0).flash == 0 && StormStrike.at($0).bolt < 0.5 })
+        // the return stroke: the whole channel, HDR bright, the flash at its height
+        let stroke = StormStrike.at(StormStrike.strokeAt)
+        XCTAssertEqual(stroke.reveal, 1); XCTAssertGreaterThan(stroke.bolt, 2); XCTAssertEqual(stroke.flash, 1, accuracy: 1e-9)
+        // the afterglow is long: still a third bright half a second on, gone at the end, and it never jumps back up
+        XCTAssertGreaterThan(StormStrike.at(StormStrike.strokeAt + 0.45).flash, 0.3)
+        XCTAssertEqual(StormStrike.at(StormStrike.duration), StormStrike.Frame())
+        var prev = 2.0
+        for t in stride(from: StormStrike.strokeAt, to: StormStrike.duration, by: 0.01) {
+            let f = StormStrike.at(t).flash
+            XCTAssertLessThanOrEqual(f, prev + 1e-9, "at \(t)"); prev = f
+        }
+    }
+
+    func testRestrikeFollowsTheSameChannel() {
+        let r = 0.24
+        let before = StormStrike.at(StormStrike.strokeAt + r - 0.01), after = StormStrike.at(StormStrike.strokeAt + r + 0.005)
+        XCTAssertGreaterThan(after.bolt, before.bolt + 1)
+        XCTAssertGreaterThan(after.flash, before.flash)
+        XCTAssertEqual(after.reveal, 1)
+    }
+
+    func testFlashCountKnowsThree() {
+        // three 80 ms full-screen flashes in a second is three; one long swell is one
+        let fps = 60.0
+        let three = (0..<120).map { i -> Double in let t = Double(i) / fps; return [0.2, 0.5, 0.8].contains { t >= $0 && t < $0 + 0.08 } ? 0.9 : 0.05 }
+        XCTAssertEqual(FlashCount.mostInASecond(three, fps: fps), 3)
+        let one = (0..<120).map { i -> Double in let t = Double(i) / fps; return 0.05 + 0.8 * exp(-t * 3) }
+        XCTAssertLessThanOrEqual(FlashCount.mostInASecond(one, fps: fps), 1)
+    }
+
+    /// The worst case, modelled: the flash drives the whole screen from black to white (far brighter than the table
+    /// really gets), every strike has a restrike, and strikes come as close as they're allowed. Never over two.
+    func testNeverMoreThanTwoFlashesASecond() {
+        let fps = 120.0
+        for restrike in [0.12, 0.2, 0.3, 0.5, 0.8] {
+            var series: [Double] = []
+            for i in 0..<Int(fps * 10) {
+                let t = Double(i) / fps
+                let s = t.truncatingRemainder(dividingBy: StormStrike.minGap)
+                let f = StormStrike.at(s, restrike: restrike)
+                series.append(min(1, 0.02 + 0.9 * f.flash))
+            }
+            XCTAssertLessThanOrEqual(FlashCount.mostInASecond(series, fps: fps), 2, "restrike \(restrike)")
+        }
+    }
+}

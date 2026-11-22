@@ -221,3 +221,93 @@ public struct CameraDirector: Sendable {
     static func smooth(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
     static func easeOut(_ x: Double) -> Double { let c = min(1, max(0, x)); return 1 - (1 - c) * (1 - c) }
 }
+
+/// Option B, the storm (#717): one strike staged the way a real one lights a scene (docs/app/cinematic.md, sources 6
+/// and 10): the scene darkens, a dim stepped leader works down the channel, then one big return stroke (the flash,
+/// the bolt at full HDR brightness so it blooms), and a long violet afterglow on the cards and the table. Now and
+/// then a restrike follows down the same channel. Thunder (thunder.ahap) starts at the return stroke.
+///
+/// Photosensitivity: the return stroke is one flash and a restrike at most one more, so a strike is never more than
+/// two; strikes start at least `minGap` apart, so no second holds more than two (WCAG 2.3.1 allows three).
+public enum StormStrike {
+    /// When the scene starts to darken, when the leader starts, when the return stroke lands (seconds from the strike).
+    public static let leaderAt = 0.10, strokeAt = 0.27
+    /// How long the whole strike lasts (the afterglow's tail).
+    public static let duration = 1.9
+    /// Strikes never start closer than this.
+    public static let minGap = 1.9
+
+    public struct Frame: Equatable, Sendable {
+        /// The flash and afterglow on the scene and the table (0 to 1).
+        public var flash = 0.0
+        /// The bolt's brightness: over 1 is HDR (it blooms).
+        public var bolt = 0.0
+        /// How much of the channel is drawn, from the cloud down (the stepped leader; 1 is all of it).
+        public var reveal = 1.0
+        /// How far the scene's own light has dropped before the stroke (0 to 1).
+        public var dark = 0.0
+        public init() {}
+    }
+
+    /// The strike `t` seconds after it began; `restrike` is the delay of a restrike after the return stroke (0 for none).
+    public static func at(_ t: Double, restrike: Double = 0) -> Frame {
+        var f = Frame()
+        guard t >= 0, t < duration else { return f }
+        if t < strokeAt {
+            // the darkening, then the leader stepping down (5 steps), dim, no flash
+            f.dark = min(1, t / leaderAt)
+            if t >= leaderAt {
+                let p = (t - leaderAt) / (strokeAt - leaderAt)
+                f.reveal = min(1, (floor(p * 5) + 1) / 5)
+                f.bolt = 0.3
+            } else {
+                f.reveal = 0
+            }
+            return f
+        }
+        let s = t - strokeAt
+        // the return stroke: the whole channel at once, the brightest it gets, falling fast; a faint channel lingers
+        f.bolt = 2.4 * exp(-s * 9) + 0.12 * exp(-s * 2.2)
+        // the afterglow: at its brightest at once, then one long smooth fall (no flicker inside it)
+        f.flash = exp(-s * 2.4)
+        f.dark = max(0, 1 - s / 0.08)
+        if restrike > 0 && s >= restrike {
+            let r = s - restrike
+            f.bolt += 1.5 * exp(-r * 12)
+            f.flash += 0.35 * exp(-r * 8)
+        }
+        // the tail ends at zero, never a cut
+        let tail = max(0, min(1, (duration - t) / 0.3))
+        f.flash *= tail; f.bolt *= tail
+        return f
+    }
+}
+
+/// WCAG 2.3.1's count, for a series of luminance values (0 to 1) sampled `fps` times a second: the most general
+/// flashes (pairs of opposing changes of 0.1 or more, the darker state under 0.8) in any one second. The same rule as
+/// scripts/flashcheck.py, which counts a recording; this one checks a modelled curve in the unit tests.
+public enum FlashCount {
+    public static func mostInASecond(_ series: [Double], fps: Double) -> Int {
+        var trans: [Int] = []
+        guard var lo = series.first else { return 0 }
+        var hi = lo
+        var dir = 0
+        for (i, v) in series.enumerated().dropFirst() {
+            switch dir {
+            case 0:
+                lo = min(lo, v); hi = max(hi, v)
+                if v - lo >= 0.1 && lo < 0.8 { trans.append(i); dir = 1; hi = v } else if hi - v >= 0.1 && v < 0.8 { trans.append(i); dir = -1; lo = v }
+            case 1:
+                if v > hi { hi = v } else if hi - v >= 0.1 && v < 0.8 { trans.append(i); dir = -1; lo = v }
+            default:
+                if v < lo { lo = v } else if v - lo >= 0.1 && lo < 0.8 { trans.append(i); dir = 1; hi = v }
+            }
+        }
+        var best = 0, j = 0
+        for i in trans.indices {
+            while Double(trans[i] - trans[j]) >= fps { j += 1 }
+            best = max(best, (i - j + 1) / 2)
+        }
+        return best
+    }
+}

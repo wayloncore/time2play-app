@@ -79,7 +79,11 @@ struct Table3DStill {
                 w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
                 w.freezeAt = c0 + start + 2.1 * st.mix
             } else if let t = st.strikeAt {
-                if w.cinema == .director {
+                if w.cinema == .storm {
+                    // #717: a staged strike; t is after its return stroke
+                    w.addTimer(c0 + start) { w.strike(at: 0.3) }
+                    w.freezeAt = c0 + start + StormStrike.strokeAt + t
+                } else if w.cinema == .director {
                     // #716: the director's strike is a Bolt aimed at you: its held beat, then the strike; t is after the strike
                     w.addTimer(c0 + start) { w.boltHit(mine: true, at: 0.3) }
                     w.freezeAt = c0 + start + w.strikeLead + t

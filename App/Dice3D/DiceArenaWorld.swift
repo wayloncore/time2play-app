@@ -53,6 +53,8 @@ final class DiceArenaWorld: NSObject, SceneTicking {
     private var shot = DirectorShot.calm
     /// The scene's lights and their own intensities, for the held beat's drop.
     private var lights: [(light: SCNLight, base: CGFloat)] = []
+    /// #717 (option B, the storm): when your dice last hit the felt (the light swells with it, then settles).
+    private var swellAt: Double?
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
@@ -151,6 +153,12 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             let lit = CGFloat(1 - 0.22 * shot.dim)
             for l in lights { l.light.intensity = l.base * lit }
         }
+        if cinema == .storm {
+            // #717: the world answers your dice landing: one warm swell of the light (a third brighter), settling over
+            // about half a second (one smooth rise and fall, never a flicker); HDR lets the dice's highlights bloom
+            let s = swellAt.map { max(0, exp(-(clock - $0) * 4)) } ?? 0
+            for l in lights { l.light.intensity = l.base * CGFloat(1 + 0.35 * s) }
+        }
         clock += dt
         if dt > 0 || first { step() }
         if dt > 0 || first || rigDirty || directing { aimCamera(dt) }
@@ -179,6 +187,15 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         cam.projectionDirection = .vertical
         cam.fieldOfView = 32
         cam.zNear = 0.5; cam.zFar = 200
+        if cinema == .storm {
+            // #717: HDR and a bloom that only takes what's brighter than white (the dice's highlights in the swell)
+            cam.wantsHDR = true
+            cam.wantsExposureAdaptation = false
+            cam.bloomThreshold = 1.05
+            cam.bloomIntensity = 1.1
+            cam.bloomBlurRadius = 10
+            cam.bloomIterationCount = 2
+        }
         cameraNode.camera = cam
         scene.rootNode.addChildNode(cameraNode)
         scene.background.contents = UIColor.clear
@@ -633,6 +650,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             if !p.hitSaid, let first = p.th.firstHit.min(), t >= first {
                 p.hitSaid = true
                 if want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
+                if cinema == .storm && want?.mine == true && !reduced { swellAt = now }
             }
             if t >= p.th.duration {
                 p.done = true

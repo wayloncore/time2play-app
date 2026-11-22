@@ -18,6 +18,7 @@ struct T3DU {
     float4 e;      // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
     float4 f;      // turn flow: color, strength
     float4 g;      // turn flow: the arc's direction, its brightness, rim length, comet spacing
+    float4 h;      // #717: how much of the bolt's channel is drawn from the cloud down (the stepped leader; 1 is all)
 };
 
 struct T3DNode {
@@ -471,9 +472,9 @@ fragment float4 t3d_grass_frag(GrassOut in [[stage_in]]) {
 }
 
 // ---------- lightning: a branching bolt, rebuilt for each strike ----------
-struct BoltOut { float4 position [[position]]; float2 ua; };
+struct BoltOut { float4 position [[position]]; float2 ua; float y; };
 vertex BoltOut t3d_bolt_vert(PosUVIn in [[stage_in]], constant SCNSceneBuffer& scn_frame [[buffer(0)]], constant T3DNode& scn_node [[buffer(1)]]) {
-    BoltOut o; o.ua = in.uv; o.position = scn_frame.viewProjectionTransform * (scn_node.modelTransform * float4(in.position, 1.)); return o;
+    BoltOut o; o.ua = in.uv; o.y = in.position.y; o.position = scn_frame.viewProjectionTransform * (scn_node.modelTransform * float4(in.position, 1.)); return o;
 }
 fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer(2)]]) {
     float d = abs(in.ua.x);
@@ -481,5 +482,8 @@ fragment float4 t3d_bolt_frag(BoltOut in [[stage_in]], constant T3DU& u [[buffer
     float glow = pow(max(1. - d, 0.), 3.);
     float3 col = float3(.94, .88, 1.) * core * 1.35 + float3(.58, .30, 1.) * glow * 1.0;   // #610: violet
     float k = in.ua.y * u.c.y;
+    // #717: the stepped leader draws the channel from the cloud (y = 30) down to where it has reached
+    float reach = 30. - (30. - u.b.z) * u.h.x;
+    if (in.y < reach) { discard_fragment(); }
     return float4(lin(col * k), 1.);
 }

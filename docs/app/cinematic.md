@@ -173,3 +173,28 @@ iPhone 17 Pro (iOS 26.2), tier high. Older: iPhone SE (3rd generation) (iOS 18.5
   already landed (today's still does the same); the workflow now stops at 0.18 s, so the next run shows them in the
   air. The 19 s Overdraft recording caught one directed strike on the recent simulator (the storm's own strikes
   are rarer under the director, and a slow simulator stretches the beat); the older one caught six.
+
+## Option B, the storm (Part 3, #717): what was built
+
+Only with `-t2p-cinema storm`. The camera never moves; the world does the work.
+
+- **HDR and bloom.** The table's and the dice's cameras turn on `wantsHDR` (no exposure adaptation, so the picture
+  never pumps) with a bloom threshold just over white (1.05): only what's brighter than white blooms, the bolt and
+  the flash on the glass's rim, never the cards or the words. The bolt's core goes to 2.4 at the return stroke.
+- **A strike, staged** (`StormStrike` in T2PCore, tested): the scene's light drops for 0.1 s; a dim stepped leader
+  works down the channel in five steps (0.1 to 0.27 s, drawn from the cloud down by the bolt shader); then one return
+  stroke (the whole channel at full brightness, the flash at its height); then a long violet afterglow on the cards
+  and the table (a third bright half a second on, gone by 1.9 s). About two strikes in five get a restrike down the
+  same channel 0.18 to 0.3 s after the stroke.
+- **Thunder from one AHAP** (`App/Sounds/thunder.ahap`, `App/Cinema/Thunder.swift`): a sharp transient at the return
+  stroke and a rumble 0.3 s later, with its sound (`thunder.caf`, Time2Play's own, `scripts/thunder.py`) in the same
+  pattern, so they never drift apart. A Bolt aimed at you is felt and heard; the storm's own strikes are only heard,
+  quietly. Haptics and Sound effects in You mute their halves. Without Core Haptics (an iPad), the sound alone.
+- **What counts.** A Bolt aimed at you brings a strike of its own, as soon as the last one is 1.9 s behind (up to
+  0.8 s later; any later and it gets none). The storm's own strikes come every 2.4 to 4.4 s.
+  10000: your dice hitting the felt bring one warm swell of the light (a third brighter, settling in half a second)
+  that makes their highlights bloom.
+- **Photosensitivity.** A strike is the return stroke's flash and at most a restrike's: two. Strikes start at least
+  1.9 s apart. The unit test models the worst case (the flash driving the whole screen black to white, every strike a
+  restrike, strikes as close as allowed) and counts at most two flashes in any second. The recordings are counted too.
+- **Reduce Motion:** as today, no strikes and no flashes (the clouds' slow flicker only), and no swell on the dice.

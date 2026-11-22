@@ -78,6 +78,7 @@ final class Sounds: ObservableObject {
     enum Effect: String, CaseIterable {
         case cardPlay = "card-play", draw, yourTurn = "your-turn", diceRoll = "dice-roll", diceLand = "dice-land"
         case farkle, win, bolt
+        case thunder   // #717: a strike's thunder when Core Haptics can't play thunder.ahap (Thunder.swift)
     }
 
     private var data: [Effect: Data] = [:]
