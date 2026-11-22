@@ -437,7 +437,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
     /// the roll the camera eased in on is no longer the one on the felt, or the cup is shaking for the next one.
     private func easeHomeIfDone(_ s: ArenaState, now: Double) {
         guard let k = easedKey, ease.to > 0 else { return }
-        if s.roll != k || s.shaking || s.farkle || !s.mine || reduced {
+        if s.roll != k || s.shaking || s.farkle || !s.mine {
             easeTo(0, dur: DiceArena.easeHomeSeconds, now: now)
             easedKey = nil
         }
@@ -609,6 +609,11 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             if !p.hitSaid, let first = p.th.firstHit.min(), t >= first {
                 p.hitSaid = true
                 if want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
+                // #706: your own roll starts closing in as the dice hit the felt, so they tumble and settle close up
+                // (the camera arrives as they come to rest; where they rest is known from the throw)
+                let ks = p.ids.indices.filter { !p.left.contains(p.ids[$0]) && $0 < p.th.rest.count }
+                easeInOnRoll(p.key, rest: ks.map { p.th.rest[$0].p },
+                             dur: max(DiceArena.easeInSeconds, (p.th.duration - first) / p.speed), now: now)
             }
             if t >= p.th.duration {
                 p.done = true
@@ -690,16 +695,10 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         landedKey = key
         // build 45: like the website's Hot Dice, your own roll eases the camera in toward where the dice came to rest,
         // and it holds there while you pick (no bounce back); see easeHomeIfDone. Never for someone else's roll, a
-        // Farkle, Roll Call's row, Reduce Motion, or a view the player has moved themselves.
-        if !reduced && !row && user == Rig(), let s = want, s.roll == key, s.mine, !s.farkle, let b = base {
-            let ps = ids.compactMap { dice[$0]?.pose.p }.map(Self.t3)
-            let cam = Table3DCamera.lookAt(eye: Self.t3(b.eye), target: Self.t3(b.target), fovY: b.fov, width: b.w, height: b.h)
-            let e = DiceArena.easeIn(camera: cam, tray: tray, dice: ps, slots: s.slots, top: baseTop)
-            if e.k < 1 {
-                easeTo(1, dur: DiceArena.easeInSeconds, now: now)
-                easeLook = Self.f(e.look); easeK = Float(e.k); easedKey = key; easeDice = (ps, s.slots)
-            }
-        }
+        // Farkle, Roll Call's row, or a view the player has moved themselves.
+        // #706: the roll usually started the ease as the dice hit the felt; this catches the rest (Reduce Motion gets
+        // the closer framing with no ease)
+        if easedKey != key { easeInOnRoll(key, rest: ids.compactMap { dice[$0]?.pose.p }.map(Self.t3), dur: DiceArena.easeInSeconds, now: now) }
         let cb = onLanded
         DispatchQueue.main.async { cb?(key) }
         guard let s = want, s.roll == key else { moment(.landed); return }
@@ -710,6 +709,16 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             glowing[id] = (start: now + 0.05, peak: s.farkle ? 0.7 : 0.85)
         }
         moment(.landed)
+    }
+
+    /// The ease in on your own roll `key`, toward where its dice rest, over `dur` seconds (none with Reduce Motion).
+    private func easeInOnRoll(_ key: String, rest ps: [T3Vec], dur: Double, now: Double) {
+        guard !row && user == Rig(), let s = want, s.roll == key, s.mine, !s.farkle, let b = base, !ps.isEmpty else { return }
+        let cam = Table3DCamera.lookAt(eye: Self.t3(b.eye), target: Self.t3(b.target), fovY: b.fov, width: b.w, height: b.h)
+        let e = DiceArena.easeIn(camera: cam, tray: tray, dice: ps, slots: s.slots, top: baseTop)
+        guard e.k < 1 else { return }
+        easeTo(1, dur: dur, now: now)
+        easeLook = Self.f(e.look); easeK = Float(e.k); easedKey = key; easeDice = (ps, s.slots)
     }
 
     // MARK: the cup

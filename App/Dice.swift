@@ -352,6 +352,8 @@ struct HotDiceView: View {
     /// #521: the 3D dice arena (You → "3D dice (preview)"); off draws the flat dice as before.
     var arena = false
     @StateObject private var arenaStage = DiceArenaStage()
+    /// #706: how tall the words over the arena are (they grow with Larger Text): the dice stay below them.
+    @State private var arenaWords: Double = 94
     @State private var celebrate: HotDice.Highlight?
     /// A Farkle stays up about as long as the room holds it (2.4 s), even if the next turn's view comes sooner; a tap
     /// clears it early.
@@ -715,7 +717,7 @@ struct HotDiceView: View {
             ZStack(alignment: .top) {
                 DiceArenaView(stage: arenaStage, state: arenaState, button: { arenaButton($0, t) }, onTap: { id in
                     if arenaTappable(t) { room.move("tap", ["die": .number(Double(id))]); Feel.kept() }
-                }, top: 96, zoomable: true)
+                }, top: max(96, (arenaWords + 4).rounded()), zoomable: true)
                 .frame(maxHeight: .infinity)
                 Group {
                     if farkled {
@@ -737,6 +739,7 @@ struct HotDiceView: View {
                 }
                 .frame(minHeight: 92, alignment: .top)
                 .padding(.top, 2)
+                .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { h in if !farkled { arenaWords = h } }   // a Farkle's banner doesn't refit the tray
                 .allowsHitTesting(farkled)   // pinches and drags over the words reach the board (a Farkle takes a tap)
             }
             .overlay(alignment: .bottomTrailing) {
