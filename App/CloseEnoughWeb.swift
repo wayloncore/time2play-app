@@ -389,17 +389,18 @@ struct CloseEnoughWebGame: View {
 
     /// `#revealBox`: the answer, the verdict and why, then Next (the room's owner) and when it goes on by itself.
     private var revealBox: some View {
-        let r = mine ?? CloseEnough.Result(lo: nil, hi: nil, points: 0, verdict: "none")
-        let vd = Self.verdicts[r.verdict] ?? Self.verdicts["none"]!
-        let border: Color = r.verdict == "tight" ? Web.good : r.verdict == "hit" ? Web.accent : Web.miss
+        let verdict = mine?.verdict ?? "none", points = mine?.points ?? 0
+        let rlo = mine?.lo, rhi = mine?.hi
+        let vd = Self.verdicts[verdict] ?? Self.verdicts["none"]!
+        let border: Color = verdict == "tight" ? Web.good : verdict == "hit" ? Web.accent : Web.miss
         return VStack(spacing: 12) {
             VStack(spacing: 6) {
                 Text(q.answer.map { q.format($0) } ?? "").font(Web.font(28, .heavy, .title)).foregroundStyle(Web.ink)
                     .frame(maxWidth: .infinity).accessibilityIdentifier("ce-answer")
-                Text(vd.0 + (r.points > 0 ? " +\(r.points)" : "")).font(Web.font(18, .heavy, .headline)).foregroundStyle(Web.ink)
+                Text(vd.0 + (points > 0 ? " +\(points)" : "")).font(Web.font(18, .heavy, .headline)).foregroundStyle(Web.ink)
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity)
                     .accessibilityIdentifier("ce-verdict")
-                Text((r.lo != nil && r.hi != nil ? "Your range: \(q.format(r.lo!)) to \(q.format(r.hi!)). " : "") + vd.1)
+                Text((rlo != nil && rhi != nil ? "Your range: \(q.format(rlo!)) to \(q.format(rhi!)). " : "") + vd.1)
                     .font(Web.font(14, .semibold, .subheadline)).foregroundStyle(Web.muted).lineSpacing(2)
                     .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 if let why = q.why, !why.isEmpty {
