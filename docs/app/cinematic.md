@@ -1,0 +1,118 @@
+# Cinematic arenas: research (#708, Part 1)
+
+Tyler, Nov 21: "make the lightning in Overdraft even more aggressive … cinematic … 10,000 and any arena game truly
+cinematic." Nov 21, 8:02 PM: "I will only allow the cinematic if it's made high quality and not fast to get it done.
+Consult resources." This file is the reading, written down, and what each source changes in the design. The options
+(Parts 2 to 4) are built from it; nothing ships until Tyler picks.
+
+Checked Nov 22, 2026. A source marked **(not read in full)** is cited from its abstract or catalog page only; its
+claims here are flagged as the talk's known thesis, to confirm before an option leans on a specific number.
+
+## Where we start (what's in the app now)
+
+- Overdraft's 3D table (App/Table3D/Table3DWorld.swift): Bolt suit storm, a strike every 1.4 to 3.2 s (2 to 4 s on
+  the oldest phones), branching bolts drawn by a Metal shader (t3d_bolt_*), sometimes a second, fainter bolt; a violet
+  directional `flashLight`; at most two flashes a strike, the second 0.4 s or more after the first (#610).
+- No HDR, bloom, motion blur or depth of field anywhere in the 3D scenes (the Close Enough board sets wantsHDR = false).
+- Haptics: `Haptics.jolt()` plus the `.bolt` sound for a Bolt aimed at you (App/Feel.swift). Not one AHAP pattern.
+- 10000's arena (App/Dice3D): the roll eases the camera in (#706 makes it land closer); no shake, no held beats.
+
+## Sources and what each changes
+
+### Game feel
+
+1. **Steve Swink, *Game Feel* (Morgan Kaufmann, 2008).** Feel is real-time control, simulated space and polish
+   working together; polish ("juice") only reads as feel when it answers something the player did.
+   *Changes the design:* every cinematic beat is tied to a player-caused moment (your Bolt, your Overdraft, your roll),
+   never ambient noise. A storm that flashes on its own timer is background; the strike that hits *you* is the event.
+2. **Martin Jonasson and Petri Purho, "Juice it or lose it," GDC Europe 2012** (GDC Vault 1016487) **(not read in
+   full).** The known demo: the same breakout game made to feel alive by layering tweening, squash, particles, sound,
+   shake, one at a time. *Changes:* build the options as layers we can switch one by one in the still mode, so Tyler
+   can compare "camera only", "world only", "both"; and judge each layer on its own merit.
+3. **Jan Willem Nijman (Vlambeer), "The art of screenshake," 2013** **(not read in full).** The known list: a lot of
+   small reactions (kick, shake, a pause on hit, permanence) make an action land. *Changes:* the "hit stop" (a
+   50–120 ms freeze or slow-down on the strike frame) is cheaper and more readable than more brightness; add it to
+   the director option.
+4. **Squirrel Eiserloh, "Math for Game Programmers: Juicing Your Cameras With Math," GDC 2016** (GDC Vault 1023146;
+   overview: framing, smoothed motion, camera shake, split screen) **(not read in full).** Its widely cited method:
+   a *trauma* value 0–1 that events add to and that decays over time; shake = trauma² (or ³) × smooth noise (Perlin),
+   applied mostly to rotation, not translation. *Changes:* shake is driven by one trauma number with a cap, so two
+   strikes don't stack into chaos; noise, not random jitter, so it reads as weight, not glitch; mostly rotation so
+   the cards stay in place and readable.
+
+### Cinematography and animation
+
+5. **Frank Thomas and Ollie Johnston, *The Illusion of Life* (1981): the 12 principles**, especially anticipation,
+   staging, timing, slow in and slow out, and exaggeration. *Changes:* every big moment gets a wind-up (a held beat,
+   the light dropping) before the payoff; the camera stages the one thing that matters (the hit card, the dice) and
+   eases in and out, never cuts mid-motion on a phone.
+6. **How real lightning lights a scene.** A cloud-to-ground flash is a dim stepped leader, then the very bright
+   return stroke moving up the channel (NWS, "Lightning science: the return stroke"); the channel stays conductive
+   for a moment, so later dart leaders and return strokes can follow the same path, which is why a flash flickers.
+   Typical figures in the literature (several strokes in one flash, tens of milliseconds apart, the whole flash a
+   fraction of a second) are from Britannica's "Cloud-to-ground lightning"; **confirm the exact numbers before
+   tuning**. *Changes:* a strike is staged as darken → leader → one big return stroke → a long violet afterglow on the
+   cards and table, with any restrike on the *same* path. That is what reads as real; more bolts in more places does
+   not.
+
+### Apple
+
+7. **SceneKit `SCNCamera`:** `wantsHDR` (default false; lighting in a deeper range, tone-mapped by exposure settings),
+   `bloomIntensity` (default 0; needs wantsHDR), `motionBlurIntensity` (default 0, about 1 max; not supported with
+   wide-gamut rendering, which is on by default on supported devices, unless SCNDisableWideGamut is set),
+   `wantsDepthOfField`. *Changes:* bloom on the bolt and the flash is the single biggest "cinematic" win and is
+   built in, but it means turning HDR on for the table, which changes every color: the options must re-check card
+   readability and the suit colors. Motion blur is likely out (it costs wide gamut on the whole scene); a short
+   shader smear on the bolt itself gets the look without that trade. Depth of field only during a held beat, and
+   never on the cards you need to read.
+8. **Core Haptics, AHAP files:** a pattern can hold HapticTransient, HapticContinuous, AudioContinuous and AudioCustom
+   events, so a thunder sound and its rumble play from one file, in sync. *Changes:* the strike's crack is a sharp
+   transient at the return stroke; the thunder is a continuous rumble that rises and decays a beat later (sound is
+   slower than light), from one AHAP, so it never drifts from the picture.
+9. **Human Interface Guidelines, Motion, and Reduce Motion:** keep motion purposeful, let people turn it down, and
+   don't make large moving or flashing effects required to follow play. *Changes:* with Reduce Motion on: no shake,
+   no flash, no camera moves; the moment is told by a calm light change, a still frame and the haptic.
+
+### Safety
+
+10. **WCAG 2.2, 2.3.1 Three Flashes or Below Threshold:** no more than three general flashes and no more than three
+    red flashes in any one second, unless the flashing area is small (the combined area within .006 steradians of any
+    10° field, about a 341 × 256 px rectangle on a 1024 × 768 screen). A general flash is a pair of opposing changes
+    of 10% or more of maximum relative luminance where the darker state is below 0.80. A red flash involves a
+    saturated red (R/(R+G+B) ≥ 0.8). *Changes:* a full-screen flash is always "large", so the rule that matters is
+    the count: a strike plus restrikes is at most **two** luminance flashes in any second (keeping a margin under
+    three), strikes stay at least 1.4 s apart as now, and no red flashes at all (the Bolt suit is violet; keep it).
+    Every option gets an automated check: render the strike frame by frame in the still mode, compute mean relative
+    luminance per frame and count opposing 10% changes in every one-second window.
+
+## Principles the options will follow
+
+- Cinema answers the player: big moments only when something happened to someone.
+- Anticipation, then one big payoff, then a long settle; not many small flashes.
+- One trauma value drives shake; rotation more than position; capped; zero under Reduce Motion.
+- Readability is a hard rule: during every effect, cards, dice and scores stay legible (checked in the stills).
+- Photosensitivity: at most 2 flashes a second, no red flashes, checked by a script, not by eye.
+- Frame rate: hold the table's current frame rate on an older iPhone; any layer that costs more is optional per device.
+
+## The split (linked parts of #708)
+
+1. Part 1: this research (done).
+2. Part 2: option A, the director (camera: anticipation, push-in, hit stop, trauma shake), built in the app on a
+   branch, Overdraft mid-strike and 10000 mid-roll, recordings and stills, frame rates on a recent and an older
+   simulator.
+3. Part 3: option B, the storm (world: HDR and bloom, staged leader → return stroke → afterglow, AHAP thunder), same
+   deliverables.
+4. Part 4: option C, big moments only (calm play, short directed sequences), same deliverables, then the flash-count
+   checker on all three and the comparison for Tyler with the one question; #708 gets `needs-tyler`.
+
+Sources (checked Nov 22, 2026):
+- WCAG 2.2 Understanding 2.3.1: https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html
+- NWS, the return stroke: https://www.weather.gov/safety/lightning-science-return-stroke
+- Britannica, cloud-to-ground lightning: https://www.britannica.com/science/thunderstorm/Cloud-to-ground-lightning
+- SCNCamera bloomIntensity: https://developer.apple.com/documentation/scenekit/scncamera/bloomintensity
+- SCNCamera wantsHDR: https://developer.apple.com/documentation/scenekit/scncamera/wantshdr
+- SCNCamera motionBlurIntensity: https://developer.apple.com/documentation/scenekit/scncamera/motionblurintensity
+- SCNCamera wantsDepthOfField: https://developer.apple.com/documentation/scenekit/scncamera/wantsdepthoffield
+- AHAP files: https://developer.apple.com/documentation/corehaptics/representing-haptic-patterns-in-ahap-files
+- Eiserloh, GDC 2016: https://gdcvault.com/play/1023146/Math-for-Game-Programmers-Juicing
+- Jonasson and Purho, GDC Europe 2012: https://gdcvault.com/play/1016487/
