@@ -23,7 +23,21 @@ final class RoomModel: ObservableObject, Identifiable {
     @Published var taken: [Int]
     /// A short line at the top of the room (a problem, a saved preset, an achievement). Every one goes away on its own
     /// after about 3 seconds (Tyler, build 48: an achievement's never did), and a tap or a swipe up clears it sooner.
-    @Published var toast: String? { didSet { if toast != nil && toast != oldValue { toastEnds() } } }
+    @Published var toast: String? {
+        didSet {
+            if toast != nil && toast != oldValue { toastEnds() }
+            if StatsKeeper.earnTest && toast != oldValue { logToast() }
+        }
+    }
+    /// UI tests only (-t2p-earn-test, #720): every line said at the top and when it went, since the room opened, so a
+    /// test that can't look in time (the line lasts about 3 seconds) still learns whether it was said and went.
+    @Published private(set) var toastLog: [String] = []
+    private var toastAt: Date?
+    private func logToast() {
+        let now = Date()
+        if let t = toast { toastAt = now; toastLog.append("said \(t)") }
+        else if let a = toastAt { toastLog.append(String(format: "gone after %.1fs", now.timeIntervalSince(a))); toastAt = nil }
+    }
     private var toastTimer: DispatchWorkItem?
     static let toastSeconds = 3.0
     @Published var reactions: [ShownReaction] = []

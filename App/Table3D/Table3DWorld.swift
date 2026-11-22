@@ -663,8 +663,12 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// #719's frame-rate comparison only: -t2p-719-before draws the comets the app had before, at their cost.
     static let before719 = ProcessInfo.processInfo.arguments.contains("-t2p-719-before")
 
+    /// #721's frame-rate comparison only: -t2p-721-before draws build 87's arrows (the rail straddling the glass's
+    /// edge, the bigger chevrons), so one Mac run can time the border against them.
+    static let before721 = ProcessInfo.processInfo.arguments.contains("-t2p-721-before")
+
     private func buildFlow() {
-        u.g = SIMD4<Float>(-1, 0, Self.before719 ? -1 : 0, 0)
+        u.g = SIMD4<Float>(-1, 0, Self.before719 ? -1 : 0, Self.before721 ? 1 : 0)
     }
 
     /// Whoever is on, whoever is next (rim positions) and play's direction. A change of direction is a Reverse,
