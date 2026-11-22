@@ -214,9 +214,12 @@ static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
     float3 cHalo = mix(float3(.961, .871, .584), sc, .70);          // 70%, #F5DE95
     float3 cCore = mix(float3(1., .957, .824), sc, .30);            // 30%, #FFF4D2
     float3 cArc = mix(float3(1., .937, .761), sc, .40);             // 40%, #FFEFC2
-    // the rim's faint band
+    // the rim's band: the website's arrows sit on a dark rail, so the glass under them darkens (the Nov 22 stills:
+    // cream arrows on bare glass washed out on the sea and the meadow), with the suit's faint tint over it
     float across = (k - RAIL_K) * RX;
-    col = mix(col, cBand, .13 * on * stroke(abs(across), RAIL_W * .9, aa));
+    float rail = stroke(abs(across), RAIL_W * .9, aa);
+    col = mix(col, float3(.07, .05, .09), .42 * on * rail);
+    col = mix(col, cBand, .13 * on * rail);
     // the chevrons: the nearest one, where it points, and whether the sweep has turned it
     float phase = u.e.z, pointing = u.e.w >= 0. ? 1. : -1.;
     float j = floor((s - phase) / CHEV_STEP + .5), c = phase + j * CHEV_STEP;
@@ -234,9 +237,10 @@ static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
     float h = size * .5;
     float2 tip = float2(h * .9, 0.), armA = float2(-h * .6, h), armB = float2(-h * .6, -h);
     float dc = min(segDist(q, armA, tip), segDist(q, armB, tip));
-    col = mix(col, cHalo, .26 * on * stroke(dc, size * .32, aa));
+    col = mix(col, float3(.05, .03, .06), .35 * on * stroke(dc, size * .44, aa));       // a dark edge round each
+    col = mix(col, cHalo, .30 * on * stroke(dc, size * .32, aa));
     if (hot) col = mix(col, float3(1., .973, .894), on * stroke(dc, size * .30, aa));     // #FFF8E4
-    else col = mix(col, cCore, .85 * on * stroke(dc, size * .20, aa));
+    else col = mix(col, cCore, .95 * on * stroke(dc, size * .22, aa));
     // the curved arrow from whoever is on to whoever is next, just inside the rim, the way play goes
     float len = u.e.y, dir = -pointing;
     if (u.g.x < 0.) dir = pointing;
