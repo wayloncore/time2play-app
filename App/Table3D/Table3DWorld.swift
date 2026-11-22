@@ -126,7 +126,11 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     private var stormDark = 0.0
     private var strikeNear = false
     /// The director's held beat for a full strike (0 unless the director is on): a still adds it to its freeze time.
-    var strikeLead: Double { cinema == .director ? director.lead(strength: 1) : 0 }
+    var strikeLead: Double { cinema == .director ? director.lead(strength: 1) : cinema == .moments ? Self.momentLead : 0 }
+    /// #718 (option C): the directed sequence's held beat and its slow motion (seconds), and how far it pushes in.
+    static let momentLead = 0.3, momentSlow = 1.3
+    /// The camera and its sequences: the director (A) and big moments only (C).
+    private var directed: Bool { cinema == .director || cinema == .moments }
 
     init(tier: T3DTier) {
         self.tier = tier
@@ -168,7 +172,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             } else { dt = min(dt, f - clock) }
         }
         // #716: the director runs on real time; the scene on its time scale (0 during a hit stop: the strike frame holds)
-        if cinema == .director {
+        if directed {
             director.reduced = reduced
             shot = director.step(dt)
             dt *= shot.timeScale
@@ -178,7 +182,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         timers.removeAll { $0.at <= clock }
         due.forEach { $0.run() }
         step(dt)
-        if cinema == .director { directCamera() }
+        if directed { directCamera() }
         uLock.lock(); uShown = u; uLock.unlock()
         frames += 1
         if let cb = onDebug, time - debugAt >= 0.5 {
@@ -1027,6 +1031,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             storm.twice = -1
             if strikeDue == nil && live { director.cue(strength: 0.4) }
         }
+        if cinema == .moments && strikeDue != nil { storm.twice = -1 }   // #718: a sequence's strike is one flash
         if cinema == .storm {
             // #717: `twice` is now a restrike's delay after the return stroke, down the same channel (about two in five)
             storm.twice = live && Double.random(in: 0..<1) < 0.45 ? .random(in: 0.18...0.3) : -1
@@ -1056,16 +1061,19 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             storm.next = max(storm.next, wait + StormStrike.minGap + 0.6)
             return
         }
-        guard cinema == .director, !reduced, strikeDue == nil else { return }
+        guard directed, !reduced, strikeDue == nil else { return }
+        // #718 (option C, big moments only): only a Bolt aimed at you, told as a short directed sequence
+        if cinema == .moments && !mine { return }
         let strength = mine ? 1.0 : 0.6
         // photosensitivity: a strike lands at least 1.4 s after the last one. A Bolt that comes just after the storm's
         // own strike holds its beat a little longer (up to 0.8 s more) to get there; any closer and the camera tells
         // it alone, with no lightning.
         var lead = director.lead(strength: strength)
         let wait = 1.4 - storm.t
+        if cinema == .moments { lead = Self.momentLead }
         let lightning = u.w.z > 0.6 && wait <= lead + 0.8
         if lightning { lead = max(lead, wait) }
-        director.cue(strength: strength, lead: lead)
+        if cinema == .moments { director.sequence(lead: lead, slow: Self.momentSlow) } else { director.cue(strength: strength, lead: lead) }
         if lightning {
             strikeDue = (clock + lead, strength)
             strikeAt = at
@@ -1088,7 +1096,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         guard let b = baseCam else { return }
         let s = shot
         let right = b.q.act([1, 0, 0]), up = b.q.act([0, 1, 0]), fwd = b.q.act([0, 0, -1])
-        let pushDist = b.dist * 0.07 * Float(s.push)
+        // option C's sequences go further in (14% of the distance) than A's beats (7%)
+        let pushDist = b.dist * (cinema == .moments ? 0.14 : 0.07) * Float(s.push)
         var p = b.p + fwd * pushDist
         p += (right * Float(s.shiftX) + up * Float(s.shiftY)) * b.dist * 0.01
         let q = b.q * simd_quatf(angle: Float(s.yaw), axis: [0, 1, 0]) * simd_quatf(angle: Float(s.pitch), axis: [1, 0, 0])
@@ -1180,6 +1189,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         // a change of suit is weather, never a cut: the new scene sweeps in from the horizon over about two seconds
         if let s = sceneSuit, s != suit {
             u.from = u.w; u.to = Self.oneHot(suit); u.a.y = 0; sceneSuit = suit
+            // #718 (option C): a change of suit is a big moment: the weather sweeps in in slow motion, the camera in close
+            if cinema == .moments && !reduced { director.sequence(lead: 0, slow: 1.1, knock: 0) }
             if suit == "bolt" { storm.next = 2.1 }
             DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         }

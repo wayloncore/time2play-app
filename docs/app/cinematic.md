@@ -220,3 +220,19 @@ Files: `docs/app/cinematic/storm/`. Same phones and tiers as option A's run.
   pattern and its sound are in the build; they need a phone (TestFlight) to judge.
 - **Still a gap:** the dice's "mid-roll" still, even stopped 0.18 s after the pour, shows the dice already down
   (today's too). The freeze for that moment needs a look in #718; the recordings show the roll in motion.
+
+## Option C, big moments only (Part 4, #718): what was built
+
+Only with `-t2p-cinema moments`. Play looks exactly as it does today (the storm included) until a moment that
+matters, which gets a short directed sequence: a held beat (the light drops, the camera starts in), then about a
+second of slow motion (the scene at 35% speed, eased in over 0.18 s and back out over the last third) with the camera
+all the way in (twice as far as option A's push), a small knock, and a long settle. No hit stop: the slow motion is
+the emphasis. `CameraDirector.sequence` in T2PCore, tested in `SequenceTests`.
+
+- **The moments:** a Bolt aimed at you in Overdraft (its strike lands at the end of the held beat and plays in slow
+  motion, one flash, no restrike); a change of suit (the new weather sweeps in in slow motion, no knock); in 10000,
+  your hot dice (every die scores) or your Farkle (the camera in while they fly, the landing in slow motion, a
+  slightly harder knock for the Farkle). Anyone else's moment, and ordinary play, get nothing.
+- **Cost:** slow motion holds the room's next step on screen for about a second longer than today; the game itself
+  isn't slowed (the room doesn't wait for the animation).
+- **Reduce Motion:** nothing at all, as in A.

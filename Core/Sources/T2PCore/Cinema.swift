@@ -117,6 +117,10 @@ public struct CameraDirector: Sendable {
         var cueAt: Double
         var hitAt: Double
         var fired = false
+        /// Option C (#718): a directed sequence's slow motion after the payoff (seconds; 0 for an ordinary beat).
+        var slow = 0.0
+        /// How much trauma the payoff adds (an ordinary beat: traumaAt1 times its strength).
+        var trauma = 0.0
     }
 
     public var tuning: Tuning
@@ -147,9 +151,24 @@ public struct CameraDirector: Sendable {
         guard !reduced else { return 0 }
         let s = min(1, max(0, strength))
         let l = max(0, lead ?? self.lead(strength: s))
-        beats.append(Beat(strength: s, cueAt: now, hitAt: now + l))
+        beats.append(Beat(strength: s, cueAt: now, hitAt: now + l, trauma: tuning.traumaAt1 * s))
         return l
     }
+
+    /// Option C, big moments only (#718): a short directed sequence. A held beat of `lead` (the light drops, the push
+    /// starts), then `slow` seconds of slow motion from the payoff (the scene at `slowScale` of real time, easing back
+    /// to full speed over its last third) while the camera holds all the way in, then a long settle. A small knock
+    /// (`knock` trauma), no hit stop: the slow motion is the emphasis. Reduce Motion: nothing.
+    @discardableResult
+    public mutating func sequence(lead: Double, slow: Double = 1.3, knock: Double = 0.35) -> Double {
+        guard !reduced else { return 0 }
+        let l = max(0, lead)
+        beats.append(Beat(strength: 1, cueAt: now, hitAt: now + l, slow: max(0, slow), trauma: knock))
+        return l
+    }
+
+    /// The scene's speed during a sequence's slow motion.
+    public static let slowScale = 0.35
 
     /// The hit stop for a moment of this strength (seconds).
     public func hitStop(strength: Double) -> Double {
@@ -161,11 +180,11 @@ public struct CameraDirector: Sendable {
         now += max(0, dt)
         for i in beats.indices where !beats[i].fired && now >= beats[i].hitAt {
             beats[i].fired = true
-            trauma.add(tuning.traumaAt1 * beats[i].strength)
+            trauma.add(beats[i].trauma)
         }
         trauma.step(dt)
         let span = tuning.hold + tuning.release + tuning.lightBack
-        beats.removeAll { $0.fired && now > $0.hitAt + span + 0.05 }
+        beats.removeAll { $0.fired && now > $0.hitAt + span + $0.slow + 0.05 }
         return shot()
     }
 
@@ -176,6 +195,16 @@ public struct CameraDirector: Sendable {
         for b in beats {
             s.push = max(s.push, pushEnvelope(b) * pushScale(b.strength))
             s.dim = max(s.dim, dimEnvelope(b) * b.strength)
+            if b.slow > 0 {
+                // slow motion from the payoff, easing back to full speed over its last third (never a jolt)
+                let after = now - b.hitAt
+                if after >= 0 && after < b.slow {
+                    // into slow motion over 0.18 s, back out over the last third
+                    let into = Self.smooth(after / 0.18), back = Self.smooth((after - b.slow * 2 / 3) / (b.slow / 3))
+                    s.timeScale = min(s.timeScale, 1 - (1 - Self.slowScale) * into * (1 - back))
+                }
+                continue
+            }
             let stop = hitStop(strength: b.strength)
             if stop > 0 && now >= b.hitAt && now < b.hitAt + stop { s.timeScale = 0 }
         }
@@ -202,12 +231,13 @@ public struct CameraDirector: Sendable {
         }
         let after = now - b.hitAt
         let from = lead <= 0 ? 0.0 : 0.7
-        if after < tuning.hold {
+        let hold = max(tuning.hold, b.slow)
+        if after < hold {
             // a quick rise for an impact with no held beat, a slow creep after one
             let rise = lead <= 0 ? min(1, after / 0.16) : after / tuning.hold
             return from + (1 - from) * Self.easeOut(rise)
         }
-        return 1 - Self.smooth((after - tuning.hold) / tuning.release)
+        return 1 - Self.smooth((after - hold) / tuning.release)
     }
 
     /// The light: drops through the held beat (slow in), then comes back over `lightBack` after the payoff.

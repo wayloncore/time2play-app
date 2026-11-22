@@ -145,7 +145,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         }
         // #716: the director runs on real time, the scene on its time scale (0 during a hit stop: the dice hold)
         var directing = false
-        if cinema == .director {
+        if cinema == .director || cinema == .moments {
             director.reduced = reduced
             shot = director.step(dt)
             dt *= shot.timeScale
@@ -539,6 +539,11 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             // #716: your roll is the director's moment; its held beat lasts until the first die hits the felt
             if cinema == .director, want?.mine == true, !row {
                 director.cue(strength: 0.75, lead: th.firstHit.min() ?? 0.4)
+            }
+            // #718 (option C, big moments only): your hot dice (every die scores) or your Farkle is told as a short
+            // directed sequence: the camera pushes in while they fly, then they land in slow motion
+            if cinema == .moments, let s = want, s.mine, !row, ids.count == 6, s.farkle || Set(ids).isSubset(of: s.scoring) {
+                director.sequence(lead: th.firstHit.min() ?? 0.4, slow: 1.4, knock: s.farkle ? 0.45 : 0.3)
             }
         }
         moment(.pour)
@@ -940,7 +945,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         let eye = target + dist * SIMD3<Float>(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw))
         // #716: the director's push-in moves the eye along its line of sight (the spots on the screen follow it); its
         // shake turns the camera on top (mostly roll) and isn't followed, so a tap still lands on the die it meant
-        let pushed = target + (eye - target) * (1 - 0.12 * Float(shot.push))
+        let pushed = target + (eye - target) * (1 - (cinema == .moments ? 0.22 : 0.12) * Float(shot.push))
         cameraNode.simdPosition = pushed
         cameraNode.simdLook(at: target)
         cameraNode.camera?.fieldOfView = CGFloat(b.fov)

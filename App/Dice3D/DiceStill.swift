@@ -90,8 +90,8 @@ struct DiceStill {
             return [(0, HotDice.View(Self.json(v)))]
         }
         if loop {
-            // #716's recordings: six of your rolls, 5 seconds apart, the second and fifth a Farkle
-            let rolls: [[Int]] = [[5, 1, 3, 3, 6, 2], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 4, 2], [6, 2, 5, 3, 3, 4], [2, 3, 4, 6, 6, 3], [5, 5, 5, 1, 2, 6]]
+            // #716's recordings: six of your rolls, 5 seconds apart, the second and fifth a Farkle, the last hot dice
+            let rolls: [[Int]] = [[5, 1, 3, 3, 6, 2], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 4, 2], [6, 2, 5, 3, 3, 4], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 5, 5]]
             var steps: [(Double, HotDice.View)] = [(0, Self.hot(state: "start", seq: 0, faces: Array(repeating: 1, count: 6)))]
             for (r, f) in rolls.enumerated() {
                 let t0 = 0.9 + 5 * Double(r), farkle = r == 1 || r == 4

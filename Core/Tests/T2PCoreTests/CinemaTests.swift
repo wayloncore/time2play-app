@@ -199,3 +199,36 @@ final class StormStrikeTests: XCTestCase {
         }
     }
 }
+
+/// #718: option C's directed sequence.
+final class SequenceTests: XCTestCase {
+    func testSlowMotionThenBackToSpeed() {
+        var d = CameraDirector()
+        XCTAssertEqual(d.sequence(lead: 0.3, slow: 1.2), 0.3)
+        let dt = 1.0 / 120
+        var shots: [(t: Double, s: DirectorShot)] = []
+        for i in 1...Int(4 / dt) { shots.append((Double(i) * dt, d.step(dt))) }
+        func at(_ t: Double) -> DirectorShot { shots.min { abs($0.t - t) < abs($1.t - t) }!.s }
+        XCTAssertEqual(at(0.2).timeScale, 1, "the held beat runs at full speed")
+        XCTAssertEqual(at(0.5).timeScale, CameraDirector.slowScale, accuracy: 1e-9, "slow motion from the payoff")
+        XCTAssertLessThan(at(0.36).timeScale, 1, "easing into it")
+        XCTAssertEqual(at(0.9).timeScale, CameraDirector.slowScale, accuracy: 1e-9)
+        XCTAssertEqual(at(1.55).timeScale, 1, accuracy: 1e-9, "back to speed when it ends")
+        XCTAssertFalse(shots.contains { $0.s.timeScale == 0 }, "no hit stop in a sequence")
+        // the speed never jumps on the way back
+        var prev = 1.0
+        for x in shots { XCTAssertLessThan(abs(x.s.timeScale - prev), 0.05, "at \(x.t)"); prev = x.s.timeScale }
+        // the camera holds all the way in through the slow motion, then settles
+        XCTAssertEqual(at(1.4).push, 1, accuracy: 0.02)
+        XCTAssertEqual(at(3.9), .calm)
+        // a small knock only
+        XCTAssertLessThan(shots.map { abs($0.s.roll) }.max()!, 0.2 * d.tuning.maxRoll)
+    }
+
+    func testReducedMotionHasNoSequence() {
+        var d = CameraDirector()
+        d.reduced = true
+        XCTAssertEqual(d.sequence(lead: 0.3), 0)
+        for _ in 0..<300 { XCTAssertEqual(d.step(1.0 / 60), .calm) }
+    }
+}
