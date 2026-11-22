@@ -239,3 +239,15 @@ yours, and nothing else. It borrows the director's camera and the storm's staged
 - Two flaws, fixed: the **vignette** darkened the dice scene's own rectangle into a black box round the tray, and on the
   table it darkened the top band where the bolt lands, so the moment's strike read *fainter* than today's. The
   vignette is gone (more contrast instead), and the moment's strike is brighter and always has its second bolt.
+
+### Option C's second Mac run (run 44991521816, Nov 22)
+
+- The black box round the dice is gone; the slow-motion bounce, the Farkle's knock and the hot dice's swell read as in
+  the first run. Every recording passed the flash check on both phones (0 general, 0 red flashes in any second), and
+  this run's recordings have sensible lengths (19 to 21 s; the first run's Overdraft ones came out 3 s and 112 s long,
+  so their per-second counts were not to be trusted).
+- Still uncertain: on the recent simulator the moment's strike, caught 0.08 s after its return stroke, reads about as
+  bright as today's, not brighter: the grade takes color out of the violet bolt. On the older simulator it's clearly
+  bigger. If Tyler picks C, the bolt should keep its color through the grade (grade the scene, not the bolt).
+- Frame rates: the table 18 fps median on the recent simulator (today's 18 in the same run), 26 on the older; the dice
+  60. Mac minutes: about 22 a run, two runs.
