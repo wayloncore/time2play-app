@@ -947,7 +947,9 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         // shake turns the camera on top (mostly roll) and isn't followed, so a tap still lands on the die it meant
         let pushed = target + (eye - target) * (1 - (cinema == .moments ? 0.22 : 0.12) * Float(shot.push))
         cameraNode.simdPosition = pushed
-        cameraNode.simdLook(at: target)
+        // world up, not the node's own: simdLook(at:) alone keeps the node's current up, so the shake's roll would
+        // build up frame after frame (#716's first run: the Farkle still tilted far past the shake's 2 degrees)
+        cameraNode.simdLook(at: target, up: [0, 1, 0], localFront: [0, 0, -1])
         cameraNode.camera?.fieldOfView = CGFloat(b.fov)
         liveCam = Table3DCamera.lookAt(eye: Self.t3(pushed), target: Self.t3(target), fovY: b.fov, width: b.w, height: b.h)
         if shot.roll != 0 || shot.yaw != 0 || shot.pitch != 0 {
