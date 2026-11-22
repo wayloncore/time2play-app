@@ -67,6 +67,19 @@ struct Table3DStill {
             if st.live {
                 // #716's recordings: the storm runs as in a game, and a Bolt is aimed at you every 5 seconds (the
                 // director's big moment; nothing extra without -t2p-cinema director)
+                if w.cinema == .moments {
+                    // #718's recordings: your Overdraft in the storm, a Change Suit to Ember, your Overdraft there (the
+                    // camera alone), a Change Suit back to the storm (it arrives with a strike), your Overdraft again
+                    let plan: [(Double, () -> Void)] = [
+                        (2.5, { w.boltHit(mine: true) }),
+                        (6.5, { w.suitMoment(); w.setSuit("ember") }),
+                        (10.5, { w.boltHit(mine: true) }),
+                        (14.0, { w.suitMoment(); w.setSuit("bolt") }),
+                        (19.0, { w.boltHit(mine: true) }),
+                    ]
+                    for (t, f) in plan { w.addTimer(c0 + t, f) }
+                    return
+                }
                 for k in 0..<8 { w.addTimer(c0 + 2.5 + 5 * Double(k)) { w.boltHit(mine: true) } }
                 return
             }
@@ -76,12 +89,16 @@ struct Table3DStill {
                 w.freezeAt = c0 + start + t
             } else if let to = st.change {
                 // the table already shows the card that changed the suit; the scene starts on the old suit and turns
-                w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.setSuit(to) }
+                w.addTimer(c0 + start) { w.setSuit(st.suit, instant: true); w.suitMoment(); w.setSuit(to) }   // #718: suitMoment is nothing without -t2p-cinema moments
                 w.freezeAt = c0 + start + 2.1 * st.mix
             } else if let t = st.strikeAt {
                 if w.cinema == .storm {
                     // #717: a staged strike; t is after its return stroke
                     w.addTimer(c0 + start) { w.strike(at: 0.3) }
+                    w.freezeAt = c0 + start + StormStrike.strokeAt + t
+                } else if w.cinema == .moments {
+                    // #718: your Overdraft's sequence; its strike starts with it and t is after the return stroke
+                    w.addTimer(c0 + start) { w.boltHit(mine: true, at: 0.3) }
                     w.freezeAt = c0 + start + StormStrike.strokeAt + t
                 } else if w.cinema == .director {
                     // #716: the director's strike is a Bolt aimed at you: its held beat, then the strike; t is after the strike

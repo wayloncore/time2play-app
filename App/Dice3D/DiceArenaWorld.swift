@@ -55,6 +55,12 @@ final class DiceArenaWorld: NSObject, SceneTicking {
     private var lights: [(light: SCNLight, base: CGFloat)] = []
     /// #717 (option B, the storm): when your dice last hit the felt (the light swells with it, then settles).
     private var swellAt: Double?
+    /// #718 (option C, big moments only): your hot dice or your Farkle gets a short sequence in slow motion, from just
+    /// before the dice reach the felt until they've bounced; any other roll plays as it does today.
+    private var moments = MomentDirector()
+    /// The roll that's a moment, which kind, and whether its sequence has started (it starts a quarter second of
+    /// scene time before the first die hits the felt).
+    private var momentRoll: (key: String, kind: MomentKind, cued: Bool)?
 
     // the scene
     private var dieNodes: [Int: SCNNode] = [:]
@@ -138,7 +144,8 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         if lastTime == nil { dt = 1.0 / 60 }
         lastTime = time
         if let f = freezeAt {
-            if clock >= f {
+            // (a hair's tolerance: under #718's slow motion the clock creeps up on the freeze time and never quite gets there)
+            if clock >= f - 1e-4 {
                 dt = 0
                 if !frozenSaid { frozenSaid = true; let cb = onFrozen; DispatchQueue.main.async { cb?() } }
             } else { dt = min(dt, f - clock) }
@@ -152,6 +159,24 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             directing = shot != .calm
             let lit = CGFloat(1 - 0.22 * shot.dim)
             for l in lights { l.light.intensity = l.base * lit }
+        }
+        if cinema == .moments {
+            moments.reduced = reduced
+            let m = moments.step(dt)
+            shot = m.camera
+            dt *= shot.timeScale
+            directing = shot != .calm || m.grade > 0
+            let lit = CGFloat(1 - 0.22 * shot.dim)
+            // the hot dice's reveal: the same warm swell as the storm's (#717), only for this moment
+            let sw = swellAt.map { max(0, exp(-(clock - $0) * 4)) } ?? 0
+            for l in lights { l.light.intensity = l.base * lit * CGFloat(1 + 0.35 * sw) }
+            if let c = cameraNode.camera {
+                let g = CGFloat(m.grade)
+                c.saturation = 1 - 0.4 * g
+                c.vignettingIntensity = 1.1 * g
+                c.vignettingPower = 1.4
+                c.bloomIntensity = 0.4 + 1.0 * g
+            }
         }
         if cinema == .storm {
             // #717: the world answers your dice landing: one warm swell of the light (a third brighter), settling over
@@ -187,7 +212,7 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         cam.projectionDirection = .vertical
         cam.fieldOfView = 32
         cam.zNear = 0.5; cam.zFar = 200
-        if cinema == .storm {
+        if cinema == .storm || cinema == .moments {
             // #717: HDR and a bloom that only takes what's brighter than white (the dice's highlights in the swell)
             cam.wantsHDR = true
             cam.wantsExposureAdaptation = false
@@ -540,6 +565,13 @@ final class DiceArenaWorld: NSObject, SceneTicking {
             if cinema == .director, want?.mine == true, !row {
                 director.cue(strength: 0.75, lead: th.firstHit.min() ?? 0.4)
             }
+            // #718: your Farkle, or hot dice (every die thrown can score), is the moment; its sequence starts as the
+            // dice come down (advance)
+            momentRoll = nil
+            if cinema == .moments, let s = want, s.mine, !row {
+                if s.farkle { momentRoll = (key, .farkle, false) }
+                else if !ids.isEmpty && ids.allSatisfy({ s.scoring.contains($0) }) { momentRoll = (key, .hotDice, false) }
+            }
         }
         moment(.pour)
     }
@@ -647,8 +679,14 @@ final class DiceArenaWorld: NSObject, SceneTicking {
                 apply(shown, to: dieNodes[id])
                 dieNodes[id]?.opacity = pose.out || p.allOut ? 1 : 0
             }
+            if cinema == .moments, let m = momentRoll, m.key == p.key, !m.cued, let first = p.th.firstHit.min(), t >= first - 0.25 {
+                momentRoll = (m.key, m.kind, true)
+                if !moments.cue(m.kind) { momentRoll = nil }
+            }
             if !p.hitSaid, let first = p.th.firstHit.min(), t >= first {
                 p.hitSaid = true
+                // #718: the dice reaching the felt is the payoff: the slow-motion hold plays their bounce
+                if cinema == .moments, momentRoll?.key == p.key { moments.payoff() }
                 if want?.mine == true { let cb = onFirstHit; DispatchQueue.main.async { cb?() } }
                 if cinema == .storm && want?.mine == true && !reduced { swellAt = now }
             }
@@ -747,6 +785,11 @@ final class DiceArenaWorld: NSObject, SceneTicking {
         guard let s = want, s.roll == key else { moment(.landed); return }
         // #716: your Farkle lands with a harder knock (no held beat: it's only known once the dice are down)
         if cinema == .director, s.mine, s.farkle, !row { director.cue(strength: 0.9, lead: 0) }
+        // #718: the moment's reveal as the dice come to rest: a Farkle a low knock, hot dice a warm swell of the light
+        if cinema == .moments, let m = momentRoll, m.key == key, m.cued {
+            if m.kind == .farkle { moments.knock(0.45) } else if !reduced { swellAt = clock }
+            momentRoll = nil
+        }
         let lit = s.farkle ? Set(ids) : s.scoring
         for id in lit {
             guard let g = glowNodes[id] else { continue }

@@ -311,3 +311,196 @@ public enum FlashCount {
         return best
     }
 }
+
+/// Option C, big moments only (#718): calm play, then a short directed sequence (1 to 2 s, in slow motion) for the
+/// moments that matter, and nothing in between. The sequence borrows from both other options, but only for the moment:
+/// the director's anticipation and push-in (Thomas and Johnston), the storm's staged strike and bloom, plus a slow-motion
+/// hold and a color grade (the world desaturates and the edges darken, so the one thing that happened carries the
+/// color). Swink: cinema answers the player, so only your moments count, and one sequence never follows another
+/// straight away (a cool-down), so the effect stays rare enough to mean something.
+public enum MomentKind: String, CaseIterable, Sendable {
+    /// Overdraft: a +2 or +4 lands on you, or you take the train (your hand overdrawn).
+    case overdraft
+    /// Overdraft: a Change Suit or +4 is played and the weather turns.
+    case suitChange
+    /// 10000: every die you threw can score (hot dice).
+    case hotDice
+    /// 10000: your roll scores nothing.
+    case farkle
+
+    /// How a sequence of this kind plays.
+    public struct Tuning: Sendable, Equatable {
+        /// The scene's speed through the hold (1 is real time).
+        public var slow: Double
+        /// How long the slow-motion hold lasts after the payoff (real seconds).
+        public var hold: Double
+        /// The longest wind-up before the payoff comes by itself (real seconds); the scene usually calls it sooner.
+        public var maxLead: Double
+        /// How far the camera pushes in at most (0 to 1 of the arena's push).
+        public var push: Double
+        /// The shake the payoff adds (trauma, 0 to 1).
+        public var trauma: Double
+        /// How much the light drops in the wind-up (0 to 1).
+        public var dim: Double
+    }
+
+    public var tuning: Tuning {
+        switch self {
+        case .overdraft: return Tuning(slow: 0.3, hold: 0.75, maxLead: 0.7, push: 1, trauma: 0.6, dim: 1)
+        case .suitChange: return Tuning(slow: 0.5, hold: 0.55, maxLead: 0.3, push: 0.55, trauma: 0, dim: 0.5)
+        case .hotDice: return Tuning(slow: 0.3, hold: 0.8, maxLead: 0.6, push: 0.9, trauma: 0, dim: 0.6)
+        case .farkle: return Tuning(slow: 0.3, hold: 0.8, maxLead: 0.6, push: 0.9, trauma: 0, dim: 0.8)
+        }
+    }
+}
+
+/// What a big moment asks of the camera and the scene this frame: the director's shot (push, light, time scale, shake)
+/// and the grade (0 is the scene as it is; 1 is the sequence's look: less color, darker edges, more bloom).
+public struct MomentShot: Equatable, Sendable {
+    public var camera = DirectorShot()
+    public var grade = 0.0
+    public init() {}
+    public static let calm = MomentShot()
+}
+
+/// Option C's director: one sequence at a time, on real time.
+///
+/// A sequence: `cue` starts the wind-up (the scene slows towards `slow`, the light drops, the push and the grade come
+/// in, about 0.3 s); the scene calls `payoff` when the moment lands (the return stroke, the dice reaching the felt),
+/// or it comes by itself after `maxLead`; the hold plays in slow motion; then the release brings the speed back
+/// (0.45 s) while the push and the grade ease out. From cue to full speed is 1 to 2 s. `knock` adds a little shake
+/// on its own (the Farkle's dice coming to rest).
+/// Reduce Motion: no slow motion, no push, no shake and no grade; the moment is a gentle dip of the light and back.
+public struct MomentDirector: Sendable {
+    public enum Phase: Equatable, Sendable { case idle, windUp, hold, release }
+
+    /// The wind-up's ease into slow motion, the release's ease out of it, and the cool-down before another sequence
+    /// can start (real seconds).
+    public var windUp = 0.3, release = 0.45, coolDown = 1.2
+    /// The push and the grade ease out this much longer than the speed does (slow out).
+    public var settle = 0.45
+    /// The shake at full trauma: smaller than the director's (#716), since the slow motion carries the weight.
+    public var maxYaw = 0.014, maxPitch = 0.01, maxRoll = 0.024, maxShift = 0.08, noiseSpeed = 9.0
+
+    public var reduced = false {
+        didSet { if reduced && phase != .idle { phase = .idle; kind = nil; trauma = Trauma(decayPerSecond: 1.6) } }
+    }
+    public private(set) var phase = Phase.idle
+    public private(set) var kind: MomentKind?
+    public private(set) var now = 0.0
+    public private(set) var trauma = Trauma(decayPerSecond: 1.6)
+    /// When the current phase began, and the last sequence ended (real seconds).
+    private var phaseAt = 0.0, endedAt = -99.0
+    /// Where the wind-up had got to when the payoff came early (so the hold starts from there, never a jump).
+    private var windUpReached = 0.0
+    /// Reduce Motion's dip of the light: when it began.
+    private var dipAt: Double?
+    private let seed: UInt32
+
+    public init(seed: UInt32 = 718) { self.seed = seed }
+
+    /// A sequence is playing (or its cool-down hasn't run out): a new cue now is dropped.
+    public var busy: Bool { phase != .idle || now - endedAt < coolDown }
+
+    /// A big moment is coming. Returns whether a sequence starts (false while another plays or cools down). With
+    /// Reduce Motion it starts only the dip of the light.
+    @discardableResult
+    public mutating func cue(_ k: MomentKind) -> Bool {
+        guard !busy else { return false }
+        if reduced {
+            if let d = dipAt, now - d < 1.2 { return false }
+            dipAt = now
+            return true
+        }
+        kind = k; phase = .windUp; phaseAt = now; windUpReached = 0
+        return true
+    }
+
+    /// The moment landed: the hold starts now (from wherever the wind-up had got to).
+    public mutating func payoff() {
+        guard phase == .windUp, let k = kind else { return }
+        windUpReached = Self.smooth((now - phaseAt) / windUp)
+        phase = .hold; phaseAt = now
+        trauma.add(k.tuning.trauma)
+    }
+
+    /// A little shake on its own (0 to 1 of trauma). Nothing with Reduce Motion.
+    public mutating func knock(_ amount: Double) {
+        guard !reduced else { return }
+        trauma.add(amount)
+    }
+
+    /// The next frame, `dt` real seconds on.
+    public mutating func step(_ dt: Double) -> MomentShot {
+        now += max(0, dt)
+        trauma.step(dt)
+        if let k = kind {
+            let t = k.tuning, inPhase = now - phaseAt
+            switch phase {
+            case .windUp where inPhase >= t.maxLead: payoff()
+            case .hold where inPhase >= t.hold: phase = .release; phaseAt = now
+            case .release where inPhase >= release + settle: phase = .idle; kind = nil; endedAt = now
+            default: break
+            }
+        }
+        return shot()
+    }
+
+    /// The shot for the director's time now.
+    public func shot() -> MomentShot {
+        var s = MomentShot()
+        if reduced {
+            if let d = dipAt {
+                // a gentle dip and back over a second (no flash: one slow change, far under WCAG's 10% a frame pair)
+                let x = now - d
+                s.camera.dim = x < 0.3 ? 0.5 * Self.smooth(x / 0.3) : 0.5 * (1 - Self.smooth((x - 0.3) / 0.7))
+            }
+            return s
+        }
+        if let k = kind {
+            let t = k.tuning, x = now - phaseAt
+            // how far into the sequence's look: up through the wind-up, held, and eased out after the speed is back
+            let look: Double
+            let speed: Double   // 0 is real time, 1 is the slow motion
+            switch phase {
+            case .windUp: look = Self.smooth(x / windUp); speed = look
+            case .hold:
+                // a payoff that came before the wind-up was done eases the rest of the way (never a jump in speed)
+                let rest = Self.smooth(x / 0.15)
+                look = windUpReached + (1 - windUpReached) * rest; speed = look
+            case .release: look = 1 - Self.smooth(x / (release + settle)); speed = 1 - Self.smooth(x / release)
+            case .idle: look = 0; speed = 0
+            }
+            s.camera.timeScale = 1 - (1 - t.slow) * speed
+            // the push: to 60% through the wind-up, creeping to all the way through the hold, easing out at the end
+            let push: Double
+            switch phase {
+            case .windUp: push = 0.6 * look
+            case .hold: push = windUpReached * 0.6 + (1 - windUpReached * 0.6) * Self.easeOut(x / max(t.hold, 0.01))
+            case .release: push = 1 - Self.smooth(x / (release + settle))
+            case .idle: push = 0
+            }
+            s.camera.push = push * t.push
+            // the light drops through the wind-up and comes back with the payoff, over a quarter second
+            switch phase {
+            case .windUp: s.camera.dim = t.dim * look
+            case .hold: s.camera.dim = t.dim * windUpReached * (1 - Self.smooth(x / 0.25))
+            default: s.camera.dim = 0
+            }
+            s.grade = look
+        }
+        let k = trauma.shake
+        if k > 0 {
+            let n = now * noiseSpeed
+            s.camera.yaw = k * maxYaw * SmoothNoise.at(n, seed: seed)
+            s.camera.pitch = k * maxPitch * SmoothNoise.at(n + 31.7, seed: seed &+ 1)
+            s.camera.roll = k * maxRoll * SmoothNoise.at(n + 63.1, seed: seed &+ 2)
+            s.camera.shiftX = k * maxShift * SmoothNoise.at(n * 0.8 + 97.3, seed: seed &+ 3)
+            s.camera.shiftY = k * maxShift * SmoothNoise.at(n * 0.8 + 129.9, seed: seed &+ 4)
+        }
+        return s
+    }
+
+    static func smooth(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
+    static func easeOut(_ x: Double) -> Double { let c = min(1, max(0, x)); return 1 - (1 - c) * (1 - c) }
+}

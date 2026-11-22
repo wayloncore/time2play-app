@@ -125,6 +125,13 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// the strike now staged is a Bolt aimed at you (its thunder is felt as well as heard).
     private var stormDark = 0.0
     private var strikeNear = false
+    /// #718 (option C, big moments only): calm play, then a short directed sequence in slow motion for your moments.
+    private var moments = MomentDirector()
+    /// The sequence's look this frame (0 to 1: less color, darker edges, more bloom).
+    private var grade = 0.0
+    /// The strike now staged is a moment's own (full strength, thunder felt), not the calm storm's far-off one; and its
+    /// return stroke hasn't landed yet (the sequence's payoff and the thunder wait for it).
+    private var momentStrike = false, strokeDue = false
     /// The director's held beat for a full strike (0 unless the director is on): a still adds it to its freeze time.
     var strikeLead: Double { cinema == .director ? director.lead(strength: 1) : 0 }
 
@@ -162,7 +169,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         if lastTime == nil { dt = 1.0 / 60 }
         lastTime = time
         if let f = freezeAt {
-            if clock >= f {
+            // (a hair's tolerance: under #718's slow motion the clock creeps up on the freeze time and never quite gets there)
+            if clock >= f - 1e-4 {
                 dt = 0
                 if !frozenSaid { frozenSaid = true; let cb = onFrozen; DispatchQueue.main.async { cb?() } }
             } else { dt = min(dt, f - clock) }
@@ -173,12 +181,19 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             shot = director.step(dt)
             dt *= shot.timeScale
         }
+        // #718: the same for a big moment's sequence (its slow motion is the time scale), real time otherwise
+        if cinema == .moments {
+            moments.reduced = reduced
+            let m = moments.step(dt)
+            shot = m.camera; grade = m.grade
+            dt *= shot.timeScale
+        }
         clock += dt
         let due = timers.filter { $0.at <= clock }
         timers.removeAll { $0.at <= clock }
         due.forEach { $0.run() }
         step(dt)
-        if cinema == .director { directCamera() }
+        if cinema == .director || cinema == .moments { directCamera() }
         uLock.lock(); uShown = u; uLock.unlock()
         frames += 1
         if let cb = onDebug, time - debugAt >= 0.5 {
@@ -195,7 +210,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         cam.projectionDirection = .vertical
         cam.fieldOfView = 60
         cam.zNear = 0.1; cam.zFar = 600
-        if cinema == .storm {
+        if cinema == .storm || cinema == .moments {
             // #717: HDR, so the bolt and the flash can be brighter than white and bloom. No exposure adaptation (the
             // picture never pumps), and a threshold over 1, so only what's past white (the bolt, the flash on the rim)
             // blooms, never the cards or the words.
@@ -1037,6 +1052,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
                 DispatchQueue.main.asyncAfter(deadline: .now() + StormStrike.strokeAt) { Thunder.shared.play(near: near) }
             }
         }
+        if cinema == .moments {
+            // #718: every strike is staged like the storm's, one return stroke and no restrike. Calm play keeps the
+            // storm far off (a third as bright, a fainter bolt, thunder only heard, quietly); a moment's own strike is
+            // the full one. The thunder and the sequence's payoff wait for the return stroke (scene time, so they keep
+            // to the slow motion).
+            storm.twice = -1
+            momentStrike = strikeDue != nil
+            storm.k = momentStrike ? 1 : 0.4
+            strokeDue = live || momentStrike
+        }
     }
 
     // MARK: the director (#716)
@@ -1046,6 +1071,21 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     /// and a shake, then a long settle. In the other scenes the camera tells it alone, with no lightning.
     /// `at` places the strike for a still. Without the director (or with Reduce Motion) it does nothing.
     func boltHit(mine: Bool, at: Double? = nil) {
+        // #718 (big moments only): a Bolt that lands on you is your Overdraft. Its sequence starts now; in the storm's
+        // scene its strike starts with it (the darkening and the stepped leader are the wind-up) as long as the last
+        // strike is far enough behind, and the return stroke is the payoff. Elsewhere the camera tells it alone and the
+        // payoff comes at the end of the wind-up. Someone else's Bolt: nothing (calm play).
+        if cinema == .moments {
+            guard mine, strikeDue == nil, moments.cue(.overdraft), !reduced else { return }
+            if u.w.z > 0.6 && storm.t >= StormStrike.minGap {
+                strikeDue = (clock, 1); strikeAt = at
+                storm.next = max(storm.next, StormStrike.minGap + 1.5)
+            } else {
+                // the camera alone: the payoff a short wind-up on (0.3 s of scene time, about 0.45 s as it slows)
+                addTimer(clock + 0.3) { [weak self] in self?.moments.payoff() }
+            }
+            return
+        }
         // #717 (the storm): the world answers a Bolt aimed at you with a strike of its own, staged and with thunder, as
         // soon as the last strike is far enough behind (up to 0.8 s later); a Bolt on someone else gets nothing more
         if cinema == .storm {
@@ -1074,6 +1114,25 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     }
     private var strikeAt: Double?
 
+    /// #718: a Change Suit or a +4 was played. Called before the table's new suit arrives: when the weather then
+    /// turns (within a second and a half), the change gets a short sequence (half speed, a gentle push and the grade,
+    /// no shake). A Change Suit that keeps the suit as it was is no moment.
+    func suitMoment() {
+        guard cinema == .moments else { return }
+        suitCueAt = clock
+    }
+    private var suitCueAt: Double?
+
+    /// The weather is turning after a Change Suit or a +4. If it turns to the storm, the storm arrives with a full
+    /// strike of its own once it has swept in (about 1.2 s of scene time on), with its thunder felt.
+    private func startSuitMoment() {
+        guard moments.cue(.suitChange), !reduced else { return }
+        if suit == "bolt" && strikeDue == nil && storm.t >= StormStrike.minGap {
+            strikeDue = (clock + 1.2, 1)
+            storm.next = max(storm.next, 1.2 + StormStrike.minGap + 1.5)
+        }
+    }
+
     /// Fires a directed strike when its held beat is over (each frame, scene clock).
     private func fireDueStrike() {
         guard let d = strikeDue, clock >= d.at else { return }
@@ -1088,7 +1147,16 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         guard let b = baseCam else { return }
         let s = shot
         let right = b.q.act([1, 0, 0]), up = b.q.act([0, 1, 0]), fwd = b.q.act([0, 0, -1])
-        let pushDist = b.dist * 0.07 * Float(s.push)
+        // #718: a moment pushes in further (10% of the distance), and its grade takes the color down and darkens the
+        // edges, with more bloom on the strike (the hand and the words are over the scene, so the grade never reaches them)
+        let pushDist = b.dist * (cinema == .moments ? 0.1 : 0.07) * Float(s.push)
+        if cinema == .moments, let c = cameraNode.camera {
+            let g = CGFloat(grade)
+            c.saturation = 1 - 0.4 * g
+            c.vignettingIntensity = 1.1 * g
+            c.vignettingPower = 1.4
+            c.bloomIntensity = 0.5 + 1.3 * g
+        }
         var p = b.p + fwd * pushDist
         p += (right * Float(s.shiftX) + up * Float(s.shiftY)) * b.dist * 0.01
         let q = b.q * simd_quatf(angle: Float(s.yaw), axis: [0, 1, 0]) * simd_quatf(angle: Float(s.pitch), axis: [1, 0, 0])
@@ -1181,6 +1249,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         if let s = sceneSuit, s != suit {
             u.from = u.w; u.to = Self.oneHot(suit); u.a.y = 0; sceneSuit = suit
             if suit == "bolt" { storm.next = 2.1 }
+            if cinema == .moments, let c = suitCueAt, clock - c < 1.5 { suitCueAt = nil; startSuitMoment() }
             DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         }
         u.a.z = reduced ? 0 : 1
@@ -1216,8 +1285,9 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             if storm.next <= 0 {
                 strike()
                 // #716: under the director the storm strikes less often (2.4 to 4.2 s): the camera does the work
+                // #718: calm play: the storm's own strikes far off, every 3.5 to 6.5 s
                 storm.next = cinema == .director ? .random(in: 2.4...4.2) : cinema == .storm ? .random(in: 2.4...4.4)
-                    : tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2)
+                    : cinema == .moments ? .random(in: 3.5...6.5) : tier == .low ? .random(in: 2...4) : .random(in: 1.4...3.2)
             }
         }
         var fl = 0.0, bi = 0.0
@@ -1226,6 +1296,17 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             // #717: the strike staged (StormStrike): darken, the stepped leader, the return stroke, the afterglow
             let sf = StormStrike.at(storm.t, restrike: max(0, storm.twice))
             fl = sf.flash; bi = sf.bolt; u.h.x = Float(sf.reveal); stormDark = sf.dark * wb
+        } else if !reduced && cinema == .moments {
+            // #718: the same staging; a far-off strike is fainter (its bolt at half, its darkening a third)
+            let sf = StormStrike.at(storm.t)
+            let near = momentStrike ? 1.0 : 0.5
+            fl = sf.flash; bi = sf.bolt * near; u.h.x = Float(sf.reveal); stormDark = sf.dark * wb * (momentStrike ? 1 : 0.35)
+            if strokeDue && storm.t >= StormStrike.strokeAt {
+                strokeDue = false
+                let mine = momentStrike
+                if mine { moments.payoff() }
+                if freezeAt == nil { DispatchQueue.main.async { Thunder.shared.play(near: mine) } }
+            }
         } else if !reduced {
             let t = storm.t
             // one flash: at its brightest at once, then a smooth fall over about a third of a second (no flicker
@@ -1238,7 +1319,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             let end = 0.6 + max(0, storm.twice)
             bi = t < end ? min(1, fl * 1.7 + 0.3 * (1 - t / end)) : 0
         }
-        u.a.w = Float(min(1.2, max(0, fl)) * wb * (cinema == .storm ? 0.85 : 0.7) * storm.k)
+        u.a.w = Float(min(1.2, max(0, fl)) * wb * (cinema == .storm || cinema == .moments ? 0.85 : 0.7) * storm.k)
         u.c.y = Float(bi * wb)
         boltNode.isHidden = u.c.y < 0.01 || boltNode.geometry == nil
         flashLight.intensity = CGFloat(u.a.w) * 1800 / .pi

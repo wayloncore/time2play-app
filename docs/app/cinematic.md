@@ -198,3 +198,34 @@ Only with `-t2p-cinema storm`. The camera never moves; the world does the work.
   1.9 s apart. The unit test models the worst case (the flash driving the whole screen black to white, every strike a
   restrike, strikes as close as allowed) and counts at most two flashes in any second. The recordings are counted too.
 - **Reduce Motion:** as today, no strikes and no flashes (the clouds' slow flicker only), and no swell on the dice.
+
+## Option C, big moments only (Part 4, #718): what was built
+
+Only with `-t2p-cinema moments`. Play is calm; a short directed sequence, in slow motion, tells the moments that are
+yours, and nothing else. It borrows the director's camera and the storm's staged strike, but only for those seconds.
+
+- **What counts (Swink: cinema answers the player).** Overdraft: your Overdraft, a +2 or +4 that lands on you or a
+  train you take; a suit change, read as a Change Suit or +4 played by anyone (a card matched by number changes the
+  weather too, but that's every other turn, so it stays as it is today). 10000: your hot dice (every die you threw can
+  score) and your Farkle. Someone else's Bolt or roll gets nothing. Both are small calls, noted for Tyler.
+- **One sequence** (`MomentDirector` in T2PCore, tested in `BigMomentsTests`): a wind-up (about 0.3 s: the scene
+  slows, the light drops, the camera starts to push in, the grade comes in), the payoff (the return stroke, the dice
+  reaching the felt), a slow-motion hold (0.3× for an Overdraft, hot dice and a Farkle, 0.5× for a suit change), then
+  the speed comes back over 0.45 s and the push and grade ease out half a second after. Cue to full speed is 1 to 2 s.
+  One at a time, with a 1.2 s cool-down, so it stays rare enough to mean something.
+- **The grade** is what makes it read as a cut to a different shot without a cut: the scene loses 40% of its color
+  and the edges darken (SCNCamera saturation and vignetting), and the bloom rises (HDR as in option B, threshold over
+  white, so only the bolt and highlights bloom). The hand, the scores and every word are drawn over the scene, so the
+  grade never reaches them.
+- **Overdraft.** In the storm, your Overdraft brings a full staged strike (option B's darkening, stepped leader and
+  return stroke, no restrike) whose leader is the wind-up and whose stroke is the payoff, with thunder felt and heard;
+  a small shake (trauma 0.6, at most about half a degree) on the stroke. In other weather the camera tells it alone.
+  Calm play: the storm's own strikes come every 3.5 to 6.5 s, a third as bright, a fainter bolt, thunder heard quietly.
+  A Change Suit to the storm sweeps in at half speed and arrives with a full strike once it's in.
+- **10000.** The sequence starts a quarter second (scene time) before your dice reach the felt, so the last of the
+  throw is in the air in slow motion; the hold plays the bounce; then, as the dice rest, a Farkle lands with a low
+  knock and hot dice with a warm swell of the light. The push follows the dice's tap spots, as the director's does.
+- **Photosensitivity.** One return stroke a strike, strikes at least 1.9 s of scene time apart (longer in real time
+  under slow motion, which only stretches a flash). No red. The recordings are counted by `scripts/flashcheck.py`.
+- **Reduce Motion:** no slow motion, push, shake, grade or strikes; your Overdraft is a gentle dip of the light and back
+  over a second (and the haptic it already has). The dice play as today.

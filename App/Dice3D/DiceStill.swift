@@ -91,7 +91,9 @@ struct DiceStill {
         }
         if loop {
             // #716's recordings: six of your rolls, 5 seconds apart, the second and fifth a Farkle
-            let rolls: [[Int]] = [[5, 1, 3, 3, 6, 2], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 4, 2], [6, 2, 5, 3, 3, 4], [2, 3, 4, 6, 6, 3], [5, 5, 5, 1, 2, 6]]
+            var rolls: [[Int]] = [[5, 1, 3, 3, 6, 2], [2, 3, 4, 6, 6, 3], [1, 1, 1, 5, 4, 2], [6, 2, 5, 3, 3, 4], [2, 3, 4, 6, 6, 3], [5, 5, 5, 1, 2, 6]]
+            // #718 (big moments only): the third and sixth rolls are hot dice, so the recording shows both of its moments
+            if CinemaStyle.from(ProcessInfo.processInfo.arguments) == .moments { rolls[2] = [1, 1, 1, 5, 5, 1]; rolls[5] = [5, 5, 5, 1, 1, 5] }
             var steps: [(Double, HotDice.View)] = [(0, Self.hot(state: "start", seq: 0, faces: Array(repeating: 1, count: 6)))]
             for (r, f) in rolls.enumerated() {
                 let t0 = 0.9 + 5 * Double(r), farkle = r == 1 || r == 4
@@ -100,7 +102,9 @@ struct DiceStill {
             }
             return steps
         }
-        let rolled: [Int?] = moment == "farkle" ? [2, 3, 4, 6, 6, 3] : [5, 1, 3, 3, 6, 2]
+        // #718: under big moments only, the mid-roll still is a hot-dice roll (an ordinary roll is no moment there)
+        let hot = CinemaStyle.from(ProcessInfo.processInfo.arguments) == .moments
+        let rolled: [Int?] = moment == "farkle" ? [2, 3, 4, 6, 6, 3] : hot ? [1, 1, 1, 5, 5, 1] : [5, 1, 3, 3, 6, 2]
         var steps: [(Double, HotDice.View)] = [
             (0, Self.hot(state: "start", seq: 0, faces: Array(repeating: 1, count: 6))),
             (0.9, Self.hot(state: "rolling", seq: 1, faces: Array(repeating: nil, count: 6))),

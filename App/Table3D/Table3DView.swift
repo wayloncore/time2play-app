@@ -407,6 +407,9 @@ struct Table3DView: View {
             case let .hit(who, _, _, _), let .tookTrain(who, _):
                 let mine = who == me
                 world.post { world.boltHit(mine: mine) }
+            // #718 (option C, big moments only): a Change Suit or a +4 turns the weather; nothing without -t2p-cinema moments
+            case let .played(_, card, _) where card.isWild:
+                world.post { world.suitMoment() }
             default: break
             }
         }

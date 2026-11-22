@@ -102,6 +102,12 @@ jobs:
             still overdraft-strike-calm 9 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 strike=0.08"
             still dice-mid-roll 9 $C -t2p-dice-still "game=hot moment=tumble after=0.18"
             still dice-farkle 10 $C -t2p-dice-still "game=hot moment=farkle after=0.15"
+            if [ "$OPT" = moments ]; then
+              # #718: its other moments: a Change Suit to the storm part way through, and the hot dice's bounce in
+              # the slow-motion hold
+              still overdraft-suit-change 9 $C -t2p-3d-still "suit=ember change=bolt mix=0.3 n=5"
+              still dice-hot-bounce 9 $C -t2p-dice-still "game=hot moment=tumble after=0.42"
+            fi
             rec overdraft 22 $C -t2p-3d-still "suit=bolt n=5 live=1"
             rec dice 22 $C -t2p-dice-still "game=hot loop=1"
             if [ "$TAG" = recent ]; then
