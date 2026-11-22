@@ -198,3 +198,25 @@ Only with `-t2p-cinema storm`. The camera never moves; the world does the work.
   1.9 s apart. The unit test models the worst case (the flash driving the whole screen black to white, every strike a
   restrike, strikes as close as allowed) and counts at most two flashes in any second. The recordings are counted too.
 - **Reduce Motion:** as today, no strikes and no flashes (the clouds' slow flicker only), and no swell on the dice.
+
+### Option B's Mac run (run 44988194213, Nov 22): what it showed
+
+Files: `docs/app/cinematic/storm/`. Same phones and tiers as option A's run.
+
+- **The staging reads.** In recent-overdraft.mp4 at about 13 s: the scene goes dark, the leader steps down, the
+  return stroke lights the sky and the glass's rim with a bloom, and the violet afterglow fades over about a second.
+  In the still (recent-overdraft-strike.jpg, 0.08 s after the stroke) the bolts glow and the rim catches the light.
+- **HDR left the colors alone.** Cards, suit colors, the pile's 7 and every label look the same as today's still;
+  nothing but the bolt and the rim blooms (the threshold is just over white).
+- **It's subtler than it sounds.** The bolt lives in the strip of sky over the far seats, partly under the header,
+  so most of the drama is the sky and the rim lighting up, not the bolt. The flash moves screen luminance by about
+  0.03 (the table is dark), far under a WCAG flash: 0 general and 0 red flashes in every recording, both phones.
+- **Frame rate: this one costs.** The simulator drew the table at 17.6 fps with HDR and bloom against 24.7 today in
+  the same run (the calm version, which never strikes, 24.9). HDR renders to a deeper buffer and bloom adds blur
+  passes every frame, strike or not, so it's a real GPU cost, and on a phone it would be battery too. If Tyler picks
+  B, HDR should be on only for the newer phones (tier high) and its cost measured on his phone with Instruments.
+  The dice held 60 on both phones.
+- **Thunder isn't in the recordings**: the simulator has no haptics and its screen recordings have no sound. The
+  pattern and its sound are in the build; they need a phone (TestFlight) to judge.
+- **Still a gap:** the dice's "mid-roll" still, even stopped 0.18 s after the pour, shows the dice already down
+  (today's too). The freeze for that moment needs a look in #718; the recordings show the roll in motion.
