@@ -168,7 +168,7 @@ final class StormStrikeTests: XCTestCase {
 
     func testRestrikeFollowsTheSameChannel() {
         let r = 0.24
-        let before = StormStrike.at(StormStrike.strokeAt + r - 0.01), after = StormStrike.at(StormStrike.strokeAt + r + 0.005)
+        let before = StormStrike.at(StormStrike.strokeAt + r - 0.01, restrike: r), after = StormStrike.at(StormStrike.strokeAt + r + 0.005, restrike: r)
         XCTAssertGreaterThan(after.bolt, before.bolt + 1)
         XCTAssertGreaterThan(after.flash, before.flash)
         XCTAssertEqual(after.reveal, 1)
