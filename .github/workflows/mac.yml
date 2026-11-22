@@ -18,6 +18,10 @@ on:
         description: "The UI tests the iPad run takes (xcodebuild -only-testing values, space-separated)"
         required: false
         default: "Time2PlayUITests/TourUITests"
+      older_only:
+        description: "Also run these UI tests on an older, smaller iPhone simulator (iPhone SE or the oldest iPhone on the image; empty skips it)"
+        required: false
+        default: ""
   push:
     branches: [main]
 permissions:
@@ -86,7 +90,8 @@ jobs:
           xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
             -destination "id=$UDID" -derivedDataPath build -resultBundlePath build/ui.xcresult \
             -parallel-testing-enabled NO $sel \
-            CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -60
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/ui-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -60
+          grep -E "^FPS " build/ui-test.log || true   # frame-rate lines a test printed (#719)
           echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: The launch screen in the built app (wayloncore/tyleralocke#562)
         if: always()
@@ -127,10 +132,40 @@ jobs:
             -parallel-testing-enabled NO $isel \
             CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
           echo "ipad_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Some tests again on an older iPhone (#719)
+        if: ${{ !cancelled() && github.event.inputs.older_only != '' }}
+        env:
+          OLDER_ONLY: ${{ github.event.inputs.older_only }}
+        run: |
+          t=$(date +%s)
+          OLD=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys,re
+          d=json.load(sys.stdin)["devices"]
+          best=None
+          for rt,devs in d.items():
+              m=re.search(r"iOS-(\d+)-(\d+)",rt)
+              if not m: continue
+              for x in devs:
+                  if not x["name"].startswith("iPhone"): continue
+                  se="SE" in x["name"]; n=re.search(r"iPhone (\d+)",x["name"])
+                  k=(0 if se else 1, int(n.group(1)) if n else 99, (int(m.group(1)),int(m.group(2))))
+                  if best is None or k<best[0]: best=(k,x["udid"],x["name"],rt)
+          print(best[1]); print(best[2],best[3],file=sys.stderr)')
+          xcrun simctl boot "$OLD"; xcrun simctl bootstatus "$OLD" -b
+          xcrun simctl status_bar "$OLD" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          set -o pipefail
+          osel=""; for o in $OLDER_ONLY; do osel="$osel -only-testing:$o"; done
+          # the older phone's shots carry "older-" (T2P_SHOT_PREFIX, read by UITests/Support.swift's shot)
+          TEST_RUNNER_T2P_SHOT_PREFIX=older- xcodebuild -project Time2Play.xcodeproj -scheme Time2Play -configuration Debug \
+            -destination "id=$OLD" -derivedDataPath build -resultBundlePath build/older.xcresult \
+            -parallel-testing-enabled NO $osel \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee build/older-test.log | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|Executed" | tail -40
+          grep -E "^FPS " build/older-test.log | sed 's/^/older: /' || true
+          echo "older_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
       - name: Why tests failed (the result bundle's failure messages)
         if: always()
         run: |
-          for b in ui ipad; do
+          for b in ui ipad older; do
             [ -d build/$b.xcresult ] || continue
             xcrun xcresulttool get test-results summary --path build/$b.xcresult --format json > summary.json 2>/dev/null || continue
             echo "== $b"
@@ -184,4 +219,4 @@ jobs:
         run: |
           total=$(( $(date +%s) - start ))
           { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
-          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} ipad=${ipad_s:-0} total=$total"
+          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} ipad=${ipad_s:-0} older=${older_s:-0} total=$total"

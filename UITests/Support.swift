@@ -17,7 +17,9 @@ extension XCTestCase {
 
     /// Saves a full-size screenshot as <name>.png in ~/t2p-shots on the Mac (the workflow prints them into its log),
     /// and attaches it to the test result too.
-    func shot(_ app: XCUIApplication, _ name: String) {
+    func shot(_ app: XCUIApplication, _ shotName: String) {
+        // a second simulator's run names its shots apart (mac.yml's older iPhone: "older-")
+        let name = (ProcessInfo.processInfo.environment["T2P_SHOT_PREFIX"] ?? "") + shotName
         let s = app.screenshot()
         let a = XCTAttachment(screenshot: s); a.name = name; a.lifetime = .keepAlways; add(a)
         let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] ?? NSTemporaryDirectory()

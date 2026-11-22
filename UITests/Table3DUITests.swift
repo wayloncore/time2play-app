@@ -18,6 +18,56 @@ final class Table3DUITests: XCTestCase {
         app.terminate()
     }
 
+    /// #719: the website's direction arrows and the brighter turn glow, at the moments Tyler compares with
+    /// time2play.live: your turn, someone else's turn, a Reverse mid-way and just after, in every element. The same
+    /// stills at the oldest phones' tier (-t2p-3d-tier low) carry "-low".
+    func testStills719() {
+        for tier in ["high", "low"] {
+            let t = tier == "low" ? "-low" : "", x = ["-t2p-3d-tier", tier]
+            still("suit=wave n=5 mine=1", "719-your-turn\(t)", x)
+            still("suit=wave n=5", "719-their-turn\(t)", x)
+            still("suit=wave n=5 reverse=0.6", "719-reverse-slowing\(t)", x)
+            still("suit=wave n=5 reverse=2.2", "719-reverse-after\(t)", x)
+        }
+        for s in ["ember", "bolt", "leaf"] { still("suit=\(s) n=5", "719-their-turn-\(s)") }
+        still("suit=leaf n=5 mine=1", "719-your-turn-leaf")
+        still("suit=wave n=10", "719-their-turn-10")
+    }
+
+    /// #719: the frame rate before and after (Tyler turned down #708's options because they dropped frames). The
+    /// same still drawn with -t2p-719-before (the comets and the ring the app had) and without, twice each in turn,
+    /// sixteen seconds apiece; prints "FPS 719 before|after …" lines for the report. A simulator's rate comes from
+    /// the Mac's GPU, so the two compare; they don't promise a phone's rate.
+    func testFrameRate719() {
+        for tier in ["high", "low"] {
+            var got: [String: [Double]] = [:]
+            for round in 0..<2 {
+                for mode in round == 0 ? ["before", "after"] : ["after", "before"] {
+                    let app = XCUIApplication()
+                    app.launchArguments = ["-t2p-3d-still", "suit=ember n=6", "-t2p-arena-debug", "-t2p-fps", "-t2p-3d-tier", tier]
+                        + (mode == "before" ? ["-t2p-719-before"] : [])
+                    app.launch()
+                    XCTAssertTrue(app.descendants(matching: .any)["od3d-ready"].waitForExistence(timeout: 90), "the still never settled")
+                    sleep(3)
+                    for _ in 0..<8 {
+                        sleep(2)
+                        let l = (try? app.descendants(matching: .any)["od3d-debug"].firstMatch.snapshot())?.label ?? ""
+                        if let r = l.range(of: "fps="), let v = Double(l[r.upperBound...].prefix { $0.isNumber || $0 == "." }), v > 0 {
+                            got[mode, default: []].append(v)
+                        }
+                    }
+                    app.terminate()
+                }
+            }
+            for mode in ["before", "after"] {
+                let v = (got[mode] ?? []).sorted()
+                let med = v.isEmpty ? 0 : v[v.count / 2]
+                print(String(format: "FPS 719 %@ %@ median %.1f lowest %.1f (%ld samples)", tier, mode, med, v.first ?? 0, v.count))
+            }
+            XCTAssertFalse((got["after"] ?? []).isEmpty, "no frame-rate samples")
+        }
+    }
+
     func testStillsEverySuit() {
         for s in ["wave", "ember", "bolt", "leaf"] { still("suit=\(s) n=5", "3d-suit-\(s)") }
         still("suit=bolt n=5 strike=0.16", "3d-bolt-strike")

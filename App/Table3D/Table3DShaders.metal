@@ -15,9 +15,9 @@ struct T3DU {
     float4 b;      // seed, turn, ground, reduced
     float4 c;      // grow (grass), bolt intensity, focal (points per unit at depth 1), max particle size (points)
     float4 d;      // particle opacity: ember, wave, bolt, leaf
-    float4 e;      // turn flow: from (rim s), span to the next seat, phase, velocity (-1 to 1)
-    float4 f;      // turn flow: color, strength
-    float4 g;      // turn flow: the arc's direction, its brightness, rim length, comet spacing
+    float4 e;      // turn flow: from (rim s), span to the next seat, phase, play's direction (1 or -1)
+    float4 f;      // turn flow: color, on (0 to 1)
+    float4 g;      // turn flow: surge, -1 for #719's "before" comparison only, rim length, spare
 };
 
 struct T3DNode {
@@ -172,11 +172,15 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
     return float4(lin(backdropTone(col)), 1.);
 }
 
-// ---------- the turn flow: light running round the rim in turn order (#496, Nov 17) ----------
-// Drawn by the glass itself (opaque, so it never depends on blending). The whole rim flows faintly in play's
-// direction; the arc from whoever is on to whoever is next is bright, and whoever is next glows. Reduce Motion: a
-// still arc that brightens toward whoever is next.
+// ---------- the turn flow: the website's arrows round the rim (#719; #520 on time2play.live) ----------
+// The same flow as time2play.live's Overdraft (src/games/overdraft3d/table.js, turnArrow), point for point: a band
+// just inside the rim (0.885 to 0.955 of the corner's radius) carries dashes every 0.62 round it, each one bright at
+// its leading edge, so the way round reads even still. The stretch from whoever is on to whoever is next is bright
+// and brightens toward them; whoever is next has a glow at their end; the rest of the rim carries faint dashes. A
+// turn passing gives a short surge. Reduce Motion: the dashes hold still. Added on top of the glass, as the website's
+// additive mesh is.
 constant float RX = 2.2, A0 = 3.2, QA = 3.4557519, PERIM = 26.6230077, SPACING = 26.6230077 / 24.;
+constant float FLOW_R0 = .885, FLOW_R1 = .955, FLOW_STEP = .62;
 
 // Where a point on the glass is round the rim (s, as Table3D.rimPoint counts it) and how far out (k: 1 is the felt's edge).
 static float2 rimSK(float2 p) {
@@ -186,30 +190,44 @@ static float2 rimSK(float2 p) {
     return x < 0. ? float2(QA + (A0 - z), -x / RX) : float2(3. * QA + 2. * A0 + (z + A0), x / RX);
 }
 
-// The flow's color and how much of it (0 to 1) at a point on the glass.
-static float4 turnFlow(float2 p, constant T3DU& u) {
+// The light the flow adds at a point on the glass (u.e: from, span to the next seat, phase, play's direction;
+// u.f: color, on; u.g.x: surge).
+static float3 turnFlow(float2 p, constant T3DU& u) {
+    if (u.f.w < .001) return float3(0.);
+    float2 sk = rimSK(p);
+    float v = (sk.y - FLOW_R0) / (FLOW_R1 - FLOW_R0);
+    if (v <= 0. || v >= 1.) return float3(0.);
+    float s = sk.x, from = u.e.x, len = u.e.y, dir = u.e.w, surge = u.g.x;
+    float across = abs(v * 2. - 1.);
+    float x = (s - from) * dir; float d = x - PERIM * floor(x / PERIM);   // how far round from the seat in turn
+    float inArc = ss(0., .25, d) * (1. - ss(len - .35, len, d));
+    float uu = fract(s / FLOW_STEP - u.e.z);                              // a dash, bright at its leading edge
+    float lead = dir > 0. ? uu : 1. - uu;
+    float dash = ss(0., .55, lead) * (1. - ss(.86, .97, lead));
+    float ramp = .35 + .65 * clamp(d / max(len, .01), 0., 1.);            // brighter towards the next seat
+    float h = (d - len) / .45; float head = exp(-h * h);                  // the next seat's end of the rim glows
+    float band = 1. - ss(.55, 1., across);
+    float a = band * (dash * (.10 + inArc * ramp * (.75 + .55 * surge)) + head * (.9 + .6 * surge)) + inArc * band * .07;
+    return u.f.rgb * a * u.f.w;
+}
+
+// #719's frame-rate comparison only (-t2p-719-before): the comets the app drew before, at the same cost they had.
+static float4 turnFlowBefore(float2 p, constant T3DU& u) {
     if (u.f.w < .001) return float4(0.);
     float2 sk = rimSK(p);
     float v = (sk.y - .96) / (1.095 - .96);
     if (v <= 0. || v >= 1.) return float4(0.);
     float s = sk.x, L = u.e.y;
-    float x = (s - u.e.x) * u.g.x; float rel = x - PERIM * floor(x / PERIM);   // past whoever is on, in the arc's direction
+    float x = (s - u.e.x) * u.e.w; float rel = x - PERIM * floor(x / PERIM);
     float inArc = ss(0., .3, rel) * (1. - ss(L - .45, L, rel));
     float across = ss(0., .3, v) * (1. - ss(.7, 1., v));
-    float dn = abs(rel - L); dn = min(dn, PERIM - dn);                         // how far from whoever is next
-    float b;
-    if (u.b.w > .5) {
-        b = inArc * u.g.y * (.40 + .70 * clamp(rel / max(L, .01), 0., 1.)) + exp(-dn * dn / .5) * 1.1 * u.g.y;
-    } else {
-        float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
-        float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
-        float comet = mix(back, fwd, vd * .5 + .5) * 1.6;                     // the bright head leads, its tail trails
-        float glow = exp(-dn * dn / .5) * (1. + .25 * sin(u.a.x * 3.4));
-        b = .14 * comet + inArc * u.g.y * (1.1 * comet + .45) + glow * u.g.y;   // faint all round, bright on the arc
-    }
+    float dn = abs(rel - L); dn = min(dn, PERIM - dn);
+    float fr = fract((s - u.e.z) / SPACING), vd = clamp(u.e.w, -1., 1.);
+    float fwd = pow(fr, 5.) * ss(1., .9, fr), back = pow(1. - fr, 5.) * ss(0., .1, fr);
+    float comet = mix(back, fwd, vd * .5 + .5) * 1.6;
+    float glow = exp(-dn * dn / .5) * (1. + .25 * sin(u.a.x * 3.4));
+    float b = .14 * comet + inArc * (1.1 * comet + .45) + glow;
     float a = clamp(b * across * u.f.w, 0., .92);
-    // a light, not a stripe of paint: a pale core of the element's color, whiter where it's brightest, so it reads
-    // on glass of the same color (ember on lava, blue on the sea)
     return float4(mix(u.f.rgb, float3(1.), .45 + .35 * clamp(b - .4, 0., 1.)), a);
 }
 
@@ -237,8 +255,8 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     // #610: a flash lights the rim (the felt's edge) in violet; the middle of the glass, under the cards, only a little
     col += float3(.5, .34, .95) * e.flash * (.12 + ss(.80, 1., ed) * .55 + ss(.95, 1., ed) * .65);
-    float4 fl = turnFlow(vW.xz, u);
-    col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35;   // and its glow on the glass round it
+    if (u.g.y < 0.) { float4 fl = turnFlowBefore(vW.xz, u); col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35; }
+    else col += turnFlow(vW.xz, u);
     return float4(lin(col), 1.);
 }
 
