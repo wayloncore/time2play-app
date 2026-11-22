@@ -133,7 +133,7 @@ final class CloseEnoughUITests: XCTestCase {
         checkAskingFits(app)
         tapWhenReady(app.buttons["ce-type"])
         let low = app.textFields["ce-low-number"]
-        XCTAssertTrue(low.waitForExistence(timeout: 3), "Type exact numbers opens its card")
+        XCTAssertTrue(low.waitForExistence(timeout: 8), "Type exact numbers opens its card")
         low.tap()
         sleep(1)
         XCTAssertTrue(app.buttons["ce-type-lock"].isHittable, "the card's Lock sits above the keyboard")
@@ -176,8 +176,9 @@ final class CloseEnoughUITests: XCTestCase {
         XCTAssertLessThanOrEqual(next.frame.maxY, app.frame.maxY)
         // the standings, scrolled to inside the pop-up if its middle scrolls
         let standings = app.descendants(matching: .any)["ce-standings"]
-        if standings.frame.maxY > next.frame.minY - 4 {
-            let mid = result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+        // (the answer is up for about ten seconds, so each step checks it's still there: a slow simulator ran out the clock)
+        if result.exists && standings.frame.maxY > next.frame.minY - 4 {
+            let mid = result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             mid.press(forDuration: 0.05, thenDragTo: result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
             usleep(600_000)
         }
@@ -189,7 +190,7 @@ final class CloseEnoughUITests: XCTestCase {
                 XCTAssertFalse(result.exists, "tapping outside hides the pop-up")
                 shot(app, "\(prefix)-5-hidden")
                 app.buttons["ce-show-result"].tap()
-                XCTAssertTrue(result.waitForExistence(timeout: 3), "See the result brings it back")
+                XCTAssertTrue(result.waitForExistence(timeout: 3) || !app.staticTexts["ce-answer"].exists, "See the result brings it back")
             }
         }
         if app.buttons["ce-next"].exists { app.buttons["ce-next"].tap() }

@@ -804,11 +804,15 @@ struct BrassCard: ViewModifier {
         content
             .background(LinearGradient(colors: [Color(hex: 0x2C2016), Color(hex: 0x1B140D), Color(hex: 0x140F0A)], startPoint: .top, endPoint: .bottom),
                         in: RoundedRectangle(cornerRadius: 16))
+            // the verdict's color down the left edge, cut to the card's rounded corners (under the rim)
+            .overlay {
+                if let edge {
+                    RoundedRectangle(cornerRadius: 16).fill(edge)
+                        .mask(HStack(spacing: 0) { Rectangle().frame(width: 6); Spacer(minLength: 0) })
+                }
+            }
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color(hex: 0x8B6A2E), lineWidth: 1.5))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Brass.brass.opacity(0.28), lineWidth: 1).padding(5))
-            .overlay(alignment: .leading) {
-                if let edge { UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16).fill(edge).frame(width: 5).padding(.vertical, 1.5).padding(.leading, 1.5) }
-            }
             .overlay(alignment: .top) { HStack { BrassScrew(size: 9); Spacer(); BrassScrew(size: 9) }.padding(.horizontal, 11).padding(.top, 11) }
             .shadow(color: .black.opacity(0.75), radius: 22, y: -2)
     }
