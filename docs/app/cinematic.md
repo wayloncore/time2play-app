@@ -116,3 +116,60 @@ Sources (checked Nov 22, 2026):
 - AHAP files: https://developer.apple.com/documentation/corehaptics/representing-haptic-patterns-in-ahap-files
 - Eiserloh, GDC 2016: https://gdcvault.com/play/1023146/Math-for-Game-Programmers-Juicing
 - Jonasson and Purho, GDC Europe 2012: https://gdcvault.com/play/1016487/
+
+## Option A, the director (Part 2, #716): what was built
+
+Only with the launch argument `-t2p-cinema director`; without it both arenas are exactly as they were. The logic is
+in T2PCore (`Cinema.swift`, tested in `CinemaTests` on the Mac run), so the other two options can reuse its pieces.
+
+- **One director, one trauma value.** `CameraDirector` runs on real time and gives each frame a shot: how far the
+  push-in has gone, how far the light has dropped, the scene's time scale (0 during a hit stop) and the shake.
+  `Trauma` follows Eiserloh: events add to it, it falls away at 1.35 a second, shake = trauma², capped at 1.
+  The shake is smooth gradient noise (11 steps a second) on roll (up to 2.1°), yaw (1.3°) and pitch (0.9°) at full
+  trauma, plus a slide of about a hundredth of the camera's distance; a full beat adds 0.8 trauma, so the most a
+  single Bolt turns the picture is about 1.3°.
+- **A beat:** a held beat of 0.34 s (anticipation) in which the table's light drops by up to a third and a slow
+  push-in starts (to 70%); the payoff with a 100 ms hit stop (the scene holds on the strike frame) and the trauma;
+  the push creeps on for 0.5 s, then eases out over 1.2 s; the light comes back over 0.22 s, never a snap.
+- **What counts as the moment (Swink: cinema answers the player).** Overdraft: a Bolt (+2 or +4) that lands, on you
+  at full strength and on someone else at 0.6. In the storm's scene the strike itself comes at the end of the held
+  beat; elsewhere the camera tells it alone. The storm's own strikes get a quiet rumble (0.4: no held beat, no hit
+  stop) and come less often (2.4 to 4.2 s). 10000: your roll, its held beat lasting until the first die hits the felt
+  (the throw is worked out ahead, so the director knows when), then a 75 ms hit stop and the shake; your Farkle
+  lands with a harder knock. Someone else's roll gets nothing.
+- **Readability.** Your hand, the scores and every word are drawn over the 3D scene, so they never move. The push is
+  7% of the camera's distance on the table (12% on the dice), and the dice's tap spots follow the push but not the
+  shake, so a tap during a shake still lands on the die it meant.
+- **Photosensitivity.** Under the director a strike is one flash (no restrike), at least 1.4 s after the last: a Bolt
+  that comes just after the storm's own strike holds its beat up to 0.8 s longer to get there, and any closer the
+  camera tells it alone. `scripts/flashcheck.py` counts flashes in every second of each recording (whole screen and
+  each quarter); the bar is at most 2 general flashes in any second and no red flashes.
+- **Reduce Motion:** no push, no shake, no hit stop, no drop in the light, and (as before) no strikes.
+
+The Mac run (`.github/workflows/cinema.yml`, a pushed commit with `[cinema director]`) puts the stills, recordings,
+frame rates and flash counts in `docs/app/cinematic/director/`.
+
+### Option A's first Mac run (run 44985878236, Nov 22): what it showed
+
+Files: `docs/app/cinematic/director/` (stills as JPEGs, 19 s recordings as MP4s, `report.txt`). Recent simulator:
+iPhone 17 Pro (iOS 26.2), tier high. Older: iPhone SE (3rd generation) (iOS 18.5), drawn at the oldest phones' tier.
+"today" files are the same moments without the director, to compare.
+
+- **It reads as intended.** The Bolt strike (recent-overdraft.mp4 at about 14.5 s): the table dims and the camera
+  pushes in, the bolt lands, the frame holds, the picture turns about a degree and settles. The still
+  (recent-overdraft-strike.jpg) against today's shows the push and the tilt. The dice (recent-dice.mp4): push-in
+  through the throw, the knock on landing, a harder one on each Farkle; the loop's six rolls all played.
+- **Readability:** your hand, the scores, the turn line and the Draw button never move (they're over the scene);
+  the pile's 7 and the seat names stay sharp at full shake in every still.
+- **Photosensitivity:** every recording passes, both phones: 0 general flashes in any second, 0 red flashes (whole
+  screen and each quarter). The strikes are small changes in screen luminance (0.02 to 0.04), well under the 10%
+  that makes a WCAG flash; a bigger, brighter flash is option B's job, and its check will matter more.
+- **Frame rate:** the simulator draws the table at 22 to 35 fps whatever the option (today's 32, the director's 24,
+  the calm version's 22: the calm one does the least, so the spread is the simulator's noise, not the effect). The
+  dice hold 60. The director adds no draw calls, nodes, lights or passes: a few sums a frame on the camera and the
+  three lights. Battery: nothing it adds runs on the GPU, so no cost beyond today's scene; only a phone (Instruments)
+  can measure it, and only Tyler's phone can run that.
+- **Gaps, to close in the comparison (#718):** "dice-mid-roll" stops 0.42 s after the pour, when the dice have
+  already landed (today's still does the same); the workflow now stops at 0.18 s, so the next run shows them in the
+  air. The 19 s Overdraft recording caught one directed strike on the recent simulator (the storm's own strikes
+  are rarer under the director, and a slow simulator stretches the beat); the older one caught six.

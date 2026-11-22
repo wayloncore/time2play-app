@@ -100,14 +100,14 @@ jobs:
               echo "recording $TAG-$name: $(grep -c FPS "$OUT/$TAG-$name.log" 2>/dev/null || echo 0) frame-rate lines"; }
             still overdraft-strike 9 $C -t2p-3d-still "suit=bolt n=5 strike=0.08"
             still overdraft-strike-calm 9 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 strike=0.08"
-            still dice-mid-roll 9 $C -t2p-dice-still "game=hot moment=tumble"
+            still dice-mid-roll 9 $C -t2p-dice-still "game=hot moment=tumble after=0.18"
             still dice-farkle 10 $C -t2p-dice-still "game=hot moment=farkle after=0.15"
             rec overdraft 22 $C -t2p-3d-still "suit=bolt n=5 live=1"
             rec dice 22 $C -t2p-dice-still "game=hot loop=1"
             if [ "$TAG" = recent ]; then
               # what the arenas do today, to compare against (no -t2p-cinema)
               still overdraft-strike-today 9 -t2p-3d-still "suit=bolt n=5 strike=0.08"
-              still dice-mid-roll-today 9 -t2p-dice-still "game=hot moment=tumble"
+              still dice-mid-roll-today 9 -t2p-dice-still "game=hot moment=tumble after=0.18"
               rec overdraft-today 22 -t2p-3d-still "suit=bolt n=5 live=1"
               rec overdraft-calm 12 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 live=1"
             fi
