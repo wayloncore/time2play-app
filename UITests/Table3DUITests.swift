@@ -59,6 +59,7 @@ final class Table3DUITests: XCTestCase {
                         }
                     }
                     app.terminate()
+                    sleep(2)   // the simulator lets go of the last launch first (Nov 22: "does not have a process ID")
                 }
             }
             for mode in ["before", "after"] {
