@@ -662,6 +662,9 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
 
     /// #719's frame-rate comparison only: -t2p-719-before draws the comets the app had before, at their cost.
     static let before719 = ProcessInfo.processInfo.arguments.contains("-t2p-719-before")
+    /// -t2p-722-before: build 87's landing (more rock, centered on the pile, so it cut into the card under it), for
+    /// the side-by-side stills only.
+    static let before722 = ProcessInfo.processInfo.arguments.contains("-t2p-722-before")
 
     /// #721's frame-rate comparison only: -t2p-721-before draws build 87's arrows (the rail straddling the glass's
     /// edge, the bigger chevrons), so one Mac run can time the border against them.
@@ -740,6 +743,8 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         /// The flight's curve to one side, its arrival speed (CardMotion.travel), and the touchdown's rock and turn.
         var bow: Float = 0, arrive: Float = 0, rock: Float = 0, kick: Float = 0
         var fade = false
+        /// #722: it lands on the pile, so no part of it ever dips below the top of the pile while it moves.
+        var onPile = false
         var onLand: (() -> Void)?, onDone: (() -> Void)?
         /// When it should be down, on the wall clock (the safety net's reference).
         var due: Double = 0
@@ -751,7 +756,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
     private func fly(_ node: SCNNode, p0: SIMD3<Float>, q0: simd_quatf, p1: SIMD3<Float>, q1: simd_quatf, dur: Float, arc: Float = 0.8,
                      spin: Float = 0, s0: Float = 1, s1: Float = 1, slide: Float = 0, settle: Float = Float(CardMotion.settleSeconds),
                      delay: Float = 0, lift: Float = Float(CardMotion.pickupSeconds), liftDir: SIMD3<Float> = [0, 1, 0],
-                     onLand: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
+                     onPile: Bool = false, onLand: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
         var f = Flight(node: node, shadow: SCNNode(geometry: SCNPlane(width: Table3D.cardW * 1.6, height: Table3D.cardH * 1.5)),
                        p0: p0, q0: q0, p1: p1, q1: q1, dur: dur, arc: arc, spin: spin, s0: s0, s1: s1, slide: slide,
                        settle: slide > 0 ? settle : 0, t: -delay)
@@ -778,12 +783,14 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             // a slight curve to one side, the way it spins
             f.bow = 0.22 * turn * min(1, dist / 4)
             if slide > 0 {
-                // it touches down a little tipped and still turning, and both die away as it settles
-                f.rock = 0.07; f.kick = 0.1 * turn
+                // it touches down a little tipped and still turning, and both die away as it settles. #722 (Tyler,
+                // Nov 22: "I don't want a stiff card, but I don't want the phasing"): less rock, a little more turn,
+                // and the rock tips it about the edge on the pile (stepFlights holds it above the pile).
+                f.rock = Self.before722 ? 0.07 : 0.05; f.kick = (Self.before722 ? 0.1 : 0.13) * turn
             }
             f.landQ = simd_quatf(angle: f.kick, axis: [0, 1, 0]) * simd_quatf(angle: f.rock, axis: f.axis) * q1
         }
-        f.onLand = onLand; f.onDone = onDone
+        f.onLand = onLand; f.onDone = onDone; f.onPile = onPile && !Self.before722
         f.due = wall + Double(delay + f.lift + f.dur + f.settle)
         node.isHidden = true
         node.renderingOrder = 6
@@ -829,17 +836,22 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
                 p += f.axis * (f.bow * 4 * h * (1 - h))
                 var q = simd_slerp(f.liftQ, f.landQ, u * u * (3 - 2 * u))
                 if f.spin != 0 { q = simd_quatf(angle: f.spin * h, axis: [0, 1, 0]) * q }
+                let sa = f.s0 * 1.05, sc = sa + (f.s1 - sa) * h
+                if f.onPile { p.y = abovePile(p, q, sc, gap: Float(CardMotion.pileClearance)) }
                 f.node.simdPosition = p; f.node.simdOrientation = q
-                let sa = f.s0 * 1.05
-                f.node.simdScale = SIMD3(repeating: sa + (f.s1 - sa) * h)
+                f.node.simdScale = SIMD3(repeating: sc)
             } else if f.t < total {
                 // the settle: it slides on, just past its spot and back, and its rock and turn die away
                 if !f.landed { f.landed = true; f.onLand?() }
                 let tt = Double(up - f.dur)
                 let x = Float(CardMotion.settle(tt, slide: Double(f.slide), speed: Double(f.speed)))
                 let g = Float(CardMotion.settleShare(tt, slide: Double(f.slide), speed: Double(f.speed)))
-                f.node.simdPosition = f.p1 + f.dir * x
-                f.node.simdOrientation = simd_quatf(angle: f.kick * g, axis: [0, 1, 0]) * simd_quatf(angle: f.rock * g, axis: f.axis) * f.q1
+                var p = f.p1 + f.dir * x
+                let q = simd_quatf(angle: f.kick * g, axis: [0, 1, 0]) * simd_quatf(angle: f.rock * g, axis: f.axis) * f.q1
+                // the gap above the pile closes as it settles, so it comes to rest on its own layer
+                if f.onPile { p.y = abovePile(p, q, f.s1, gap: Float(CardMotion.pileClearance) * min(1, max(0, g))) }
+                f.node.simdPosition = p
+                f.node.simdOrientation = q
                 f.node.simdScale = SIMD3(repeating: f.s1)
             } else {
                 if !f.landed { f.landed = true; f.onLand?() }
@@ -863,6 +875,22 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
             }
             i -= 1
         }
+    }
+
+    /// #722: the height for a card at `p`, turned `q` (scaled `s`), that keeps it wholly above the top of the pile,
+    /// `gap` clear of it. A tipped card is lifted by its lowest corner, so it rocks about the edge on the pile and never
+    /// cuts into the card under it (the two flickered in and out where they crossed). Away from the pile it's left
+    /// alone, easing in over half a unit so it never jumps.
+    private func abovePile(_ p: SIMD3<Float>, _ q: simd_quatf, _ s: Float, gap: Float) -> Float {
+        let c = pileNode.simdPosition + SIMD3<Float>(0, 0, Float(-Table3D.cardH / 2 - 0.06))
+        let d = simd_length(SIMD2<Float>(p.x - c.x, p.z - c.z))
+        let near = min(1, max(0, (Float(Table3D.cardH) * 1.2 - d) / 0.5))
+        guard near > 0 else { return p.y }
+        let top = pileNode.simdPosition.y + Float(min(pile.count, Table3D.pileCards)) * Float(Table3D.cardT) + 0.001
+        let dip = CardMotion.dip(upX: Double(q.act([1, 0, 0]).y), upY: Double(q.act([0, 1, 0]).y), upZ: Double(q.act([0, 0, 1]).y),
+                                 width: Table3D.cardW, length: Table3D.cardH, thickness: Table3D.cardT)
+        let floor = top + gap + Float(dip) * s
+        return p.y < floor ? p.y + (floor - p.y) * near : p.y
     }
 
     private func pileTarget(_ k: Int) -> (p: SIMD3<Float>, q: simd_quatf) {
@@ -893,7 +921,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         let q0 = yaw(Float(atan2(s.nx, s.nz))) * simd_quatf(angle: 0.3, axis: [1, 0, 0]) * Self.faceDown
         if shownCounts.indices.contains(i) { shownCounts[i] = max(0, shownCounts[i] - 1); fanAll() }
         fly(n, p0: seatHandPoint(i), q0: q0, p1: tg.p, q1: tg.q, dur: 0.62, arc: 1.0, spin: (Bool.random() ? -1 : 1) * .random(in: 2.2...4.2),
-            s0: Float(Table3D.handScale), s1: 1, slide: 0.16,
+            s0: Float(Table3D.handScale), s1: 1, slide: 0.16, onPile: true,
             onLand: { DispatchQueue.main.async { Haptics.play() } },
             onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
     }
@@ -919,7 +947,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         flyingK.insert(k); syncPile()
         let h = handPoint(l, x: x, y: y, cardPoints: cardPoints)
         fly(n, p0: h.p, q0: facingCamera(roll: Float(roll * .pi / 180)), p1: tg.p, q1: tg.q, dur: 0.7, arc: 0.9,
-            s0: h.s, slide: 0.2, liftDir: cameraUp,
+            s0: h.s, slide: 0.2, liftDir: cameraUp, onPile: true,
             onDone: { [weak self] in self?.landed(k, art, n, haptic: false) })
     }
 
@@ -1076,15 +1104,20 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
         rimLine?.transparency = CGFloat(0.55 + 0.45 * u.b.y)
     }
 
+    /// How long a change of suit takes, in seconds (#723: was 2.1, and 2.6 under Reduce Motion).
+    static let sceneChange = 0.5
+
     private func applyElement(_ dt: Double) {
-        // a change of suit is weather, never a cut: the new scene sweeps in from the horizon over about two seconds
+        // a change of suit is weather, never a cut: the new scene sweeps in from the horizon over half a second
+        // (#723, Tyler, Nov 22: 2.1 s was too slow to see a scene before the next change). Reduce Motion: a 0.5 s
+        // crossfade. A change mid-sweep carries on from what's on screen.
         if let s = sceneSuit, s != suit {
             u.from = u.w; u.to = Self.oneHot(suit); u.a.y = 0; sceneSuit = suit
-            if suit == "bolt" { storm.next = 2.1 }
+            if suit == "bolt" { storm.next = Self.sceneChange }
             DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         }
         u.a.z = reduced ? 0 : 1
-        if u.a.y < 1 { u.a.y = min(1, u.a.y + Float(dt / (reduced ? 2.6 : 2.1))) }
+        if u.a.y < 1 { u.a.y = min(1, u.a.y + Float(dt / Self.sceneChange)) }
         let m = u.a.y * u.a.y * (3 - 2 * u.a.y)
         u.w = u.from + (u.to - u.from) * m
         var acc = [SIMD3<Float>](repeating: .zero, count: 4)

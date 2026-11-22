@@ -55,4 +55,19 @@ final class CardMotionTests: XCTestCase {
         XCTAssertEqual(v, speed, accuracy: speed * 0.01, "the flight touches down at the speed the slide starts with")
         XCTAssertEqual(CardMotion.arrive(speed: 1, distance: 0, seconds: 1), 0)
     }
+    /// #722: a card rocking as it lands is held above the pile by its lowest corner, so it never cuts into the card
+    /// under it. Flat, it sits half its thickness above its center; tipped, its edge drops by the tip.
+    func testATippedCardIsHeldAboveThePile() {
+        let w = Table3D.cardW, h = Table3D.cardH, t = Table3D.cardT
+        XCTAssertEqual(CardMotion.dip(upX: 0, upY: 1, upZ: 0, width: w, length: h, thickness: t), t / 2, accuracy: 1e-9)
+        // rocked 0.05 rad about the card's width: its far ends drop by sin(0.05) × half its length
+        let a = 0.05
+        let d = CardMotion.dip(upX: 0, upY: cos(a), upZ: sin(a), width: w, length: h, thickness: t)
+        XCTAssertEqual(d, sin(a) * h / 2 + cos(a) * t / 2, accuracy: 1e-9)
+        XCTAssertGreaterThan(d - t / 2, t * 3, "the old way (center on the pile) dipped several card thicknesses into it")
+        // either way it tips, the same
+        XCTAssertEqual(CardMotion.dip(upX: 0, upY: cos(a), upZ: -sin(a), width: w, length: h, thickness: t), d, accuracy: 1e-12)
+        XCTAssertGreaterThan(CardMotion.pileClearance, 0)
+        XCTAssertLessThan(CardMotion.pileClearance, t, "the gap is less than a card's thickness, so it can't be seen")
+    }
 }

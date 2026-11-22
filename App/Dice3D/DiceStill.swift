@@ -5,7 +5,8 @@ import T2PCore
 /// the real game screen, the scene stopped at an exact moment, so a roll mid-tumble, the dice settled, two kept and
 /// a Farkle are shot the same way every run. UI tests launch the app with
 ///   -t2p-dice-still "game=hot moment=tumble"     (game: hot or rollcall; moment: tumble, settled, kept, farkle, over;
-///                                                  Roll Call also takes before: the turn before its first roll)
+///                                                  Roll Call also takes before: the turn before its first roll,
+///                                                  and kept4: four held, #724)
 /// Roll Call (Yacht Dice) has no arena since Nov 20: its still is the in-place board, a tumble stopped part way
 /// (YachtTumble.frozenAt), and "yacht-ready" says when it's there.
 /// ("over" is the end of the game: the painted winner screen, with the tip jar's quiet line when there are tips, #598)
@@ -128,6 +129,8 @@ struct DiceStill {
         if moment == "before" { return steps }
         steps.append((0.9, Self.rollCall(rolls: 1, faces: faces, held: Array(repeating: false, count: 5))))
         if moment == "kept" { steps.append((2.4, Self.rollCall(rolls: 1, faces: faces, held: [true, true, false, false, false]))) }
+        // #724: four held, for the gunmetal in the held dice's gold
+        if moment == "kept4" { steps.append((2.4, Self.rollCall(rolls: 1, faces: faces, held: [true, true, true, true, false]))) }
         return steps
     }
 
@@ -136,7 +139,7 @@ struct DiceStill {
         switch moment {
         case "before", "over": return 0.8
         case "tumble": return 1.4
-        case "kept": return 3.4
+        case "kept", "kept4": return 3.4
         default: return 2.4
         }
     }
