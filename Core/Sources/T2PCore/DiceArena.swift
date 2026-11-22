@@ -144,13 +144,18 @@ public enum DiceArena {
         return p < 0.5 ? 2 * p * p : 1 - pow(-2 * p + 2, 2) / 2
     }
 
-    /// Where the camera eases in to after your roll lands: the point it looks at and how far back it sits (a share
-    /// of the fitted distance, 1 being the fitted view). `base` is the fitted camera, `dice` the dice that just
-    /// landed (their centers), `top` the band of words over the top of the view.
-    /// A phone (a view taller than wide) gets the nearest view where the dice read at least 44 points (50 when they
-    /// lie close together) that still shows the side rails where the dice are, keeps every die clear of the words at
-    /// the top and the bottom edge, and keeps the whole keep row in view (a tapped die goes there). A wider view gets
-    /// the website's slight move: in to 82 to 90% of the distance, looking a little toward the dice.
+    /// #706 (Tyler, Nov 21: "try to increase the zoom on the dice animation as well"): how much bigger a phone's
+    /// eased-in dice read than build 45's (44 to 50 points), so the roll lands closer.
+    public static let rollCloser = 1.4
+
+    /// Where the camera eases in to after your roll: the point it looks at and how far back it sits (a share of the
+    /// fitted distance, 1 being the fitted view). `base` is the fitted camera, `dice` where the dice come to rest
+    /// (their centers), `top` the band of words over the top of the view.
+    /// A phone (anything under 600 points wide, so a short arena under Larger Text counts too) gets the nearest view
+    /// where the dice read at least 62 to 70 points (more when they lie close together), with the dice centered in the
+    /// room under the words, every die clear of the words and the edges, and the whole keep row in view (a tapped die
+    /// goes there). Because the target is a size on screen, a shorter arena zooms in further, so the dice read about
+    /// the same either way. A wider view (an iPad) gets the website's slight move: in to 82 to 90% of the distance.
     public static func easeIn(camera base: Table3DCamera, tray: DiceTray, dice: [T3Vec], slots: Int, top: Double) -> (look: T3Vec, k: Double) {
         let home = tray.target
         guard !dice.isEmpty else { return (home, 1) }
@@ -166,11 +171,14 @@ public enum DiceArena {
         func cam(_ look: T3Vec, _ k: Double) -> Table3DCamera {
             Table3DCamera.lookAt(eye: look + dir * (dist * k), target: look, fovY: base.fovY, width: w, height: h)
         }
-        // every die clear of the words and the bottom edge, and the keep row in view
+        // every die wholly clear of the words and the edges (its center at least its drawn half, turned, plus a
+        // little, from each), and the keep row in view
         func clear(_ cm: Table3DCamera) -> Bool {
             for p in dice {
                 let a = cm.project(p)
-                if a.y < top + 20 || a.y > h - 20 || a.x < 10 || a.x > w - 10 { return false }
+                let e = cm.project(p + T3Vec(0.5, 0, 0)), f = cm.project(p - T3Vec(0.5, 0, 0))
+                let half = max(10, ((e.x - f.x) * (e.x - f.x) + (e.y - f.y) * (e.y - f.y)).squareRoot() * 0.72 + 6)
+                if a.y < top + max(20, half) || a.y > h - half || a.x < half || a.x > w - half { return false }
             }
             for p in keep {
                 let a = cm.project(p)
@@ -178,7 +186,7 @@ public enum DiceArena {
             }
             return true
         }
-        if w / h >= 0.8 {
+        if w >= 600 {
             // a slight move: close together, in to about 82% of the distance; spread wide, only to about 90%
             let look = T3Vec(home.x + (c.x - home.x) * 0.55, home.y, home.z + (c.z - home.z) * 0.55)
             var k = min(0.9, max(0.82, 0.74 + spread / min(2 * tray.x, tray.zFront - tray.zBack) * 0.4))
@@ -186,30 +194,41 @@ public enum DiceArena {
             return k >= 1 ? (home, 1) : (look, k)
         }
         let wide = min(1, max(0, (spread - 2) / 3))
-        let want = 50 + (44 - 50) * wide
-        let look = T3Vec(home.x, home.y, min(tray.zFront - 1, max(tray.zBack + 2, c.z)))
-        let nearZ = min(tray.zFront, (dice.map(\.z).max() ?? 0) + 1.5)
-        func size(_ k: Double) -> Double? {
-            let cm = cam(look, k)
-            // the rails at the dice's near end, where the tray is widest on screen
-            let l = cm.project(T3Vec(-tray.x - 0.2, tray.rimH * 0.6, nearZ)), r = cm.project(T3Vec(tray.x + 0.2, tray.rimH * 0.6, nearZ))
-            if l.x < 0 || r.x > w || !clear(cm) { return nil }
-            var s = 0.0
-            for p in dice {
-                let e = cm.project(p + T3Vec(0.5, 0, 0)), f = cm.project(p - T3Vec(0.5, 0, 0))
-                s += ((e.x - f.x) * (e.x - f.x) + (e.y - f.y) * (e.y - f.y)).squareRoot() / Double(dice.count)
+        let want = (50 + (44 - 50) * wide) * rollCloser
+        let mid = T3Vec(c.x, half, c.z)
+        // the dice's middle on the middle of the room under the words (half way toward them across the tray)
+        func aim(_ k: Double) -> T3Vec {
+            var look = T3Vec(home.x + (c.x - home.x) * 0.5, home.y, c.z)
+            for _ in 0..<6 {
+                let cm = cam(look, k)
+                let ppu = cm.pointsPerUnit(at: look)
+                guard ppu > 0 else { break }
+                let dy = cm.project(mid).y - (top + h) / 2
+                look.z = min(tray.zFront + 0.5, max(tray.zBack + 1, look.z + dy / ppu * 0.8))
             }
-            return s
+            return look
         }
-        var best = 1.0
+        var best: (look: T3Vec, k: Double) = (home, 1)
         var k = 1.0
-        while k >= 0.5 {
-            guard let s = size(k) else { break }
-            best = k
-            if s >= want { break }
+        while k >= 0.3 {
+            let look = aim(k), cm = cam(look, k)
+            guard clear(cm) else { break }
+            best = (look, k)
+            if diceSize(cm, dice) >= want { break }
             k -= 0.01
         }
-        return best >= 1 ? (home, 1) : (look, best)
+        return best.k >= 1 ? (home, 1) : best
+    }
+
+    /// How big the dice read on the screen (points across, on average) for a camera: the tests compare views with it.
+    public static func diceSize(_ cm: Table3DCamera, _ dice: [T3Vec]) -> Double {
+        guard !dice.isEmpty else { return 0 }
+        var s = 0.0
+        for p in dice {
+            let e = cm.project(p + T3Vec(0.5, 0, 0)), f = cm.project(p - T3Vec(0.5, 0, 0))
+            s += ((e.x - f.x) * (e.x - f.x) + (e.y - f.y) * (e.y - f.y)).squareRoot() / Double(dice.count)
+        }
+        return s
     }
 }
 

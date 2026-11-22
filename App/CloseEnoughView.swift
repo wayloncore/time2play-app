@@ -16,15 +16,41 @@ struct CloseEnoughView: View {
     @State private var lockLines: [String] = []
     @State private var landed = true          // the answer's marker has dropped onto the scale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// #535: the 3D board, unless You → "Flat Close Enough board" is on
-    @AppStorage(Boards3D.flatCloseEnoughKey) private var flatBoard = false
-    private var board3D: Bool { Boards3D.closeEnough3D(flat: flatBoard) }
+    /// #707: the website's look, unless You → "3D Close Enough board" is on (then #535's 3D board)
+    @AppStorage(Boards3D.closeEnough3DKey) private var threeD = false
+    private var board3D: Bool { Boards3D.playerCloseEnough3D(on: threeD) }
 
     private var me: String { view.common.meId }
     private func name(_ p: ScorePlayer) -> String { p.id == me ? "You" : RoomPlayer.stripBot(p.name) }
     private var lockedIds: Set<String> { Set(view.players.filter { $0.lockedIn }.map(\.id)) }
 
     var body: some View {
+        if board3D { boardLook } else { webLook }
+    }
+
+    /// #707: the website's screens (CloseEnoughWeb.swift), with this view's state and moments (haptics, the answer
+    /// landing, VoiceOver's announcement) kept.
+    @ViewBuilder private var webLook: some View {
+        ZStack {
+            Web.background
+            if view.common.phase == "done" {
+                CloseEnoughWebOver(room: room, view: view)
+            } else if let q = view.question {
+                CloseEnoughWebGame(room: room, view: view, q: q, onLeave: onLeave, lo: $lo, hi: $hi, landed: landed)
+                    .onAppear { prepare(q) }
+                    .onChange(of: q.n) { _, _ in prepare(q) }
+                    .onChange(of: q.stage) { _, stage in if stage == "reveal" { revealed(q) } }
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .overlay(alignment: .topLeading) {
+            // for UI tests: the website's look is on
+            Text("web").font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("ce-web").allowsHitTesting(false)
+        }
+    }
+
+    private var boardLook: some View {
         VStack(spacing: 0) {
             TableTopBar(game: room.game, code: room.code, line: topLine, onLeave: onLeave, owner: room.isOwner, room: room)
             if view.common.phase == "done" {

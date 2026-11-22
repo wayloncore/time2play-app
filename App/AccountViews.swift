@@ -194,6 +194,7 @@ struct YouView: View {
                 AppIconSection()
                 IntroSection()   // #562
 
+                CinemaTestSection()      // #708 options test (branch only)
                 BoardSettingsSection()   // #535
 
                 TipJarSection()   // #598: only when the App Store has the tips

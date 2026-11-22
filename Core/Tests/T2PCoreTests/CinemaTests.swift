@@ -232,3 +232,12 @@ final class SequenceTests: XCTestCase {
         for _ in 0..<300 { XCTAssertEqual(d.step(1.0 / 60), .calm) }
     }
 }
+
+final class CinemaSettingTests: XCTestCase {
+    func testLaunchArgumentWinsThenTheSavedPickThenToday() {
+        XCTAssertEqual(CinemaStyle.current(["app", "-t2p-cinema", "storm"], saved: "director"), .storm)
+        XCTAssertEqual(CinemaStyle.current(["app"], saved: "moments"), .moments)
+        XCTAssertEqual(CinemaStyle.current(["app"], saved: nil), .off)
+        XCTAssertEqual(CinemaStyle.current(["app"], saved: "nonsense"), .off)
+    }
+}

@@ -113,7 +113,7 @@ final class Table3DWorld: NSObject, SCNSceneRendererDelegate, SceneTicking {
 
     // #716, option A of #708 (the director): the camera tells the big moment. Only with -t2p-cinema director; without
     // it every line below leaves the table exactly as it was.
-    let cinema = CinemaStyle.from(ProcessInfo.processInfo.arguments)
+    let cinema = CinemaStyle.current(ProcessInfo.processInfo.arguments, saved: UserDefaults.standard.string(forKey: CinemaStyle.settingKey))
     private(set) var director = CameraDirector()
     private var shot = DirectorShot.calm
     /// The fitted camera (setLayout), which the director's push and shake sit on top of.

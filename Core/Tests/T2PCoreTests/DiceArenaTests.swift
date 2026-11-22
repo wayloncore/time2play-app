@@ -171,10 +171,10 @@ final class DiceArenaTests: XCTestCase {
                 let th = DiceSim.run(count: 1 + seed % 6, seed: UInt32(seed) &* 7919)
                 let dice = th.rest.map(\.p)
                 let e = DiceArena.easeIn(camera: base, tray: .classic, dice: dice, slots: 6, top: 96)
-                XCTAssertGreaterThanOrEqual(e.k, 0.5, "\(w)x\(h) seed \(seed)")
+                XCTAssertGreaterThanOrEqual(e.k, 0.3, "\(w)x\(h) seed \(seed)")
                 XCTAssertLessThanOrEqual(e.k, 1)
                 if e.k < 1 { moved += 1 }
-                if w / h >= 0.8 && e.k < 1 { XCTAssertGreaterThanOrEqual(e.k, 0.82, "a wide view only moves a little") }
+                if w >= 600 && e.k < 1 { XCTAssertGreaterThanOrEqual(e.k, 0.82, "a wide view only moves a little") }
                 let off = base.eye - DiceArena.target(.classic)
                 let cam = Table3DCamera.lookAt(eye: e.look + off * e.k, target: e.look, fovY: base.fovY, width: w, height: h)
                 for p in dice {
@@ -190,6 +190,37 @@ final class DiceArenaTests: XCTestCase {
         }
         let none = DiceArena.easeIn(camera: DiceArena.camera(width: 402, height: 520, top: 96), tray: .classic, dice: [], slots: 6, top: 96)
         XCTAssertEqual(none.k, 1, "no dice: the whole tray")
+    }
+
+    /// #706 (Tyler: "increase the zoom on the dice animation as well"): a phone's roll lands closer than the fitted
+    /// view, and a shorter arena (Larger Text takes more of the screen) is still a phone, not the iPad's slight move,
+    /// so the dice read about the same size either way; every die and the whole keep row stay in view.
+    func testTheRollLandsCloserAndAShortArenaZoomsInMore() {
+        func eased(_ w: Double, _ h: Double) -> (fitted: Double, eased: Double) {
+            let base = DiceArena.camera(width: w, height: h, top: 96)
+            let off = base.eye - DiceArena.target(.classic)
+            var fitted = 0.0, near = 0.0
+            for seed in 1...16 {
+                let dice = DiceSim.run(count: 1 + seed % 6, seed: UInt32(seed) &* 7919).rest.map(\.p)
+                let e = DiceArena.easeIn(camera: base, tray: .classic, dice: dice, slots: 6, top: 96)
+                let cam = Table3DCamera.lookAt(eye: e.look + off * e.k, target: e.look, fovY: base.fovY, width: w, height: h)
+                for p in dice {
+                    let s = cam.project(p)
+                    XCTAssertTrue(s.y > 96 && s.y < h && s.x > 0 && s.x < w, "\(w)x\(h) seed \(seed): a die at \(s)")
+                }
+                for i in 0..<6 {
+                    let s = cam.project(DiceArena.keepSpot(i, of: 6))
+                    XCTAssertTrue(s.y > 96 && s.y < h && s.x > 0 && s.x < w, "\(w)x\(h) seed \(seed): keep slot \(i) at \(s)")
+                }
+                fitted += DiceArena.diceSize(base, dice) / 16
+                near += DiceArena.diceSize(cam, dice) / 16
+            }
+            return (fitted, near)
+        }
+        let roomy = eased(402, 520), short = eased(402, 440)
+        XCTAssertGreaterThan(roomy.eased, roomy.fitted * 1.2, "the roll lands closer: \(roomy)")
+        XCTAssertGreaterThan(short.eased, short.fitted * 1.2, "a short arena lands closer too: \(short)")
+        XCTAssertGreaterThan(short.eased, roomy.eased * 0.8, "so the dice read about the same either way: \(short) vs \(roomy)")
     }
 
     private func hot(_ turn: String) throws -> HotDice.Turn {

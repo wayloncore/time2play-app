@@ -9,15 +9,15 @@ final class Dice3DUITests: XCTestCase {
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad-" : "" }
 
     @discardableResult
-    private func still(_ cfg: String, _ name: String, check: (XCUIApplication) -> Void = { _ in }) -> XCUIApplication {
+    private func still(_ cfg: String, _ name: String, extra: [String] = [], check: (XCUIApplication) -> Void = { _ in }) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-t2p-dice-still", cfg]
+        app.launchArguments = ["-t2p-dice-still", cfg] + extra
         app.launch()
         // a slow simulator (the iPad) can time out on a snapshot while the scene starts: let it start first
         sleep(UIDevice.current.userInterfaceIdiom == .pad ? 6 : 1)
         XCTAssertTrue(app.descendants(matching: .any)["dice3d-ready"].waitForExistence(timeout: 60), "\(name): the still never stopped")
         usleep(300_000)
-        shot(app, name.hasPrefix("561-") ? name : "521-\(device)\(name)")
+        shot(app, name.hasPrefix("561-") || name.hasPrefix("706-") ? name : "521-\(device)\(name)")
         XCTAssertFalse(app.staticTexts["SCORES"].exists, "\(name): no SCORES labels on the dice")
         check(app)
         app.terminate()
@@ -57,6 +57,34 @@ final class Dice3DUITests: XCTestCase {
             XCTAssertTrue(app.buttons["dice-reset-view"].exists, "a moved view offers its reset")
         }
         // Yacht Dice (Roll Call) has no arena since Nov 20: its stills are in YachtDiceUITests
+    }
+
+    /// #706 (Tyler: "increase the zoom on the dice animation as well"): your roll closes in while the dice tumble and
+    /// settle, at the default text size and at a large accessibility size (AX3), and Reduce Motion gets the closer
+    /// framing with no ease. Shot mid-roll and settled so they can be compared.
+    func testRollCloseUp() {
+        let ax3 = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+        for (tag, extra) in [("default", [String]()), ("ax3", ax3)] {
+            if device.isEmpty { still("game=hot moment=tumble after=0.9", "706-\(device)\(tag)-1-mid-roll", extra: extra) }
+            still("game=hot moment=settled", "706-\(device)\(tag)-2-settled", extra: extra) { app in
+                XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "\(tag): your roll landed close up")
+                for i in 0..<6 {
+                    let die = app.buttons["die-\(i)"]
+                    // the die's button is a little bigger than the die: its middle half must be on screen
+                    let f = die.frame.insetBy(dx: die.frame.width / 4, dy: die.frame.height / 4)
+                    XCTAssertTrue(die.exists && app.frame.contains(f), "\(tag): die \(i) is wholly on screen at \(die.frame)")
+                }
+                let words = app.descendants(matching: .any)["dice-status"].firstMatch
+                if words.exists {
+                    for i in 0..<6 where app.buttons["die-\(i)"].frame.midY < words.frame.maxY - 4 {
+                        XCTFail("\(tag): die \(i) is under the words (\(app.buttons["die-\(i)"].frame) vs \(words.frame))")
+                    }
+                }
+            }
+        }
+        still("game=hot moment=settled", "706-\(device)reduce-motion-settled", extra: ["-t2p-reduce-motion"]) { app in
+            XCTAssertEqual(app.staticTexts["dice3d-camera"].label, "eased", "Reduce Motion: the closer framing, no ease")
+        }
     }
 
     /// Hot Dice offline against Rex with the 3D dice: roll, keep a scoring die (it goes to the keep row), put it back,

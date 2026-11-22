@@ -17,6 +17,16 @@ public enum CinemaStyle: String, CaseIterable, Sendable {
         guard let i = args.firstIndex(of: "-t2p-cinema"), i + 1 < args.count else { return .off }
         return CinemaStyle(rawValue: args[i + 1]) ?? .off
     }
+
+    /// Where You's "Cinematic test" picker keeps Tyler's choice (a TestFlight build from the options branch only,
+    /// so he can feel each option on his phone before picking; Nov 22).
+    public static let settingKey = "t2p.cinemaTest"
+
+    /// The style for a new arena: the launch argument wins (the Mac runs), then You's picker, else today's.
+    public static func current(_ args: [String], saved: String?) -> CinemaStyle {
+        if args.contains("-t2p-cinema") { return from(args) }
+        return saved.flatMap(CinemaStyle.init(rawValue:)) ?? .off
+    }
 }
 
 /// Squirrel Eiserloh's trauma (GDC 2016, "Juicing your cameras with math"): one number from 0 to 1 that events add to
