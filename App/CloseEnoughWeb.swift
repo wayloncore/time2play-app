@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import T2PCore
 
 /// #707 (Tyler, Nov 21: "make Close Enough actually how it looks on the website"; "It looks nothing like the website
@@ -17,11 +18,31 @@ enum Web {
     static let accent = Color(hex: 0xFFCF4A), accentInk = Color(hex: 0x1D1600)
     static let good = Color(hex: 0x7FD68B), miss = Color(hex: 0xFF9C86)
 
-    /// The website's type: its sizes in points, grown with the reader's text size like the text style given (up to
-    /// xxxLarge, the cap the screen sets). A font name that isn't installed falls back to the system font, which is
-    /// what the website uses (system-ui).
+    /// The website's type: its sizes and weights in points, grown with the reader's text size like the text style
+    /// given, up to xxxLarge (the cap the tables use). (A custom font name falling back to the system font kept the
+    /// size but dropped the weight: the first Mac run's question read regular, the website's is 800.)
     static func font(_ size: CGFloat, _ weight: Font.Weight, _ style: Font.TextStyle = .body) -> Font {
-        Font.custom("system-ui", size: size, relativeTo: style).weight(weight)
+        let now = UIApplication.shared.preferredContentSizeCategory
+        let capped: UIContentSizeCategory = now > .extraExtraExtraLarge ? .extraExtraExtraLarge : now
+        let traits = UITraitCollection(preferredContentSizeCategory: capped == .unspecified ? .large : capped)
+        let scaled = UIFontMetrics(forTextStyle: uiStyle(style)).scaledValue(for: size, compatibleWith: traits)
+        return .system(size: scaled, weight: weight)
+    }
+
+    private static func uiStyle(_ s: Font.TextStyle) -> UIFont.TextStyle {
+        switch s {
+        case .largeTitle: return .largeTitle
+        case .title: return .title1
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .subheadline: return .subheadline
+        case .callout: return .callout
+        case .footnote: return .footnote
+        case .caption: return .caption1
+        case .caption2: return .caption2
+        default: return .body
+        }
     }
 
     /// The page's background: a soft light high in the middle, darker toward the edges.
@@ -229,6 +250,8 @@ struct CloseEnoughWebGame: View {
     @Binding var hi: Double
     let landed: Bool
     @Environment(\.gameDialogs) private var dialogs
+    /// read so a text-size change redraws the screen (Web.font reads the size itself)
+    @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var loText = ""
     @State private var hiText = ""
@@ -459,6 +482,7 @@ struct WebClock: View {
 /// answer, then Play again and Change seats (the owner) or who starts the next one. Back to Library is the app's own.
 struct CloseEnoughWebOver: View {
     @ObservedObject var room: RoomModel
+    @Environment(\.dynamicTypeSize) private var textSize
     @EnvironmentObject var app: AppModel
     let view: CloseEnough.View
     var body: some View {
