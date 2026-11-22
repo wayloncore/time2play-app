@@ -24,8 +24,7 @@ final class CloseEnoughUITests: XCTestCase {
             let lock = app.buttons["lock-in"]
             XCTAssertTrue(lock.waitForExistence(timeout: 30), "question \(n) is asked")
             if n == 1 {
-                app.sliders["ce-low"].adjust(toNormalizedSliderPosition: 0.35)
-                app.sliders["ce-high"].adjust(toNormalizedSliderPosition: 0.65)
+                setRange(app, 0.35, 0.65)
                 shot(app, "489-ce-3-question")
             }
             lock.tap()
@@ -59,8 +58,7 @@ final class CloseEnoughUITests: XCTestCase {
         XCTAssertTrue(lock.waitForExistence(timeout: 20), "the first question is asked")
         XCTAssertTrue(app.staticTexts["ce-web"].exists, "the website's look is the default")
         XCTAssertFalse(app.descendants(matching: .any)["ce-board3d"].exists, "no 3D board unless it's turned on")
-        app.sliders["ce-low"].adjust(toNormalizedSliderPosition: 0.45)
-        app.sliders["ce-high"].adjust(toNormalizedSliderPosition: 0.62)
+        setRange(app, 0.45, 0.62)
         usleep(400_000)
         XCTAssertTrue(app.staticTexts["ce-worth"].label.contains("worth"), "what the range is worth: \(app.staticTexts["ce-worth"].label)")
         shot(app, "707-ce-1-asking")
@@ -73,5 +71,19 @@ final class CloseEnoughUITests: XCTestCase {
         app.swipeUp()
         usleep(400_000)
         shot(app, "707-ce-4-standings")
+    }
+
+    /// Sets the range with a finger. #707: the website look's sliders are drawn by the app (a tap or drag puts the knob
+    /// there), so XCUITest's adjust can't drive them; the 3D board's are system sliders.
+    private func setRange(_ app: XCUIApplication, _ lo: CGFloat, _ hi: CGFloat) {
+        for (id, at) in [("ce-low", lo), ("ce-high", hi)] {
+            let s = app.sliders[id]
+            if app.staticTexts["ce-web"].exists {
+                s.coordinate(withNormalizedOffset: CGVector(dx: at, dy: 0.5)).tap()
+            } else {
+                s.adjust(toNormalizedSliderPosition: at)
+            }
+            usleep(200_000)
+        }
     }
 }
