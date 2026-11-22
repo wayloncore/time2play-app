@@ -80,6 +80,9 @@ jobs:
           OUT="$PWD/cinema-out"; mkdir -p "$OUT"
           B=live.time2play.app
           C="-t2p-cinema $OPT"
+          # a simulator command that hangs (it happened: a launch or a recording that never ended, Nov 22) is stopped
+          # after its time rather than holding the run for an hour
+          lim() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           # one device: boot it, put the app on it, shoot
           run_device() {
             U=$1; TAG=$2; TIER=$3
@@ -88,15 +91,19 @@ jobs:
             xcrun simctl install "$U" "$APP"
             # a still: launch stopped at a moment, wait until it has stopped, take the screen
             still() { name=$1; wait=$2; shift 2
-              xcrun simctl launch --terminate-running-process "$U" $B -t2p-3d-tier $TIER "$@" >/dev/null
+              lim 60 xcrun simctl launch --terminate-running-process "$U" $B -t2p-3d-tier $TIER "$@" >/dev/null || echo "launch of $name timed out"
               sleep "$wait"; xcrun simctl io "$U" screenshot --type=png "$OUT/$TAG-$name.png" >/dev/null 2>&1
               echo "still $TAG-$name"; }
             # a recording: launch playing, let it settle, record, and keep the frame rate it printed
             rec() { name=$1; secs=$2; shift 2
-              xcrun simctl launch --terminate-running-process --stdout="$OUT/$TAG-$name.log" "$U" $B -t2p-3d-tier $TIER -t2p-cinema-fps "$@" >/dev/null
+              lim 60 xcrun simctl launch --terminate-running-process --stdout="$OUT/$TAG-$name.log" "$U" $B -t2p-3d-tier $TIER -t2p-cinema-fps "$@" >/dev/null || echo "launch of $name timed out"
               sleep 3
               xcrun simctl io "$U" recordVideo --codec=h264 --force "$OUT/$TAG-$name.mov" >/dev/null 2>&1 & pid=$!
-              sleep "$secs"; kill -INT $pid; wait $pid 2>/dev/null || true
+              sleep "$secs"; kill -INT $pid
+              # give the recording 20 s to finish its file, then stop it outright
+              for i in $(seq 20); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+              kill -0 $pid 2>/dev/null && { echo "recording $name didn't stop: killed"; kill -9 $pid; }
+              wait $pid 2>/dev/null || true
               echo "recording $TAG-$name: $(grep -c FPS "$OUT/$TAG-$name.log" 2>/dev/null || echo 0) frame-rate lines"; }
             still overdraft-strike 9 $C -t2p-3d-still "suit=bolt n=5 strike=0.08"
             still overdraft-strike-calm 9 $C -t2p-reduce-motion -t2p-3d-still "suit=bolt n=5 strike=0.08"
