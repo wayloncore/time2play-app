@@ -50,51 +50,24 @@ struct CloseEnoughView: View {
         }
     }
 
+    /// #535's 3D board (You → "3D Close Enough board"), on one screen with no page scroll and the answer as a pop-up
+    /// (#728, CloseEnoughBoardLook.swift), with this view's state and moments kept.
     private var boardLook: some View {
-        VStack(spacing: 0) {
-            TableTopBar(game: room.game, code: room.code, line: topLine, onLeave: onLeave, owner: room.isOwner, room: room)
+        Group {
             if view.common.phase == "done" {
-                CloseEnoughOver(room: room, view: view)
-            } else if let q = view.question {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Text("Question \(q.n) of \(q.of)").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
-                                .accessibilityIdentifier("ce-number")
-                            Spacer()
-                            if q.stage == "ask", let e = q.endsAt { Countdown(endsAt: e) }
-                        }
-                        Group {
-                            Text(q.q).font(.title2.bold()).foregroundStyle(T2P.text).accessibilityIdentifier("ce-question")
-                            if !q.note.isEmpty { Text(q.note).foregroundStyle(T2P.muted) }
-                        }
-                        .id(q.n)
-                        .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .trailing).combined(with: .opacity))
-                        if q.stage == "ask" {
-                            if board3D {
-                                CloseEnoughBoard3D(state: .make(q: q, players: view.players, me: me, lo: view.lockedIn ? view.answerLo ?? lo : lo,
-                                                                hi: view.lockedIn ? view.answerHi ?? hi : hi, seated: view.common.seated))
-                                    .accessibilityIdentifier("ce-board3d")
-                            } else {
-                                ScaleBar(q: q, lo: view.lockedIn ? view.answerLo ?? lo : lo, hi: view.lockedIn ? view.answerHi ?? hi : hi)
-                            }
-                            ask(q)
-                            lockedIn(q)
-                        } else {
-                            reveal(q)
-                        }
-                        standings(q)
-                    }
-                    .padding(20).frame(maxWidth: 640).frame(maxWidth: .infinity)
-                    .animation(reduceMotion ? nil : Animation.spring(duration: 0.4), value: q.n)
+                VStack(spacing: 0) {
+                    TableTopBar(game: room.game, code: room.code, line: topLine, onLeave: onLeave, owner: room.isOwner, room: room)
+                    CloseEnoughOver(room: room, view: view)
                 }
-                ReactionBar(room: room)
+            } else if let q = view.question {
+                CloseEnoughBoardGame(room: room, view: view, q: q, onLeave: onLeave, lo: $lo, hi: $hi, lockLine: lockLines.first)
                     .onAppear { prepare(q) }
                     .onChange(of: q.n) { _, _ in prepare(q) }
                     .onChange(of: q.stage) { _, stage in if stage == "reveal" { revealed(q) } }
                     .onChange(of: lockedIds) { old, new in lockedChanged(old, new) }
             }
         }
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private var topLine: String { view.common.phase == "done" ? "GAME OVER" : "\(view.me?.score ?? 0) POINTS" }
@@ -129,139 +102,8 @@ struct CloseEnoughView: View {
         DispatchQueue.main.async { withAnimation(.spring(duration: 0.5, bounce: 0.35)) { landed = true } }
     }
 
-    @ViewBuilder private func ask(_ q: CloseEnough.Question) -> some View {
-        if view.lockedIn {
-            Label("Locked in: \(q.formatRange(view.answerLo ?? 0, view.answerHi ?? 0))", systemImage: "lock.fill")
-                .font(.headline).foregroundStyle(T2P.text)
-                .accessibilityIdentifier("ce-locked")
-        } else if view.common.seated {
-            VStack(alignment: .leading, spacing: 12) {
-                slider("Low", value: $lo, q: q) { if hi < $0 { hi = $0 } }
-                slider("High", value: $hi, q: q) { if lo > $0 { lo = $0 } }
-                Text("From \(q.format(lo)) to \(q.format(hi)) · worth \(q.worth(lo: lo, hi: hi, maxPoints: view.maxPoints)) points if it holds the answer")
-                    .font(.subheadline).foregroundStyle(T2P.muted)
-                Button("Lock in this range") { room.move("range", ["lo": .number(lo), "hi": .number(hi)]); Haptics.play() }
-                    .buttonStyle(GoldButtonStyle()).accessibilityIdentifier("lock-in")
-            }
-        } else {
-            Text("A game is on. You’ll play in the next one.").foregroundStyle(T2P.muted)
-        }
-    }
-
-    /// Who's in so far: a count, and the latest to lock in.
-    @ViewBuilder private func lockedIn(_ q: CloseEnough.Question) -> some View {
-        let inGame = view.players.filter { !$0.left && $0.seated }
-        let done = inGame.filter(\.lockedIn).count
-        let waiting = inGame.filter { !$0.lockedIn && $0.id != me && ($0.bot != nil || $0.connected) }.map(name)
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(done) of \(inGame.count) locked in").font(.subheadline.weight(.semibold)).foregroundStyle(T2P.text)
-                .contentTransition(.numericText()).animation(.default, value: done)
-                .accessibilityIdentifier("ce-count")
-            if !waiting.isEmpty {
-                Text("Waiting for \(waiting.joined(separator: ", ")). The answer shows when everyone’s in or the clock runs out.")
-                    .font(.footnote).foregroundStyle(T2P.muted)
-            }
-            ForEach(Array(lockLines.enumerated()), id: \.offset) { i, line in
-                Label(line, systemImage: "checkmark.circle.fill").font(.footnote.weight(i == 0 ? .semibold : .regular))
-                    .foregroundStyle(i == 0 ? T2P.good : T2P.muted)
-                    .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func slider(_ label: String, value: Binding<Double>, q: CloseEnough.Question, then: @escaping (Double) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack { Text(label).font(.headline).foregroundStyle(T2P.text); Spacer(); Text(q.format(value.wrappedValue)).font(.headline.monospacedDigit()).foregroundStyle(T2P.gold) }
-            Slider(value: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = q.snap($0); then(value.wrappedValue) }),
-                   in: q.floor...max(q.ceiling, q.floor + 1), step: q.step > 0 ? q.step : 1)
-                .tint(T2P.gold)
-                .accessibilityLabel(label)
-                .accessibilityValue(q.format(value.wrappedValue))
-            .accessibilityIdentifier("ce-\(label.lowercased())")
-        }
-    }
-
     private func verdictTitle(_ v: String?) -> String {
         ["tight": "Tight, and right.", "hit": "Inside, comfortably.", "miss": "Outside the range."][v ?? ""] ?? "No range locked in."
-    }
-    private func verdictDetail(_ v: String?) -> String {
-        ["tight": "You committed to a small window and the answer was in it.",
-         "hit": "Wide enough to be safe, which is why it’s worth less.",
-         "miss": "No points. A range that misses scores nothing, however narrow."][v ?? ""] ?? "No points this time."
-    }
-
-    private func yourRange(_ r: CloseEnough.Result, _ q: CloseEnough.Question) -> String {
-        guard let a = r.lo, let b = r.hi else { return "" }
-        return "Your range: \(q.formatRange(a, b)). "
-    }
-
-    @ViewBuilder private func reveal(_ q: CloseEnough.Question) -> some View {
-        let r = q.results[me]
-        let missing = q.results.values.contains { $0.verdict == "none" }
-        VStack(alignment: .leading, spacing: 10) {
-            Text(missing ? "Not everyone locked in before the clock ran out." : "Everyone locked in.")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(T2P.muted)
-                .accessibilityIdentifier("ce-why-ended")
-            Text("The answer: \(q.answer.map { q.format($0) } ?? "")").font(.title2.bold()).foregroundStyle(T2P.text)
-                .accessibilityIdentifier("ce-answer")
-            if board3D {
-                CloseEnoughBoard3D(state: .make(q: q, players: view.players, me: me, lo: lo, hi: hi, seated: view.common.seated))
-                    .accessibilityIdentifier("ce-ranges")
-            } else {
-                RangesChart(q: q, players: view.players.filter { q.results[$0.id] != nil }, me: me, landed: landed)
-            }
-            if let r {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(verdictTitle(r.verdict))\(r.points > 0 ? " +\(r.points)" : "")").font(.headline).foregroundStyle(r.points > 0 ? T2P.good : T2P.ember)
-                    Text(yourRange(r, q) + verdictDetail(r.verdict))
-                        .font(.subheadline).foregroundStyle(T2P.muted)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("ce-verdict")
-            }
-            if let why = q.why, !why.isEmpty { Text("Why: \(why)").foregroundStyle(T2P.muted) }
-            if room.isOwner {
-                Button(q.n < q.of ? "Next question" : "See the standings") { room.move("next"); Haptics.select() }.buttonStyle(GoldButtonStyle())
-                    .accessibilityIdentifier("ce-next")
-            }
-            if let e = q.endsAt {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    let left = max(0, Int((e / 1000 - ctx.date.timeIntervalSince1970).rounded(.up)))
-                    if left > 0 {
-                        Text(room.isOwner ? "Or it goes on by itself in \(left)s." : q.n < q.of ? "Next question in \(left)s." : "The standings in \(left)s.")
-                            .font(.footnote.monospacedDigit()).foregroundStyle(T2P.muted)
-                            .accessibilityIdentifier("ce-next-in")
-                    }
-                }
-            }
-        }
-    }
-
-    private func standings(_ q: CloseEnough.Question) -> some View {
-        VStack(spacing: 0) {
-            ForEach(view.players.filter { !$0.left || $0.score > 0 }.sorted { $0.score > $1.score }) { p in
-                HStack(spacing: 10) {
-                    FaceView(face: p.face, size: 32)
-                    Text(name(p)).foregroundStyle(T2P.text)
-                    if p.bot != nil { Tag(text: "BOT") }
-                    if p.id == view.common.owner { Image(systemName: "crown.fill").font(.caption).foregroundStyle(T2P.gold).accessibilityLabel("runs the room") }
-                    if q.stage == "ask" && p.lockedIn { Image(systemName: "checkmark.circle.fill").foregroundStyle(T2P.good).accessibilityLabel("locked in") }
-                    Spacer()
-                    if q.stage == "reveal", let r = q.results[p.id] {
-                        Text(r.points > 0 ? "+\(r.points)" : "0").font(.subheadline.weight(.bold).monospacedDigit())
-                            .foregroundStyle(r.points > 0 ? T2P.good : T2P.faint)
-                    }
-                    Text("\(p.score)").font(.headline.monospacedDigit()).foregroundStyle(T2P.text)
-                        .contentTransition(.numericText(value: Double(p.score)))
-                        .animation(reduceMotion ? nil : Animation.spring(duration: 0.5), value: p.score)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .accessibilityElement(children: .combine)
-            }
-        }
-        .background(T2P.panel, in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityIdentifier("ce-standings")
     }
 }
 

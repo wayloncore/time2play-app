@@ -254,6 +254,11 @@ final class CloseEnoughBoardWorld {
 /// The board in SwiftUI. Its height grows with the lanes.
 struct CloseEnoughBoard3D: View {
     let state: CloseEnoughBoardState
+    /// #728: a set height, for a screen that can't give the board its own (the caller keeps the width in proportion,
+    /// since the camera's view is set by the width)
+    var height: CGFloat? = nil
+    /// The height the board takes on its own: it grows with the lanes.
+    static func naturalHeight(lanes: Int) -> CGFloat { 118 + CGFloat(max(1, lanes)) * 34 }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var holder = Holder()
 
@@ -264,7 +269,7 @@ struct CloseEnoughBoard3D: View {
 
     var body: some View {
         Host(holder: holder)
-            .frame(height: 118 + CGFloat(max(1, state.lanes.count)) * 34)
+            .frame(height: height ?? Self.naturalHeight(lanes: state.lanes.count))
             .background(LinearGradient(colors: [Color(hex: 0x0B1121), Color(hex: 0x16203A)], startPoint: .top, endPoint: .bottom),
                         in: RoundedRectangle(cornerRadius: 16))
             .clipShape(RoundedRectangle(cornerRadius: 16))

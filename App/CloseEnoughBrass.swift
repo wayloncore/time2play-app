@@ -564,6 +564,8 @@ struct BrassDials: View {
     /// the values the points fall to as the range widens (off at the answer, where the number is what you scored)
     var ghosts = true
     var plus = false
+    /// the clock's last ten seconds in coral (off at the answer, #728: nothing's at stake there)
+    var warn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let big = min(cap, Brass.scaled(44, .largeTitle))
@@ -600,7 +602,7 @@ struct BrassDials: View {
                     let left = max(0, Int((endsAt / 1000 - ctx.date.timeIntervalSince1970).rounded(.up)))
                     VStack(spacing: 2) {
                         Text(String(format: "%02d:%02d", left / 60, left % 60)).font(Brass.serifFixed(big, .semibold)).monospacedDigit()
-                            .foregroundStyle(left <= 10 ? AnyShapeStyle(Brass.low) : AnyShapeStyle(Brass.goldText))
+                            .foregroundStyle(warn && left <= 10 ? AnyShapeStyle(Brass.low) : AnyShapeStyle(Brass.goldText))
                             .lineLimit(1).minimumScaleFactor(0.6)
                         Text(note(left)).font(.system(size: min(cap * 0.36, Brass.scaled(13, .caption)))).foregroundStyle(Brass.ink3).lineLimit(1)
                     }
@@ -1053,13 +1055,18 @@ struct CloseEnoughBrassGame: View {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { typeOpen = false }
     }
 
-    /// At the answer, under the pop-up: what you scored and when it goes on, and the button that brings the result back.
+    /// At the answer, with the pop-up hidden: what you scored and when it goes on, and the button that brings the result
+    /// back. (While the pop-up's up, the row is hidden; the card says both, #728.)
     private func revealLow(_ compact: Bool) -> some View {
         VStack(spacing: compact ? 8 : 12) {
             BrassDials(points: mine?.points ?? 0, endsAt: q.endsAt, note: { left in
                 left <= 0 ? " " : room.isOwner ? "Or on by itself" : q.n < q.of ? "Next question" : "The standings"
-            }, cap: dialsCap(compact), ghosts: false, plus: true)
+            }, cap: dialsCap(compact), ghosts: false, plus: true, warn: false)
             .padding(.top, compact ? 2 : 8)
+            // #728: while the pop-up is up it has the points and the countdown, so this row steps aside rather than
+            // peek out half-hidden behind the card's top edge (the largest iPhone, #729's stills)
+            .opacity(showResult ? 0 : 1)
+            .accessibilityHidden(showResult)
             if !showResult {
                 Button("See the result") { withAnimation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12)) { showResult = true } }
                     .buttonStyle(BrassLockButton())
