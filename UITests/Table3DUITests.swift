@@ -19,7 +19,8 @@ final class Table3DUITests: XCTestCase {
     }
 
     /// #719: the website's direction arrows and the brighter turn glow, at the moments Tyler compares with
-    /// time2play.live: your turn, someone else's turn, a Reverse mid-way and just after, in every element. The same
+    /// time2play.live: your turn, someone else's turn, a Reverse stopping, sweeping round and just after, in every
+    /// element. The same
     /// stills at the oldest phones' tier (-t2p-3d-tier low) carry "-low".
     func testStills719() {
         for tier in ["high", "low"] {
@@ -27,6 +28,7 @@ final class Table3DUITests: XCTestCase {
             still("suit=wave n=5 mine=1", "719-your-turn\(t)", x)
             still("suit=wave n=5", "719-their-turn\(t)", x)
             still("suit=wave n=5 reverse=0.6", "719-reverse-slowing\(t)", x)
+            still("suit=wave n=5 reverse=0.95", "719-reverse-sweep\(t)", x)
             still("suit=wave n=5 reverse=2.2", "719-reverse-after\(t)", x)
         }
         for s in ["ember", "bolt", "leaf"] { still("suit=\(s) n=5", "719-their-turn-\(s)") }

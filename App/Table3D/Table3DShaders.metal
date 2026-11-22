@@ -15,9 +15,9 @@ struct T3DU {
     float4 b;      // seed, turn, ground, reduced
     float4 c;      // grow (grass), bolt intensity, focal (points per unit at depth 1), max particle size (points)
     float4 d;      // particle opacity: ember, wave, bolt, leaf
-    float4 e;      // turn flow: from (rim s), span to the next seat, phase, play's direction (1 or -1)
-    float4 f;      // turn flow: color, on (0 to 1)
-    float4 g;      // turn flow: surge, -1 for #719's "before" comparison only, rim length, spare
+    float4 e;      // the arrows: the arc's from (rim s), its span to the next seat, the chevrons' phase, the way they point
+    float4 f;      // the arrows: the suit's color, on (0 to 1)
+    float4 g;      // the arrows: a Reverse's sweep (-1 for none), where it started; -1 for #719's "before" only; spare
 };
 
 struct T3DNode {
@@ -172,15 +172,18 @@ fragment float4 t3d_ground_frag(WorldOut in [[stage_in]], constant T3DU& u [[buf
     return float4(lin(backdropTone(col)), 1.);
 }
 
-// ---------- the turn flow: the website's arrows round the rim (#719; #520 on time2play.live) ----------
-// The same flow as time2play.live's Overdraft (src/games/overdraft3d/table.js, turnArrow), point for point: a band
-// just inside the rim (0.885 to 0.955 of the corner's radius) carries dashes every 0.62 round it, each one bright at
-// its leading edge, so the way round reads even still. The stretch from whoever is on to whoever is next is bright
-// and brightens toward them; whoever is next has a glow at their end; the rest of the rim carries faint dashes. A
-// turn passing gives a short surge. Reduce Motion: the dashes hold still. Added on top of the glass, as the website's
-// additive mesh is.
+// ---------- which way play goes: the website's arrows (#719) ----------
+// Tyler, Nov 22: "I like the arrows that I have on Overdraft on the website. I prefer those arrows to the one that
+// you added." These are time2play.live's (static/live/overdraft.html: flowPlace, flowArc, flowDraw), laid on the
+// glass's rim instead of the felt's rail: a faint band on the rim, a ring of chevrons on it that flow round the way
+// play goes (each a soft halo under a bright core), and a curved arrow just inside it from whoever is on to whoever
+// is next. A Reverse: the chevrons slow to a stop, a bright sweep runs once round the rim from whoever played it,
+// turning each chevron as it passes, then they flow the other way. The website's colors (the suit mixed with its
+// creams) and its opacities. Reduce Motion: nothing flows or sweeps; the arrows point the way play goes.
 constant float RX = 2.2, A0 = 3.2, QA = 3.4557519, PERIM = 26.6230077, SPACING = 26.6230077 / 24.;
-constant float FLOW_R0 = .885, FLOW_R1 = .955, FLOW_STEP = .62;
+constant float RAIL_K = 1.055, RAIL_W = .24;                  // the rim's middle (of the corner's radius) and width
+constant float CHEV = .28, CHEV_N = 31., CHEV_STEP = PERIM / CHEV_N;   // a chevron's size, how many, how far apart
+constant float ARC_K = .88, ARC_W = .07;                       // the curved arrow: how far out, how thick
 
 // Where a point on the glass is round the rim (s, as Table3D.rimPoint counts it) and how far out (k: 1 is the felt's edge).
 static float2 rimSK(float2 p) {
@@ -190,25 +193,73 @@ static float2 rimSK(float2 p) {
     return x < 0. ? float2(QA + (A0 - z), -x / RX) : float2(3. * QA + 2. * A0 + (z + A0), x / RX);
 }
 
-// The light the flow adds at a point on the glass (u.e: from, span to the next seat, phase, play's direction;
-// u.f: color, on; u.g.x: surge).
-static float3 turnFlow(float2 p, constant T3DU& u) {
-    if (u.f.w < .001) return float3(0.);
+static float segDist(float2 p, float2 a, float2 b) {
+    float2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); return length(pa - ba * h);
+}
+// How much of a stroke `width` wide covers a point `d` from its middle line (aa: a pixel, in world units).
+static float stroke(float d, float width, float aa) { return 1. - ss(width * .5 - aa, width * .5 + aa, d); }
+static float wrapP(float x) { return x - PERIM * floor(x / PERIM); }
+
+// The glass's color with the arrows on it. u.e: the arc's from (rim s), its span to the next seat, the chevrons'
+// phase, the way they point (1 or -1; during a Reverse the old way); u.f: the suit's color (sRGB), on (0 to 1);
+// u.g: the Reverse's sweep (how far round, rim s; -1 for none), where it started (rim s).
+static float3 turnArrows(float2 p, float3 col, float aa, constant T3DU& u) {
+    float on = u.f.w;
+    if (on < .001) return col;
     float2 sk = rimSK(p);
-    float v = (sk.y - FLOW_R0) / (FLOW_R1 - FLOW_R0);
-    if (v <= 0. || v >= 1.) return float3(0.);
-    float s = sk.x, from = u.e.x, len = u.e.y, dir = u.e.w, surge = u.g.x;
-    float across = abs(v * 2. - 1.);
-    float x = (s - from) * dir; float d = x - PERIM * floor(x / PERIM);   // how far round from the seat in turn
-    float inArc = ss(0., .25, d) * (1. - ss(len - .35, len, d));
-    float uu = fract(s / FLOW_STEP - u.e.z);                              // a dash, bright at its leading edge
-    float lead = dir > 0. ? uu : 1. - uu;
-    float dash = ss(0., .55, lead) * (1. - ss(.86, .97, lead));
-    float ramp = .35 + .65 * clamp(d / max(len, .01), 0., 1.);            // brighter towards the next seat
-    float h = (d - len) / .45; float head = exp(-h * h);                  // the next seat's end of the rim glows
-    float band = 1. - ss(.55, 1., across);
-    float a = band * (dash * (.10 + inArc * ramp * (.75 + .55 * surge)) + head * (.9 + .6 * surge)) + inArc * band * .07;
-    return u.f.rgb * a * u.f.w;
+    float s = sk.x, k = sk.y;
+    if (k < ARC_K - .2 || k > RAIL_K + .2) return col;
+    float3 sc = u.f.rgb;
+    float3 cBand = mix(float3(.961, .871, .584), sc, .55);          // color-mix(--sc 55%, #F5DE95)
+    float3 cHalo = mix(float3(.961, .871, .584), sc, .70);          // 70%, #F5DE95
+    float3 cCore = mix(float3(1., .957, .824), sc, .30);            // 30%, #FFF4D2
+    float3 cArc = mix(float3(1., .937, .761), sc, .40);             // 40%, #FFEFC2
+    // the rim's faint band
+    float across = (k - RAIL_K) * RX;
+    col = mix(col, cBand, .13 * on * stroke(abs(across), RAIL_W * .9, aa));
+    // the chevrons: the nearest one, where it points, and whether the sweep has turned it
+    float phase = u.e.z, pointing = u.e.w >= 0. ? 1. : -1.;
+    float j = floor((s - phase) / CHEV_STEP + .5), c = phase + j * CHEV_STEP;
+    float along = s - c;
+    float ang = pointing < 0. ? M_PI_F : 0., size = CHEV;
+    bool hot = false;
+    if (u.g.x >= 0.) {
+        float at = wrapP((c - u.g.y) * -pointing), past = u.g.x - at;
+        ang += M_PI_F * clamp(past / (PERIM * .05), 0., 1.);
+        hot = past > 0. && past < PERIM * .14;
+        if (hot) size *= 1.1;
+    }
+    float ca = cos(ang), sa = sin(ang);
+    float2 q = float2(ca * along + sa * across, -sa * along + ca * across);
+    float h = size * .5;
+    float2 tip = float2(h * .9, 0.), armA = float2(-h * .6, h), armB = float2(-h * .6, -h);
+    float dc = min(segDist(q, armA, tip), segDist(q, armB, tip));
+    col = mix(col, cHalo, .26 * on * stroke(dc, size * .32, aa));
+    if (hot) col = mix(col, float3(1., .973, .894), on * stroke(dc, size * .30, aa));     // #FFF8E4
+    else col = mix(col, cCore, .85 * on * stroke(dc, size * .20, aa));
+    // the curved arrow from whoever is on to whoever is next, just inside the rim, the way play goes
+    float len = u.e.y, dir = -pointing;
+    if (u.g.x < 0.) dir = pointing;
+    float gap = min(.8, len * .16), end = len - gap;
+    float d = wrapP((s - u.e.x) * dir), ac = (k - ARC_K) * RX;
+    float hs = ARC_W * 3.4;
+    if (d >= gap - ARC_W && d <= end) {
+        float da = abs(ac);
+        col = mix(col, cHalo, .16 * on * stroke(da, ARC_W * 3.2, aa) * ss(gap - ARC_W, gap + ARC_W * 2., d));
+        col = mix(col, cArc, .62 * on * stroke(da, ARC_W, aa) * ss(gap - ARC_W, gap, d));
+    }
+    // its head: a triangle past the arc's end, pointing on round
+    float2 t = float2(d - end, ac);
+    if (t.x > -hs && t.x < hs) {
+        float2 A = float2(hs * .55, 0.), B = float2(-hs * .5, hs * .62), C = float2(-hs * .5, -hs * .62);
+        float2 e0 = B - A, e1 = C - B, e2 = A - C;
+        float s0 = (t.x - A.x) * e0.y - (t.y - A.y) * e0.x, s1 = (t.x - B.x) * e1.y - (t.y - B.y) * e1.x, s2 = (t.x - C.x) * e2.y - (t.y - C.y) * e2.x;
+        float inside = (s0 <= 0. && s1 <= 0. && s2 <= 0.) || (s0 >= 0. && s1 >= 0. && s2 >= 0.) ? 1. : 0.;
+        float edge = min(segDist(t, A, B), min(segDist(t, B, C), segDist(t, C, A)));
+        float m = max(inside, stroke(edge, aa * 2., aa));
+        col = mix(col, cArc, .8 * on * m);
+    }
+    return col;
 }
 
 // #719's frame-rate comparison only (-t2p-719-before): the comets the app drew before, at the same cost they had.
@@ -255,8 +306,8 @@ fragment float4 t3d_glass_frag(WorldOut in [[stage_in]], constant T3DU& u [[buff
     col += (tint * .8 + .2) * pulse * (ss(.72, 1., ed) * .75 + ss(.94, 1., ed) * .7);
     // #610: a flash lights the rim (the felt's edge) in violet; the middle of the glass, under the cards, only a little
     col += float3(.5, .34, .95) * e.flash * (.12 + ss(.80, 1., ed) * .55 + ss(.95, 1., ed) * .65);
-    if (u.g.y < 0.) { float4 fl = turnFlowBefore(vW.xz, u); col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35; }
-    else col += turnFlow(vW.xz, u);
+    if (u.g.z < 0.) { float4 fl = turnFlowBefore(vW.xz, u); col = mix(col, fl.rgb, fl.a) + u.f.rgb * fl.a * .35; }
+    else col = turnArrows(vW.xz, col, max(length(fwidth(vW.xz)), .004), u);
     return float4(lin(col), 1.);
 }
 
