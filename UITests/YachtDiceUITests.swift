@@ -51,10 +51,11 @@ final class YachtDiceUITests: XCTestCase {
         }
     }
 
-    /// #724: four held dice, their gold with gunmetal where it had near-black, beside build 87's (-t2p-724-before).
+    /// #724, #725: four held dice in white and gold (white HOLD letters, a lit gold ring), beside build 91's gunmetal
+    /// (-t2p-725-before).
     func testHeld724() {
-        for (extra, tag) in [([String](), ""), (["-t2p-724-before"], "-before")] {
-            board("kept4", "724-four-held\(tag)", extra) { app in
+        for (extra, tag) in [([String](), ""), (["-t2p-725-before"], "-before91")] {
+            board("kept4", "725-four-held\(tag)", extra) { app in
                 for i in 0..<4 { XCTAssertEqual(app.buttons["rc-die-\(i)"].value as? String, "held") }
                 XCTAssertEqual(app.buttons["rc-die-4"].value as? String, "")
             }
