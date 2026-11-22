@@ -100,8 +100,9 @@ jobs:
               sleep 3
               xcrun simctl io "$U" recordVideo --codec=h264 --force "$OUT/$TAG-$name.mov" >/dev/null 2>&1 & pid=$!
               sleep "$secs"; kill -INT $pid
-              # give the recording 20 s to finish its file, then stop it outright
-              for i in $(seq 20); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+              # give the recording a minute to finish its file (a busy simulator can take a while), then stop it
+              for i in $(seq 60); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+              [ $i -gt 5 ] && echo "recording $name took $i s to stop"
               kill -0 $pid 2>/dev/null && { echo "recording $name didn't stop: killed"; kill -9 $pid; }
               wait $pid 2>/dev/null || true
               echo "recording $TAG-$name: $(grep -c FPS "$OUT/$TAG-$name.log" 2>/dev/null || echo 0) frame-rate lines"; }
